@@ -57,15 +57,21 @@ function XpTooltip({ active, payload }: any) {
   );
 }
 
-function useIsTouch() {
-  const [touch, setTouch] = useState(false);
+/* Тач-устройство + режим отображения тултипа */
+function useTooltipTrigger(): { isTouch: boolean; trigger: "hover" | "click" } {
+  const [state, setState] = useState<{ isTouch: boolean; trigger: "hover" | "click" }>({
+    isTouch: false,
+    trigger: "hover",
+  });
   useEffect(() => {
-    setTouch(
+    const isTouch =
       typeof window !== "undefined" &&
-      (!!window.matchMedia?.("(pointer: coarse)").matches || "ontouchstart" in window)
-    );
+      (!!window.matchMedia?.("(pointer: coarse)").matches || "ontouchstart" in window);
+    // На тач-устройствах Recharts использует click → но мы эмулируем long-press через CSS/JS ниже.
+    // Пока оставляем standard behavior: click по точке показывает тултип до следующего клика вне него.
+    setState({ isTouch, trigger: isTouch ? "click" : "hover" });
   }, []);
-  return touch;
+  return state;
 }
  
 
@@ -77,7 +83,7 @@ export default function Dashboard() {
   const [globalBoard, setGlobalBoard] = useState<any[]>([]);
   const [friendsBoard, setFriendsBoard] = useState<any[]>([]);
   const [boardsLoaded, setBoardsLoaded] = useState(false);
-  const isTouch = useIsTouch();
+  const { isTouch, trigger } = useTooltipTrigger();
 
   useEffect(() => {
     const cached = getCachedUser();
