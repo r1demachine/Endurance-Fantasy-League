@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { clearAuth } from "@/lib/auth";
 import { authApi } from "@/lib/auth";
 import { getCachedUser, subscribeUser, refreshUser, clearUserCache } from "@/lib/apiCache";
 import type { ReactNode } from "react";
@@ -38,6 +40,7 @@ function Label({ children, className = "" }: { children: ReactNode; className?: 
 
 export default function Profile() {
   const [userData, setUserData] = useState<any>(null);
+  const router = useRouter();
   const [syncing, setSyncing] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
@@ -65,6 +68,13 @@ export default function Profile() {
     } finally {
       setResetting(false);
     }
+    
+  };
+
+  const handleLogout = () => {
+    clearAuth();
+    clearUserCache();
+    router.push("/");
   };
 
   const seasonStats = userData?.season_stats ?? {
@@ -204,7 +214,7 @@ export default function Profile() {
             </div>
           </div>
         </div>
-
+        
         {/* Опасная зона */}
         <div className="grid md:grid-cols-[200px_1fr]">
           <div className="hidden md:flex items-center justify-center border-r-2 border-black bg-[#ff4b26] p-5">
@@ -216,13 +226,21 @@ export default function Profile() {
               <p className="text-sm text-[#666] mb-4 max-w-lg">
                 Полностью удаляет все синхронизированные тренировки и сбрасывает прогресс до 1 уровня. Это действие нельзя отменить.
               </p>
-              <button
-                onClick={handleReset}
-                disabled={resetting || !userData}
-                className="px-5 py-3 bg-[#171a38] text-white text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-[#ff4b26] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {resetting ? "Clearing..." : "Clear all data"}
-              </button>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={handleReset}
+                  disabled={resetting || !userData}
+                  className="px-5 py-3 bg-[#171a38] text-white text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-[#ff4b26] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {resetting ? "Clearing..." : "Clear all data"}
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="px-5 py-3 bg-[#ff4b26] text-white text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-black transition-colors"
+                >
+                  Logout →
+                </button>
+              </div>
             </div>
           </div>
         </div>

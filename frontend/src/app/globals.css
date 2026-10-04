@@ -107,3 +107,11 @@ body {
   66%  { transform: translate(-35px, 45px) rotate(-6deg); }
   100% { transform: translate(0, 0) rotate(0deg); }
 }
+
+/* 📱 Мобилка: место под нижнюю навигацию + маленький зазор сверху */
+@media (max-width: 767px) {
+  body {
+    padding-top: 8px;
+    padding-bottom: 64px;
+  }
+}
