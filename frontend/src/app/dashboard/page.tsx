@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import type { ReactNode, TouchEvent } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import axios from "axios";
 import { getCachedUser, subscribeUser, refreshUser } from "@/lib/apiCache";
 import { authApi, isAuthenticated } from "@/lib/auth";
-import type { ReactNode } from "react";
 import ActivityCard from "@/components/ActivityCard";
 import { Star, Sticker, DreamDecor } from "@/components/DreamBits";
 import {
@@ -94,8 +94,14 @@ export default function Dashboard() {
 
   const TOUCH_HOLD_MS = 250;
 
-  const handleChartTouchStart = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
+
+  const handleChartTouchStart = (
+    _nextState: unknown,
+    event: TouchEvent<SVGGraphicsElement>
+  ) => {
+    const touch = event.touches[0];
+
+    if (!touch) return;
 
     touchStartRef.current = {
       time: Date.now(),
@@ -106,20 +112,21 @@ export default function Dashboard() {
     setTouchTooltipActive(false);
   };
 
-  const handleChartTouchMove = (e: React.TouchEvent) => {
+  const handleChartTouchMove = (
+    _nextState: unknown,
+    event: TouchEvent<SVGGraphicsElement>
+  ) => {
     if (!touchStartRef.current) return;
 
-    const touch = e.touches[0];
+    const touch = event.touches[0];
+
+    if (!touch) return;
 
     const elapsed = Date.now() - touchStartRef.current.time;
     const dx = Math.abs(touch.clientX - touchStartRef.current.x);
     const dy = Math.abs(touch.clientY - touchStartRef.current.y);
 
-    // Не показываем карточку от обычного быстрого свайпа/тапа.
-    if (
-      elapsed >= TOUCH_HOLD_MS &&
-      (dx > 4 || dy > 4)
-    ) {
+    if (elapsed >= TOUCH_HOLD_MS && (dx > 4 || dy > 4)) {
       setTouchTooltipActive(true);
     }
   };
