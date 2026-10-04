@@ -18,7 +18,7 @@ export default function Header() {
 
   return (
     <>
-      {/* ── ДЕСКТОП: шапка сверху (без Logout — он в Danger Zone) ── */}
+      {/* ── ДЕСКТОП: шапка сверху ── */}
       {!isHome && (
         <>
           <header className="hidden md:block fixed top-0 left-0 right-0 z-[60] w-full isolate text-[#111] pointer-events-none">
@@ -53,7 +53,8 @@ export default function Header() {
                       </Link>
                     );
                   })}
-                  <NotificationBell variant="top" />               
+                  {/* 🔔 колокольчик уведомлений (десктоп) */}
+                  <NotificationBell variant="top" />
                 </nav>
               </div>
             </div>
@@ -64,7 +65,8 @@ export default function Header() {
       )}
 
       {/* ── МОБИЛКА: навигация снизу ── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[60] bg-[#f4f4f0] text-[#111] border-t-2 border-black flex items-stretch pb-[env(safe-area-inset-bottom)]">        <Link
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[60] bg-[#f4f4f0] text-[#111] border-t-2 border-black flex items-stretch pb-[env(safe-area-inset-bottom)]">
+        <Link
           href="/"
           className="w-14 shrink-0 border-r-2 border-black flex items-center justify-center font-display text-2xl active:bg-black active:text-white transition-colors"
         >
@@ -76,7 +78,7 @@ export default function Header() {
             <Link
               key={link.href}
               href={link.href}
-              className={`flex-1 px-2 py-4 flex items-center justify-center text-[10px] font-bold tracking-widest uppercase border-r-2 border-black last:border-r-0 transition-colors ${
+              className={`flex-1 px-2 py-4 flex items-center justify-center text-[10px] font-bold tracking-widest uppercase border-r-2 border-black transition-colors ${
                 isActive ? "bg-[#5866f2] text-white" : "active:bg-black active:text-white"
               }`}
             >
@@ -84,6 +86,7 @@ export default function Header() {
             </Link>
           );
         })}
+        {/* 🔔 колокольчик уведомлений (мобилка) */}
         <NotificationBell variant="bottom" />
       </nav>
     </>
