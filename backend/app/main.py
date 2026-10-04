@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base
 from .config import get_settings
-from .routers import sync, auth, intervals_key, friends
+from .routers import sync, auth, intervals_key, friends, notifications
 
 Base.metadata.create_all(bind=engine)
 
@@ -54,6 +54,12 @@ app.include_router(sync.router)
 app.include_router(auth.router)
 app.include_router(intervals_key.router)
 app.include_router(friends.router)
+app.include_router(notifications.router)
+
+@app.on_event("startup")
+async def _init_broker():
+    from .broker import init_broker
+    await init_broker()
 
 from .routers import admin
 app.include_router(admin.router)

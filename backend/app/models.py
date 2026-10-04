@@ -140,3 +140,16 @@ class Friendship(Base):
         Index("idx_friendship_unique", "from_user_id", "to_user_id", unique=True),
         Index("idx_friendship_status", "status"),
     )
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    type = Column(String, nullable=False)      # friend_request | friend_accepted | system
+    text = Column(String, nullable=False)
+    read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", backref="notifications")

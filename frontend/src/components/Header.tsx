@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Star } from "@/components/DreamBits";
+import NotificationBell from "@/components/NotificationBell";
 
 export default function Header() {
   const pathname = usePathname();
@@ -52,6 +53,7 @@ export default function Header() {
                       </Link>
                     );
                   })}
+                  <NotificationBell variant="top" />               
                 </nav>
               </div>
             </div>
@@ -82,6 +84,7 @@ export default function Header() {
             </Link>
           );
         })}
+        <NotificationBell variant="bottom" />
       </nav>
     </>
   );

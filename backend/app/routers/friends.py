@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..dependencies import get_current_user
 from ..models import Friendship, FriendshipStatus, User
+from ..services.notifications import notify_user
 
 router = APIRouter(prefix="/api/friends", tags=["Friends"])
 
@@ -73,7 +74,7 @@ def search_users(q: str, current: User = Depends(get_current_user), db: Session 
 
 
 @router.post("/add")
-def add_friend(data: AddIn, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def add_friend(data: AddIn, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
     target = db.query(User).filter(User.username == data.username.strip().lower()).first()
     if not target:
         raise HTTPException(status_code=404, detail="Athlete not found")
@@ -86,7 +87,6 @@ def add_friend(data: AddIn, current: User = Depends(get_current_user), db: Sessi
     if rel == "sent":
         raise HTTPException(status_code=400, detail="Заявка уже отправлена")
     if rel == "incoming":
-        # встречная заявка — принимаем сразу
         rel_obj = (
             db.query(Friendship)
             .filter(Friendship.from_user_id == target.id, Friendship.to_user_id == current.id)
@@ -94,10 +94,12 @@ def add_friend(data: AddIn, current: User = Depends(get_current_user), db: Sessi
         )
         rel_obj.status = FriendshipStatus.ACCEPTED
         db.commit()
+        await notify_user(db, target.id, "friend_accepted", f"{current.display_name} принял(а) твою заявку в друзья")
         return {"message": f"Вы теперь друзья с {target.display_name}!", "status": "accepted"}
 
     db.add(Friendship(from_user_id=current.id, to_user_id=target.id, status=FriendshipStatus.PENDING))
     db.commit()
+    await notify_user(db, target.id, "friend_request", f"{current.display_name} отправил(а) тебе заявку в друзья")
     return {"message": f"Заявка отправлена: {target.display_name}", "status": "sent"}
 
 
@@ -135,7 +137,7 @@ def list_friends(current: User = Depends(get_current_user), db: Session = Depend
 
 
 @router.post("/accept")
-def accept_friend(data: IdIn, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def accept_friend(data: IdIn, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
     r = (
         db.query(Friendship)
         .filter(
@@ -147,8 +149,10 @@ def accept_friend(data: IdIn, current: User = Depends(get_current_user), db: Ses
     )
     if not r:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
+    requester_id = r.from_user_id
     r.status = FriendshipStatus.ACCEPTED
     db.commit()
+    await notify_user(db, requester_id, "friend_accepted", f"{current.display_name} принял(а) твою заявку в друзья")
     return {"message": "Друг добавлен!"}
 
 
