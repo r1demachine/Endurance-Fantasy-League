@@ -1,109 +1,105 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 
-interface Activity {
-  name: string;
-  sport: string;
-  date: string;
-  distance_km: number;
-  moving_time_min: number;
-  xp: number;
-  base_xp: number;
-  intensity_multiplier: number;
-  sleep_multiplier?: number;
-  sleep_hours?: number;
+interface Act {
+  name: string; sport: string; distance_km: number; moving_time_min: number;
+  xp: number; base_xp: number; rate_per_hour: number;
+  intensity_multiplier: number; intensity_category: string; intensity_reason: string;
+  sleep_multiplier: number; sleep_hours: number | null;
+  streak_multiplier: number; streak_reason: string; date: string;
 }
 
-export default function ActivityCard({ act }: { act: Activity }) {
-  const [showTooltip, setShowTooltip] = useState(false);
-  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+const CAT_COLOR: Record<string, string> = {
+  LOW: "text-[#16a34a]", MEDIUM: "text-[#5866f2]", HIGH: "text-[#ff4b26]",
+  UNKNOWN: "text-[#999]",
+};
+const nonOne = (v: number) => Math.abs((v ?? 1) - 1) > 0.001;
 
-  const multiplier = act.intensity_multiplier || 1.0;
-  const multiplierColor =
-    multiplier >= 0.7 ? "text-[#ff4b26]" :
-    multiplier >= 0.5 ? "text-black" :
-    multiplier >= 0.3 ? "text-[#666]" : "text-[#5866f2]";
+function Row({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 py-2 border-b border-black/10 last:border-b-0">
+      <div className="min-w-0">
+        <p className="text-[9px] font-bold tracking-widest uppercase text-[#666]">{label}</p>
+        {sub && <p className="text-[10px] text-[#666] mt-0.5 leading-snug">{sub}</p>}
+      </div>
+      <p className={`font-display text-lg shrink-0 ${accent || ""}`}>{value}</p>
+    </div>
+  );
+}
 
-  const multiplierLabel =
-    multiplier >= 0.7 ? "HIGH" :
-    multiplier >= 0.5 ? "MEDIUM" :
-    multiplier >= 0.3 ? "LOW" : "RECOVERY";
-
-  const sleepMult = Number(act.sleep_multiplier ?? 1);
-
-  const handleTouchStart = () => {
-    longPressTimer.current = setTimeout(() => setShowTooltip(true), 500);
-  };
-  const handleTouchEnd = () => {
-    if (longPressTimer.current) clearTimeout(longPressTimer.current);
-    setTimeout(() => setShowTooltip(false), 100);
-  };
-  const handleTouchMove = () => {
-    if (longPressTimer.current) clearTimeout(longPressTimer.current);
-  };
+export default function ActivityCard({ act }: { act: Act }) {
+  const [open, setOpen] = useState(false);
+  const catColor = CAT_COLOR[act.intensity_category] || "text-[#111]";
 
   return (
-    <div
-      className="group relative grid grid-cols-[auto_1fr_auto] items-center gap-0 border-2 border-black bg-white hover:bg-[#5866f2]/10 hover:border-[#5866f2] transition-colors cursor-pointer touch-manipulation"
-      onMouseEnter={() => setShowTooltip(true)}
-      onMouseLeave={() => setShowTooltip(false)}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-      onTouchMove={handleTouchMove}
-    >
-      <div className="w-12 h-12 md:w-14 md:h-14 border-r-2 border-black flex items-center justify-center text-xl md:text-2xl bg-[#f4f4f0]">
-        {act.sport === "RUN" ? "🏃" :
-         act.sport === "RIDE" ? "🚴" :
-         act.sport === "SWIM" ? "🏊" :
-         act.sport === "SKATEBOARD" ? "🛹" : "🏋️"}
-      </div>
-
-      <div className="px-3 md:px-4 py-2 min-w-0">
-        <p className="font-bold uppercase tracking-wide truncate text-sm md:text-base">{act.name}</p>
-        <p className="text-[9px] md:text-[10px] font-bold tracking-widest uppercase text-[#666] mt-0.5">
-          {act.date} · {act.distance_km} km · {act.moving_time_min} min
-        </p>
-      </div>
-
-      <div className="px-3 md:px-4 py-2 border-l-2 border-black text-right bg-[#f4f4f0]">
-        <p className="font-display text-lg md:text-xl text-[#ff4b26]">+{Math.round(act.xp)}</p>
-        <p className="text-[9px] font-bold tracking-widest uppercase text-[#666]">XP</p>
-      </div>
-
-      {/* Tooltip — тёмно-синий (Dream) с чёрной рамкой и BRUT-тенью */}
-      <div
-        className={`absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 transition-all duration-200 pointer-events-none z-30 ${
-          showTooltip ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"
-        }`}
+    <div className="border-b-2 border-black last:border-b-0">
+      {/* строка тренировки */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 text-left hover:bg-black/5 transition-colors"
       >
-        <div className="bg-[#171a38] text-white border-2 border-black p-3 shadow-[4px_4px_0_#000] min-w-[220px] text-sm">
-          <div className="space-y-1.5">
-            <div className="flex justify-between border-b border-white/20 pb-1">
-              <span className="text-[9px] font-bold tracking-widest uppercase text-white/60">Base XP</span>
-              <span className="font-grotesk font-bold">{Math.round(act.base_xp)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[9px] font-bold tracking-widest uppercase text-white/60">Intensity</span>
-              <span className={`font-grotesk font-bold ${multiplierColor}`}>×{multiplier.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[9px] font-bold tracking-widest uppercase text-white/60">Load</span>
-              <span className={`text-[10px] font-bold tracking-widest uppercase ${multiplierColor}`}>{multiplierLabel}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-[9px] font-bold tracking-widest uppercase text-white/60">Sleep</span>
-              <span className="font-grotesk font-bold text-[#f6b8d0]">
-                {act.sleep_hours != null ? `${act.sleep_hours}h ` : ""}×{sleepMult.toFixed(2)}
-              </span>
-            </div>
-            <div className="border-t-2 border-black pt-1.5 flex justify-between">
-              <span className="text-[9px] font-bold tracking-widest uppercase text-white/60">Total</span>
-              <span className="font-display text-[#ffd500]">+{Math.round(act.xp)} XP</span>
-            </div>
-          </div>
+        <div className="min-w-0">
+          <p className="font-bold uppercase tracking-wide text-sm truncate">{act.name}</p>
+          <p className="text-[10px] text-[#666] font-bold tracking-widest uppercase mt-0.5">
+            {act.date} · {act.sport} · {act.distance_km} km · {act.moving_time_min} мин
+          </p>
         </div>
-      </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <span className={`font-display text-xl ${catColor}`}>+{Math.round(act.xp)} XP</span>
+          <span className="text-[#666]">{open ? "▲" : "▼"}</span>
+        </div>
+      </button>
+
+      {/* разбивка */}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4 pt-1 bg-[#f4f4f0] border-t-2 border-black/10">
+              <p className="text-[9px] font-bold tracking-widest uppercase text-[#666] mb-1">XP за тренировку</p>
+              <p className="font-display text-3xl text-[#ff4b26] mb-3">+{Math.round(act.xp)} XP</p>
+
+              <Row
+                label="Длительность"
+                value={`${act.moving_time_min} мин × ${act.rate_per_hour} XP/ч = ${act.base_xp} XP`}
+              />
+              <Row
+                label="Сон"
+                value={`×${act.sleep_multiplier.toFixed(2)}`}
+                sub={act.sleep_hours != null ? `${act.sleep_hours}ч` : "нет данных → ×1.0"}
+                accent={nonOne(act.sleep_multiplier) ? "text-[#5866f2]" : undefined}
+              />
+              <Row
+                label="Интенсивность"
+                value={`${act.intensity_category} → ×${act.intensity_multiplier.toFixed(2)}`}
+                sub={act.intensity_reason}
+                accent={nonOne(act.intensity_multiplier) ? catColor : undefined}
+              />
+              <Row
+                label="Streak"
+                value={`×${act.streak_multiplier.toFixed(2)}`}
+                sub={act.streak_reason}
+                accent={nonOne(act.streak_multiplier) ? "text-[#16a34a]" : undefined}
+              />
+
+              <div className="mt-3 pt-3 border-t-2 border-black">
+                <p className="text-[10px] font-bold tracking-widest uppercase text-[#666]">Итог</p>
+                <p className="font-display text-lg leading-tight mt-1">
+                  {act.base_xp} × {act.sleep_multiplier.toFixed(2)} × {act.intensity_multiplier.toFixed(2)} × {act.streak_multiplier.toFixed(2)} = <span className="text-[#ff4b26]">{Math.round(act.xp)} XP</span>
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

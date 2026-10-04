@@ -4,6 +4,9 @@ from ..dependencies import get_current_user
 from ..auth import decrypt_secret
 from ..database import get_db
 from ..models import User, Activity, Wellness
+from collections import defaultdict
+from ..services.xp import recalculate_timeline, level_from_xp, round_xp
+from datetime import date as _date
 from ..services.intervals import (
     fetch_athlete_activities,
     fetch_athlete_activities_csv,
@@ -111,6 +114,70 @@ def _has_real_data(parsed: dict) -> bool:
         return True
     return False
 
+
+def _recalculate_user_xp(db: Session, user: User) -> None:
+    """Пересчитывает XP ВСЕХ активностей юзера по календарным дням (согласованно)."""
+    acts = (db.query(Activity)
+              .filter(Activity.user_id == user.id)
+              .order_by(Activity.start_date.asc())
+              .all())
+    if not acts:
+        user.total_xp = 0.0
+        user.level = 1
+        return
+
+    # группа по календарной дате
+    by_day: dict[_date, list] = defaultdict(list)
+    for a in acts:
+        d = a.start_date.date() if a.start_date else _date.today()
+        by_day[d].append(a)
+
+    # полный диапазон дат (чтобы считать пропуски)
+    start_d, end_d = min(by_day), max(by_day)
+    day_records = []
+    cur = start_d
+    while cur <= end_d:
+        acts_d = by_day.get(cur, [])
+        # сон для дня: берём sleep_secs первой тренировки дня (уже сохранён при синке)
+        sleep_secs = next((x.sleep_secs for x in acts_d if x.sleep_secs), None)
+        day_records.append({
+            "date": cur,
+            "is_train": bool(acts_d),
+            "sleep_secs": sleep_secs,
+            "activities": [{
+                "id": x.id,
+                "sport_type": x.sport_type,
+                "moving_time": x.moving_time,
+                "intensity": x.intensity,
+                "training_load": x.training_load,
+            } for x in acts_d],
+        })
+        cur += timedelta(days=1)
+
+    recalculate_timeline(day_records)
+
+    # пишем результаты обратно
+    total = 0.0
+    for d in day_records:
+        if not d["is_train"]:
+            continue
+        for ra in d["activities"]:
+            row = db.get(Activity, ra["id"])
+            if not row:
+                continue
+            row.base_xp = ra["base_xp"]
+            row.rate_per_hour = ra["rate_per_hour"]
+            row.sleep_multiplier = ra["sleep_multiplier"]
+            row.intensity_multiplier = ra["intensity_multiplier"]
+            row.intensity_category = ra["intensity_category"]
+            row.intensity_reason = ra["intensity_reason"]
+            row.streak_multiplier = ra["streak_multiplier"]
+            row.streak_reason = ra["streak_reason"]
+            row.xp_earned = ra["xp_earned"]
+            total += ra["xp_earned"]
+
+    user.total_xp = round_xp(total)
+    user.level = level_from_xp(user.total_xp)
 
 async def _sync_wellness_for_user(db, athlete_user, oldest, newest) -> dict:
     """Тянет wellness, пишет в БД, возвращает { 'YYYY-MM-DD': sleep_secs }."""
@@ -268,14 +335,7 @@ async def sync_activities(
         if sleep_secs is None:
             prev = (parsed["start_date"] - timedelta(days=1)).strftime("%Y-%m-%d")
             sleep_secs = sleep_by_date.get(prev)
-        
-        try:
-            s_mult = sleep_multiplier(sleep_secs)
-        except NameError:
-            s_mult = 1.0
-        
-        xp_earned = round(float(parsed["base_xp"]) * float(parsed["intensity_multiplier"]) * float(s_mult), 2)
-        
+
         new_activity = Activity(
             user_id=current.id,
             intervals_activity_id=act_id,
@@ -285,31 +345,34 @@ async def sync_activities(
             moving_time=parsed["moving_time"],
             elevation_gain=parsed["elevation_gain"],
             average_heartrate=parsed.get("average_heartrate") or 0,
-            base_xp=parsed["base_xp"],
-            intensity_multiplier=parsed["intensity_multiplier"],
-            sleep_multiplier=s_mult,
+            training_load=parsed.get("training_load") or 0,
+            intensity=parsed.get("intensity") or 0,
             sleep_secs=sleep_secs,
-            xp_earned=xp_earned,
             start_date=parsed["start_date"],
         )
         db.add(new_activity)
         existing_ids.add(act_id)
-        new_xp += xp_earned
         synced_count += 1
+
+        dist_km = parsed["distance"] / 1000 if parsed["distance"] else 0
+        print(
+            f"✅ {parsed['name']} | {parsed['sport_type']} | "
+            f"{dist_km:.1f}km | {parsed['moving_time'] // 60} мин"
+        )
     
     db.commit()
-    
-    if new_xp > 0:
-        current.total_xp = float(current.total_xp or 0) + new_xp
-        current.level = int((current.total_xp / 100) ** 0.5) + 1
-        db.commit()
-        db.refresh(current)
-    
+
+    total_before = float(current.total_xp or 0)
+    _recalculate_user_xp(db, current)
+    db.commit()
+    db.refresh(current)
+    new_xp = round(float(current.total_xp or 0) - total_before, 2)
+
     return {
         "message": "Синхронизация успешна!",
         "synced_count": synced_count,
         "skipped_empty": skipped_empty,
-        "new_xp": round(new_xp, 2),
+        "new_xp": new_xp,
         "user": {
             "id": current.id,
             "name": current.display_name,
@@ -389,16 +452,22 @@ async def get_user_profile(
         "season_stats": season_stats,
         "recent_activities": [
             {
+                "id": act.id,
                 "name": act.name,
                 "sport": act.sport_type,
-                "distance_km": round(act.distance / 1000, 2) if act.distance else 0,
-                "moving_time_min": act.moving_time // 60 if act.moving_time else 0,
+                "distance_km": round((act.distance or 0) / 1000, 2),
+                "moving_time_min": (act.moving_time or 0) // 60,
                 "xp": act.xp_earned,
-                "base_xp": act.base_xp if act.base_xp else 0,
-                "intensity_multiplier": act.intensity_multiplier if act.intensity_multiplier else 1.0,
-                "sleep_multiplier": act.sleep_multiplier if act.sleep_multiplier else 1.0,
+                "base_xp": act.base_xp or 0,
+                "rate_per_hour": act.rate_per_hour or 0,
+                "intensity_multiplier": act.intensity_multiplier or 1.0,
+                "intensity_category": act.intensity_category or "MEDIUM",
+                "intensity_reason": act.intensity_reason or "",
+                "sleep_multiplier": act.sleep_multiplier or 1.0,
                 "sleep_hours": round(act.sleep_secs / 3600, 1) if act.sleep_secs else None,
-                "date": act.start_date.strftime("%d.%m.%Y") if act.start_date else "Неизвестно"
+                "streak_multiplier": act.streak_multiplier or 1.0,
+                "streak_reason": act.streak_reason or "",
+                "date": act.start_date.strftime("%d.%m.%Y") if act.start_date else "Неизвестно",
             }
             for act in activities
         ]
@@ -538,11 +607,7 @@ async def sync_wellness(
 
         db.commit()
 
-        if new_xp > 0:
-            user.total_xp += new_xp
-            user.level = int((user.total_xp / 100) ** 0.5) + 1
-            db.commit()
-            db.refresh(user)
+        
 
         return {
             "message": "Wellness синхронизирован",
@@ -685,3 +750,5 @@ async def leaderboard(
             for i, u in enumerate(users)
         ],
     }
+
+

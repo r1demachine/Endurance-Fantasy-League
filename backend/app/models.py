@@ -71,6 +71,11 @@ class Activity(Base):
     xp_earned = Column(Float, default=0)
     base_xp = Column(Float, default=0)
     intensity_multiplier = Column(Float, default=1.0)
+    intensity_category = Column(String, nullable=True)      # LOW | MEDIUM | HIGH
+    intensity_reason = Column(String, nullable=True)        # текст для Activity Card
+    streak_multiplier = Column(Float, default=1.0)          # множитель дневного streak
+    streak_reason = Column(String, nullable=True)           # текст для Activity Card
+    rate_per_hour = Column(Float, default=0.0)              # ставка XP/ч (для разбивки)
     
     start_date = Column(DateTime)
     start_date_local = Column(DateTime, nullable=True)

@@ -43,14 +43,31 @@ function XpTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div className="bg-[#171a38] text-white border-2 border-black p-3 shadow-[4px_4px_0_#000] text-sm min-w-[180px]">
+    <div className="bg-[#c7d2fe] text-[#111] border-2 border-black p-3 shadow-[4px_4px_0_#000] text-sm min-w-[200px]">
       <p className="font-display uppercase text-base mb-1">{d.name}</p>
-      <Label className="text-white/60 mb-2">{d.date} · {d.sport} · {d.distance} km</Label>
-      <p className="font-display text-xl text-[#ffd500]">+{d.xp} XP</p>
-      <Label className="text-white/60 mt-1">IF ×{Number(d.intensityMult).toFixed(2)} · Sleep ×{Number(d.sleepMult).toFixed(2)}</Label>
+      <p className="text-[9px] font-bold tracking-widest uppercase text-[#4b5563] mb-2">
+        {d.date} · {d.sport} · {d.distance} km
+      </p>
+      <div className="flex justify-between gap-4"><span className="text-[#4b5563] font-bold uppercase text-[10px]">Base XP</span><span className="font-display">{d.base_xp}</span></div>
+      <div className="flex justify-between gap-4"><span className="text-[#4b5563] font-bold uppercase text-[10px]">Intensity</span><span className="font-display text-[#ff4b26]">{d.intensity_category} ×{Number(d.intensityMult).toFixed(2)}</span></div>
+      <div className="flex justify-between gap-4"><span className="text-[#4b5563] font-bold uppercase text-[10px]">Sleep</span><span className="font-display">×{Number(d.sleepMult).toFixed(2)}</span></div>
+      <div className="flex justify-between gap-4"><span className="text-[#4b5563] font-bold uppercase text-[10px]">Streak</span><span className="font-display text-[#16a34a]">×{Number(d.streakMult ?? 1).toFixed(2)}</span></div>
+      <div className="flex justify-between gap-4 mt-1 pt-1 border-t border-black/20"><span className="font-bold uppercase text-[10px]">Total</span><span className="font-display text-[#171a38]">+{d.xp} XP</span></div>
     </div>
   );
 }
+
+function useIsTouch() {
+  const [touch, setTouch] = useState(false);
+  useEffect(() => {
+    setTouch(
+      typeof window !== "undefined" &&
+      (!!window.matchMedia?.("(pointer: coarse)").matches || "ontouchstart" in window)
+    );
+  }, []);
+
+}
+ 
 
 export default function Dashboard() {
   const [userData, setUserData] = useState<any>(null);
@@ -60,6 +77,7 @@ export default function Dashboard() {
   const [globalBoard, setGlobalBoard] = useState<any[]>([]);
   const [friendsBoard, setFriendsBoard] = useState<any[]>([]);
   const [boardsLoaded, setBoardsLoaded] = useState(false);
+  const isTouch = useIsTouch();
 
   useEffect(() => {
     const cached = getCachedUser();
@@ -111,6 +129,9 @@ export default function Dashboard() {
       distance: act.distance_km ?? 0,
       sleepMult: act.sleep_multiplier ?? 1,
       intensityMult: act.intensity_multiplier ?? 1,
+      base_xp: act.base_xp ?? 0,
+      intensity_category: act.intensity_category ?? "MEDIUM",
+      streakMult: act.streak_multiplier ?? 1,
     }));
 
   const xpProgress = isEmpty ? 0 : (data.user.total_xp % 100);
@@ -345,7 +366,11 @@ export default function Dashboard() {
                       <CartesianGrid strokeDasharray="3 3" stroke="#00000015" />
                       <XAxis dataKey="date" tick={{ fill: "#666", fontSize: 10 }} axisLine={{ stroke: "#000" }} tickLine={false} />
                       <YAxis tick={{ fill: "#666", fontSize: 10 }} axisLine={false} tickLine={false} width={36} />
-                      <Tooltip content={<XpTooltip />} cursor={{ stroke: "#5866f2", strokeWidth: 1 }} />
+                      <Tooltip
+                        content={<XpTooltip />}
+                        trigger={isTouch ? "click" : "hover"}
+                        cursor={isTouch ? false : { stroke: "#5866f2", strokeWidth: 1 }}
+                      />
                       <Area type="monotone" dataKey="xp" stroke="#ff4b26" strokeWidth={2.5} fill="url(#xpFill)"
                         activeDot={{ r: 5, fill: "#171a38", stroke: "#ffd500", strokeWidth: 2 }} />
                     </AreaChart>

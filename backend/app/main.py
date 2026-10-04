@@ -11,23 +11,49 @@ Base.metadata.create_all(bind=engine)
 
 # Автоматическая миграция при старте (добавляет колонки если их нет)
 from sqlalchemy import text, inspect
-with engine.begin() as conn:
-    inspector = inspect(engine)
-    cols = [c["name"] for c in inspector.get_columns("users")]
-    
-    if "username" not in cols:
-        conn.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR(64)"))
-    if "password_hash" not in cols:
-        conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)"))
-    if "display_name" not in cols:
-        conn.execute(text("ALTER TABLE users ADD COLUMN display_name VARCHAR(100)"))
-    if "api_key_encrypted" not in cols:
-        conn.execute(text("ALTER TABLE users ADD COLUMN api_key_encrypted VARCHAR(500)"))
-    
-    conn.execute(text("ALTER TABLE users ALTER COLUMN intervals_id DROP NOT NULL"))
-    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)"))
+try:
+    with engine.begin() as conn:
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
 
-print("✅ Auto-migration complete")
+        # ── users ─
+        if "users" in tables:
+            cols = [c["name"] for c in inspector.get_columns("users")]
+            if "username" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR(64)"))
+            if "password_hash" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)"))
+            if "display_name" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN display_name VARCHAR(100)"))
+            if "api_key_encrypted" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN api_key_encrypted VARCHAR(500)"))
+            conn.execute(text("ALTER TABLE users ALTER COLUMN intervals_id DROP NOT NULL"))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)"))
+
+        # ── activities (новая XP-система v5.0) ──
+        if "activities" in tables:
+            acols = [c["name"] for c in inspector.get_columns("activities")]
+            if "intensity_category" not in acols:
+                conn.execute(text("ALTER TABLE activities ADD COLUMN intensity_category VARCHAR"))
+            if "intensity_reason" not in acols:
+                conn.execute(text("ALTER TABLE activities ADD COLUMN intensity_reason VARCHAR"))
+            if "streak_multiplier" not in acols:
+                conn.execute(text("ALTER TABLE activities ADD COLUMN streak_multiplier FLOAT DEFAULT 1.0"))
+            if "streak_reason" not in acols:
+                conn.execute(text("ALTER TABLE activities ADD COLUMN streak_reason VARCHAR"))
+            if "rate_per_hour" not in acols:
+                conn.execute(text("ALTER TABLE activities ADD COLUMN rate_per_hour FLOAT DEFAULT 0.0"))
+
+        # ── notifications (живые уведомления v4.2) ──
+        # таблица создаётся через create_all, но на всякий случай проверяем колонку read
+        if "notifications" in tables:
+            ncols = [c["name"] for c in inspector.get_columns("notifications")]
+            if "read" not in ncols:
+                conn.execute(text("ALTER TABLE notifications ADD COLUMN read BOOLEAN DEFAULT FALSE"))
+
+    print("✅ Auto-migration complete (users + activities + notifications)")
+except Exception as e:
+    print(f"⚠️ Auto-migration warning: {type(e).__name__}: {e}")
 
 app = FastAPI(
     title="Fantasy League for Endurance Athletes",
