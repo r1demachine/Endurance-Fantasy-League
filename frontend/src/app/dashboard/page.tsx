@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import axios from "axios";
@@ -57,21 +57,21 @@ function XpTooltip({ active, payload }: any) {
   );
 }
 
-/* Тач-устройство + режим отображения тултипа */
-function useTooltipTrigger(): { isTouch: boolean; trigger: "hover" | "click" } {
-  const [state, setState] = useState<{ isTouch: boolean; trigger: "hover" | "click" }>({
-    isTouch: false,
-    trigger: "hover",
-  });
+function useIsTouch() {
+  const [touch, setTouch] = useState(false);
+
   useEffect(() => {
-    const isTouch =
+    setTouch(
       typeof window !== "undefined" &&
-      (!!window.matchMedia?.("(pointer: coarse)").matches || "ontouchstart" in window);
-    // На тач-устройствах Recharts использует click → но мы эмулируем long-press через CSS/JS ниже.
-    // Пока оставляем standard behavior: click по точке показывает тултип до следующего клика вне него.
-    setState({ isTouch, trigger: isTouch ? "click" : "hover" });
+        (
+          window.matchMedia?.("(pointer: coarse)").matches ||
+          window.matchMedia?.("(hover: none)").matches ||
+          "ontouchstart" in window
+        )
+    );
   }, []);
-  return state;
+
+  return touch;
 }
  
 
@@ -83,7 +83,51 @@ export default function Dashboard() {
   const [globalBoard, setGlobalBoard] = useState<any[]>([]);
   const [friendsBoard, setFriendsBoard] = useState<any[]>([]);
   const [boardsLoaded, setBoardsLoaded] = useState(false);
-  const { isTouch, trigger } = useTooltipTrigger();
+  const isTouch = useIsTouch();
+  const [touchTooltipActive, setTouchTooltipActive] = useState(false);
+
+  const touchStartRef = useRef<{
+    time: number;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const TOUCH_HOLD_MS = 250;
+
+  const handleChartTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+
+    touchStartRef.current = {
+      time: Date.now(),
+      x: touch.clientX,
+      y: touch.clientY,
+    };
+
+    setTouchTooltipActive(false);
+  };
+
+  const handleChartTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+
+    const touch = e.touches[0];
+
+    const elapsed = Date.now() - touchStartRef.current.time;
+    const dx = Math.abs(touch.clientX - touchStartRef.current.x);
+    const dy = Math.abs(touch.clientY - touchStartRef.current.y);
+
+    // Не показываем карточку от обычного быстрого свайпа/тапа.
+    if (
+      elapsed >= TOUCH_HOLD_MS &&
+      (dx > 4 || dy > 4)
+    ) {
+      setTouchTooltipActive(true);
+    }
+  };
+
+  const handleChartTouchEnd = () => {
+    touchStartRef.current = null;
+    setTouchTooltipActive(false);
+  };
 
   useEffect(() => {
     const cached = getCachedUser();
@@ -363,7 +407,14 @@ export default function Dashboard() {
                 </div>
                 <div className="h-64 w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <AreaChart
+                      data={chartData}
+                      margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                      onTouchStart={isTouch ? handleChartTouchStart : undefined}
+                      onTouchMove={isTouch ? handleChartTouchMove : undefined}
+                      onTouchEnd={isTouch ? handleChartTouchEnd : undefined}
+                      onTouchCancel={isTouch ? handleChartTouchEnd : undefined}
+                    >
                       <defs>
                         <linearGradient id="xpFill" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor="#ff4b26" stopOpacity={0.3} />
@@ -375,8 +426,15 @@ export default function Dashboard() {
                       <YAxis tick={{ fill: "#666", fontSize: 10 }} axisLine={false} tickLine={false} width={36} />
                       <Tooltip
                         content={<XpTooltip />}
-                        trigger={isTouch ? "click" : "hover"}
-                        cursor={isTouch ? false : { stroke: "#5866f2", strokeWidth: 1 }}
+                        trigger="hover"
+                        active={isTouch ? touchTooltipActive : undefined}
+                        cursor={
+                          isTouch
+                            ? touchTooltipActive
+                              ? { stroke: "#5866f2", strokeWidth: 1 }
+                              : false
+                            : { stroke: "#5866f2", strokeWidth: 1 }
+                        }
                       />
                       <Area type="monotone" dataKey="xp" stroke="#ff4b26" strokeWidth={2.5} fill="url(#xpFill)"
                         activeDot={{ r: 5, fill: "#171a38", stroke: "#ffd500", strokeWidth: 2 }} />
