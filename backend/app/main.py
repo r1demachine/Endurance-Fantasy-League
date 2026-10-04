@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base
 from .config import get_settings
-from .routers import sync, auth, intervals_key
+from .routers import sync, auth, intervals_key, friends
 
 Base.metadata.create_all(bind=engine)
 
@@ -53,6 +53,7 @@ app.add_middleware(
 app.include_router(sync.router)
 app.include_router(auth.router)
 app.include_router(intervals_key.router)
+app.include_router(friends.router)
 
 from .routers import admin
 app.include_router(admin.router)
