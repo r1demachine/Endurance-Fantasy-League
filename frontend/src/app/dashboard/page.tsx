@@ -65,7 +65,7 @@ function useIsTouch() {
       (!!window.matchMedia?.("(pointer: coarse)").matches || "ontouchstart" in window)
     );
   }, []);
-
+  return touch;
 }
  
 
