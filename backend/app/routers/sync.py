@@ -640,19 +640,28 @@ async def leaderboard(
             .limit(limit)
             .all()
         )
+ 
     else:
-        # друзья = accepted с обеих сторон
+        # друзья = accepted с обеих сторон; нет друзей → пустой рейтинг
         from ..models import Friendship, FriendshipStatus
-        friend_ids_rows = db.query(Friendship.to_user_id).filter(
-            Friendship.from_user_id == current.id,
-            Friendship.status == FriendshipStatus.ACCEPTED,
-        ).union(
-            db.query(Friendship.from_user_id).filter(
-                Friendship.to_user_id == current.id,
+        friend_ids_rows = (
+            db.query(Friendship.to_user_id)
+            .filter(
+                Friendship.from_user_id == current.id,
                 Friendship.status == FriendshipStatus.ACCEPTED,
             )
-        ).all()
-        friend_ids = {r[0] for r in friend_ids_rows} | {current.id}
+            .union(
+                db.query(Friendship.from_user_id).filter(
+                    Friendship.to_user_id == current.id,
+                    Friendship.status == FriendshipStatus.ACCEPTED,
+                )
+            )
+            .all()
+        )
+        friend_ids = {r[0] for r in friend_ids_rows}
+        if not friend_ids:
+            return {"scope": scope, "entries": []}
+        friend_ids.add(current.id)
         users = (
             db.query(User)
             .filter(User.id.in_(friend_ids))

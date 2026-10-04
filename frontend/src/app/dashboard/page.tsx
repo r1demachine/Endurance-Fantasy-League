@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import axios from "axios";
 import { getCachedUser, subscribeUser, refreshUser } from "@/lib/apiCache";
+import { authApi, isAuthenticated } from "@/lib/auth";
 import type { ReactNode } from "react";
 import ActivityCard from "@/components/ActivityCard";
 import { Star, Sticker, DreamDecor } from "@/components/DreamBits";
@@ -56,6 +57,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [leaderboardTab, setLeaderboardTab] = useState<"global" | "friends">("global");
   const [inviteMessage, setInviteMessage] = useState("");
+  const [globalBoard, setGlobalBoard] = useState<any[]>([]);
+  const [friendsBoard, setFriendsBoard] = useState<any[]>([]);
+  const [boardsLoaded, setBoardsLoaded] = useState(false);
 
   useEffect(() => {
     const cached = getCachedUser();
@@ -63,6 +67,22 @@ export default function Dashboard() {
     const unsub = subscribeUser(setUserData);               // живые обновления
     refreshUser();                                          // фон: прогреть/освежить
     return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated()) return;
+    (async () => {
+      try {
+        const [g, f] = await Promise.all([
+          authApi.get("/api/leaderboard", { params: { scope: "global" } }),
+          authApi.get("/api/leaderboard", { params: { scope: "friends" } }),
+        ]);
+        setGlobalBoard(g.data.entries || []);
+        setFriendsBoard(f.data.entries || []);
+      } catch {} finally {
+        setBoardsLoaded(true);
+      }
+    })();
   }, []);
 
   if (loading) {
@@ -105,19 +125,7 @@ export default function Dashboard() {
     setTimeout(() => setInviteMessage(""), 3000);
   };
 
-  const globalLeaderboard = [
-    { name: "Alex Cyclist", level: 12, xp: 14500, isYou: false },
-    { name: "Maria Runner", level: 9, xp: 8200, isYou: false },
-    { name: data.user.name, level: data.user.level, xp: Math.round(data.user.total_xp), isYou: true },
-    { name: "Ivan Swimmer", level: 5, xp: 2100, isYou: false },
-  ].sort((a, b) => b.xp - a.xp).map((p, i) => ({ ...p, rank: i + 1 }));
-
-  const friendsLeaderboard = [
-    { name: "Sergey Skater", level: 4, xp: 1800, isYou: false },
-    { name: data.user.name, level: data.user.level, xp: Math.round(data.user.total_xp), isYou: true },
-    { name: "Max Runner", level: 3, xp: 950, isYou: false },
-    { name: "Olya Swimmer", level: 2, xp: 400, isYou: false },
-  ].sort((a, b) => b.xp - a.xp).map((p, i) => ({ ...p, rank: i + 1 }));
+  const rows = leaderboardTab === "global" ? globalBoard : friendsBoard;
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] px-2 sm:px-4 md:px-6 pb-2 sm:pb-4 md:pb-6 text-[#111] relative overflow-hidden flex flex-col">
@@ -251,27 +259,41 @@ export default function Dashboard() {
               </div>
 
               <div>
-                {(leaderboardTab === "global" ? globalLeaderboard : friendsLeaderboard).map((player, idx) => (
-                  <div
-                    key={player.name}
-                    className={`flex justify-between items-center px-4 py-3 ${
-                      idx > 0 ? "border-t border-black/20" : ""
-                    } ${player.isYou ? "bg-[#5866f2]/15 border-l-4 border-l-[#5866f2]" : "hover:bg-black/5"} transition-colors`}
-                  >
-                    <div className="flex items-center gap-3 md:gap-4">
-                      <span className={`font-display text-lg w-8 ${player.rank <= 3 ? "text-[#ff4b26]" : "text-[#999]"}`}>
-                        {String(player.rank).padStart(2, "0")}
-                      </span>
-                      <div>
-                        <p className={`font-bold uppercase tracking-wide text-sm ${player.isYou ? "text-[#5866f2]" : ""}`}>
-                          {player.name} {player.isYou && "(YOU)"}
-                        </p>
-                        <Label className="text-[#666]">LVL {player.level}</Label>
+                {!boardsLoaded ? (
+                  <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-6">
+                    Loading rating...
+                  </p>
+                ) : rows.length === 0 ? (
+                  <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-6">
+                    {leaderboardTab === "friends"
+                      ? "No friends yet — find athletes in your profile 👥"
+                      : "Be the first on the leaderboard! 🏆"}
+                  </p>
+                ) : (
+                  rows.map((player, idx) => (
+                    <div
+                      key={player.id}
+                      className={`flex justify-between items-center px-4 py-3 ${
+                        idx > 0 ? "border-t border-black/20" : ""
+                      } ${player.is_you ? "bg-[#5866f2]/15 border-l-4 border-l-[#5866f2]" : "hover:bg-black/5"} transition-colors`}
+                    >
+                      <div className="flex items-center gap-3 md:gap-4">
+                        <span className={`font-display text-lg w-8 ${player.rank <= 3 ? "text-[#ff4b26]" : "text-[#999]"}`}>
+                          {String(player.rank).padStart(2, "0")}
+                        </span>
+                        <div>
+                          <p className={`font-bold uppercase tracking-wide text-sm ${player.is_you ? "text-[#5866f2]" : ""}`}>
+                            {player.display_name} {player.is_you && "(YOU)"}
+                          </p>
+                          <Label className="text-[#666]">LVL {player.level}</Label>
+                        </div>
                       </div>
+                      <span className="font-display text-[#ff4b26]">
+                        {Math.round(player.total_xp).toLocaleString()}
+                      </span>
                     </div>
-                    <span className="font-display text-[#ff4b26]">{player.xp.toLocaleString()}</span>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
 
               {leaderboardTab === "friends" && (
@@ -289,7 +311,7 @@ export default function Dashboard() {
               )}
 
               <Label className="text-[#999] text-center py-3 border-t border-black/20">
-                * Full version = real data of all athletes
+                * Live rating · real athletes data
               </Label>
             </div>
           </div>
