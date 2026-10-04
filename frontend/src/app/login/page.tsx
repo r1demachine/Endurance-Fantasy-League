@@ -32,7 +32,7 @@ export default function LoginPage() {
 
       const res = await authApi.post(endpoint, payload);
       setToken(res.data.access_token, res.data.user);
-      router.push("/dashboard");
+      router.push("/profile");
     } catch (err: any) {
       const msg =
         err.response?.data?.detail ||

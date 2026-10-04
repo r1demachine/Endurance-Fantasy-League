@@ -65,7 +65,7 @@ export default function Dashboard() {
     const cached = getCachedUser();
     if (cached) { setUserData(cached); setLoading(false); } // мгновенно из кэша
     const unsub = subscribeUser(setUserData);               // живые обновления
-    refreshUser();                                          // фон: прогреть/освежить
+    refreshUser().finally(() => setLoading(false));         // фон: прогреть/освежить
     return unsub;
   }, []);
 
