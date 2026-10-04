@@ -420,7 +420,6 @@ export default function Dashboard() {
                       onTouchStart={isTouch ? handleChartTouchStart : undefined}
                       onTouchMove={isTouch ? handleChartTouchMove : undefined}
                       onTouchEnd={isTouch ? handleChartTouchEnd : undefined}
-                      onTouchCancel={isTouch ? handleChartTouchEnd : undefined}
                     >
                       <defs>
                         <linearGradient id="xpFill" x1="0" y1="0" x2="0" y2="1">
