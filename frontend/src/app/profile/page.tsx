@@ -7,7 +7,7 @@ import { authApi } from "@/lib/auth";
 import { getCachedUser, subscribeUser, refreshUser, clearUserCache } from "@/lib/apiCache";
 import type { ReactNode } from "react";
 import { Star, Sticker, DreamBubble } from "@/components/DreamBits";
-import IntervalsKeyForm from "@/components/IntervalsKeyForm";
+import ConnectSources from "@/components/ConnectSources";
 
 
 
@@ -185,8 +185,7 @@ export default function Profile() {
               <div>
                 <p className="font-display uppercase text-xl md:text-2xl tracking-tight leading-none">Connect</p>
                 <div className="h-0.5 bg-black mt-3 mb-4"></div>
-                <p className="block text-white/80 text-[10px] font-bold tracking-widest uppercase">Intervals.icu</p>
-              </div>
+                <p className="block text-white/80 text-[10px] font-bold tracking-widest uppercase">Strava · Garmin · Intervals</p>              </div>
               <span className="font-display text-4xl mt-auto">↓</span>
             </div>
             <div>
@@ -196,21 +195,11 @@ export default function Profile() {
                 </div>
               </div>
               <div className="p-5 md:p-6">
-                <IntervalsKeyForm
+                <ConnectSources
                   hasKey={userData?.user?.has_intervals_key ?? false}
                   athleteId={userData?.user?.intervals_id ?? null}
+                  onMessage={setMessage}
                 />
-                <div className="mt-6 pt-5 border-t-2 border-black/10">
-                  <p className="text-[10px] font-bold tracking-widest uppercase text-[#666] mb-2">
-                    ⚡ How to get your key
-                  </p>
-                  <ol className="text-sm text-[#333] space-y-1 list-decimal list-inside">
-                    <li>Open <a href="https://intervals.icu" target="_blank" rel="noopener" className="text-[#5866f2] font-bold underline">intervals.icu</a></li>
-                    <li>Go to <b>Settings → API</b></li>
-                    <li>Copy your API key and your athlete ID (looks like iXXXXX)</li>
-                    <li>Paste both above and hit Connect</li>
-                  </ol>
-                </div>
               </div>
             </div>
           </div>
