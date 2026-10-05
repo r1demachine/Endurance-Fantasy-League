@@ -234,6 +234,7 @@ function ListModal({ onClose, onChanged }: { onClose: () => void; onChanged: () 
                 <PersonRow
                   key={p.id}
                   p={p}
+                  href={`/u/${p.username}`}
                   action={
                     <span className="flex gap-1 shrink-0">
                       <button onClick={() => accept(p)} className="px-2 py-2 bg-[#ffd500] border-2 border-black text-[9px] font-bold tracking-widest uppercase hover:bg-black hover:text-white">✓</button>

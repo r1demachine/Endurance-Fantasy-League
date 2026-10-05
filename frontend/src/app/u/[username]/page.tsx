@@ -101,6 +101,20 @@ export default function PublicProfilePage() {
     }
   };
 
+  const removeFriendship = async () => {
+    setBusy(true);
+    try {
+      await authApi.post("/api/friends/remove", { friendship_id: friendshipId });
+      setRelation(null);
+      setFriendshipId(null);
+      flash("Заявка удалена");
+    } catch {
+      flash("Ошибка удаления");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const loadMore = async () => {
     setLoadingMore(true);
     try {
@@ -192,34 +206,63 @@ export default function PublicProfilePage() {
               </div>
               <Label className="text-[#666] mt-3">@{u.username}</Label>
 
-              {/* ── Кнопка дружбы ── */}
+              {/* ── Кнопки дружбы ── */}
               {!u.is_you && isAuthenticated() && (
                 <div className="mt-4">
-                  {relation === "friends" ? (
-                    <span className="inline-block px-5 py-3 bg-[#16a34a] text-white text-[11px] font-bold tracking-widest uppercase">
-                      Friends ✓
-                    </span>
-                  ) : relation === "sent" ? (
-                    <span className="inline-block px-5 py-3 border-2 border-black/30 text-[#666] text-[11px] font-bold tracking-widest uppercase">
-                      Requested
-                    </span>
-                  ) : relation === "incoming" ? (
-                    <button
-                      onClick={acceptFriend}
-                      disabled={busy}
-                      className="px-5 py-3 bg-[#ffd500] border-2 border-black text-[11px] font-bold tracking-widest uppercase hover:bg-black hover:text-white transition-colors disabled:opacity-50"
-                    >
-                      {busy ? "..." : "Accept ✓"}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={addFriend}
-                      disabled={busy}
-                      className="px-5 py-3 bg-[#ff4b26] text-white text-[11px] font-bold tracking-widest uppercase hover:bg-[#5866f2] transition-colors disabled:opacity-50"
-                    >
-                      {busy ? "..." : "+ Add friend"}
-                    </button>
-                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {relation === "friends" ? (
+                      <>
+                        <span className="inline-block px-5 py-3 bg-[#16a34a] text-white text-[11px] font-bold tracking-widest uppercase">
+                          Friends ✓
+                        </span>
+                        <button
+                          onClick={removeFriendship}
+                          disabled={busy}
+                          className="px-4 py-3 bg-white border-2 border-black text-[11px] font-bold tracking-widest uppercase hover:bg-[#ff4b26] hover:text-white transition-colors disabled:opacity-50"
+                        >
+                          Unfriend ✕
+                        </button>
+                      </>
+                    ) : relation === "sent" ? (
+                      <>
+                        <span className="inline-block px-5 py-3 border-2 border-black/30 text-[#666] text-[11px] font-bold tracking-widest uppercase">
+                          Requested
+                        </span>
+                        <button
+                          onClick={removeFriendship}
+                          disabled={busy}
+                          className="px-4 py-3 bg-white border-2 border-black text-[11px] font-bold tracking-widest uppercase hover:bg-[#ff4b26] hover:text-white transition-colors disabled:opacity-50"
+                        >
+                          Cancel ✕
+                        </button>
+                      </>
+                    ) : relation === "incoming" ? (
+                      <>
+                        <button
+                          onClick={acceptFriend}
+                          disabled={busy}
+                          className="px-5 py-3 bg-[#ffd500] border-2 border-black text-[11px] font-bold tracking-widest uppercase hover:bg-black hover:text-white transition-colors disabled:opacity-50"
+                        >
+                          {busy ? "..." : "Accept ✓"}
+                        </button>
+                        <button
+                          onClick={removeFriendship}
+                          disabled={busy}
+                          className="px-4 py-3 bg-white border-2 border-black text-[11px] font-bold tracking-widest uppercase hover:bg-[#ff4b26] hover:text-white transition-colors disabled:opacity-50"
+                        >
+                          Reject ✕
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={addFriend}
+                        disabled={busy}
+                        className="px-5 py-3 bg-[#ff4b26] text-white text-[11px] font-bold tracking-widest uppercase hover:bg-[#5866f2] transition-colors disabled:opacity-50"
+                      >
+                        {busy ? "..." : "+ Add friend"}
+                      </button>
+                    )}
+                  </div>
                   {msg && <p className="text-[10px] font-bold text-[#5866f2] mt-2">{msg}</p>}
                 </div>
               )}

@@ -172,3 +172,20 @@ def reject_friend(data: IdIn, current: User = Depends(get_current_user), db: Ses
     db.delete(r)
     db.commit()
     return {"message": "Заявка отклонена"}
+
+@router.post("/remove")
+async def remove_friendship(
+    payload: dict,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Универсально: разорвать дружбу / отменить свою заявку / отклонить входящую."""
+    fid = int(payload.get("friendship_id") or 0)
+    rel = db.query(Friendship).filter(Friendship.id == fid).first()
+    if not rel:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    if rel.from_user_id != current.id and rel.to_user_id != current.id:
+        raise HTTPException(status_code=403, detail="Это не твоя заявка")
+    db.delete(rel)
+    db.commit()
+    return {"message": "Заявка удалена", "status": "none"}

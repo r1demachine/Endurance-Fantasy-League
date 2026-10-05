@@ -5,7 +5,8 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { clearAuth } from "@/lib/auth";
-import { authApi } from "@/lib/auth";
+import { authApi, isAuthenticated } from "@/lib/auth";
+
 import { getCachedUser, subscribeUser, refreshUser, clearUserCache } from "@/lib/apiCache";
 import type { ReactNode } from "react";
 import { Star, Sticker, DreamBubble } from "@/components/DreamBits";
@@ -44,6 +45,7 @@ export default function Profile() {
   const [syncing, setSyncing] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+  const [friendsCount, setFriendsCount] = useState<number>(0);
 
   useEffect(() => {
     const cached = getCachedUser();
@@ -51,6 +53,13 @@ export default function Profile() {
     const unsub = subscribeUser(setUserData);
     refreshUser();
     return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated()) return;
+    authApi.get("/api/friends")
+      .then((r) => setFriendsCount(r.data.friends?.length ?? 0))
+      .catch(() => {});
   }, []);
 
 
@@ -153,6 +162,9 @@ export default function Profile() {
                   </span>
                   <span className="px-3 py-1 bg-[#ff4b26] text-white text-[10px] font-bold tracking-widest uppercase">
                     {Math.round(userData ? userData.user.total_xp : 0)} XP
+                  </span>
+                  <span className="px-2 py-1 bg-[#16a34a] text-white text-[10px] font-bold tracking-widest uppercase">
+                    {friendsCount} friends
                   </span>
                 </div>
               </div>

@@ -9,6 +9,7 @@ import {
   markAllRead,
   startNotificationStream,
   subscribeNotifications,
+  stopNotificationStream,
   type Notif,
 } from "@/lib/notifications";
 
@@ -39,7 +40,8 @@ export default function NotificationBell({ variant }: { variant: "top" | "bottom
   }, []);
   useEffect(() => subscribeNotifications(() => force((x) => x + 1)), []);
   useEffect(() => {
-    if (mounted) startNotificationStream();
+    if (mounted && isAuthenticated()) startNotificationStream();
+    else stopNotificationStream();
   }, [mounted]);
 
   if (!mounted || !isAuthenticated()) return null;

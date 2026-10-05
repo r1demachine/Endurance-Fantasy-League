@@ -10,7 +10,10 @@ export interface Notif {
 
 let items: Notif[] = [];
 let unread = 0;
-let started = false;
+
+let es: EventSource | null = null;
+let streamToken: string | null = null;
+let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
@@ -39,13 +42,32 @@ export async function markAllRead() {
   loadNotifications();
 }
 
-/** SSE-поток: живые обновления без перезагрузки страницы. */
+/** SSE-поток. Перезапускается, если сменился юзер (токен). */
 export function startNotificationStream() {
-  if (started || !isAuthenticated()) return;
-  started = true;
+  const token = getToken();
+  if (!isAuthenticated() || !token) {
+    stopNotificationStream();
+    return;
+  }
+  if (es && streamToken === token) return; // уже течёт для этого юзера
+
+  // сменился юзер — убиваем старый стрим с чужим токеном
+  if (es) { es.close(); es = null; }
+  streamToken = token;
 
   const base = authApi.defaults.baseURL || "http://localhost:8000";
-  const es = new EventSource(`${base}/api/notifications/stream?token=${getToken()}`);
+  es = new EventSource(`${base}/api/notifications/stream?token=${token}`);
   es.onmessage = () => loadNotifications();
+
+  // страховка: поллинг раз в 15 сек, если SSE отвалится
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(loadNotifications, 15000);
+
   loadNotifications();
+}
+
+export function stopNotificationStream() {
+  if (es) { es.close(); es = null; }
+  streamToken = null;
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
