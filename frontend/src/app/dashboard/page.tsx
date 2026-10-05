@@ -213,6 +213,7 @@ export default function Dashboard() {
   const [globalBoard, setGlobalBoard] = useState<any[]>([]);
   const [friendsBoard, setFriendsBoard] = useState<any[]>([]);
   const [boardsLoaded, setBoardsLoaded] = useState(false);
+  const [isAuthed, setIsAuthed] = useState(false);
   const isTouch = useIsTouch();
   const [touchTooltipActive, setTouchTooltipActive] = useState(false);
   const [cursorY, setCursorY] = useState<number>(0);
@@ -284,18 +285,22 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated()) return;
+    setIsAuthed(isAuthenticated());
+  }, []);
+
+  useEffect(() => {
     (async () => {
       try {
-        const [g, f] = await Promise.all([
-          authApi.get("/api/leaderboard", { params: { scope: "global" } }),
-          authApi.get("/api/leaderboard", { params: { scope: "friends" } }),
-        ]);
+        const g = await authApi.get("/api/leaderboard", { params: { scope: "global" } });
         setGlobalBoard(g.data.entries || []);
-        setFriendsBoard(f.data.entries || []);
-      } catch {} finally {
-        setBoardsLoaded(true);
+      } catch {}
+      if (isAuthenticated()) {
+        try {
+          const f = await authApi.get("/api/leaderboard", { params: { scope: "friends" } });
+          setFriendsBoard(f.data.entries || []);
+        } catch {}
       }
+      setBoardsLoaded(true);
     })();
   }, []);
 
@@ -355,24 +360,42 @@ export default function Dashboard() {
       {/* 📰 жёсткая таблица поверх сна */}
       <div className="relative max-w-[1400px] w-full mx-auto border-2 border-t-0 border-black bg-[#f4f4f0] flex-1 flex flex-col breathe-table">        
 
-        {/* Пустое состояние */}
-        {isEmpty && (
+        {/* Гость / пустое состояние */}
+        {(!isAuthed || isEmpty) && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
             className="relative border-b-2 border-black bg-white p-6 md:p-10 text-center space-y-4"
           >
-            <Sticker className="-top-3 left-6 bg-[#ffd500] text-black rotate-[3deg]">zzz…</Sticker>
-            <p className="font-display uppercase text-4xl md:text-6xl">Empty.</p>
-            <Label className="text-[#666]">Level 1 · 0 XP · 0 workouts</Label>
-            <p className="text-sm text-[#666] max-w-md mx-auto">
-              Синхронизируй первую тренировку — и прогресс появится здесь.
-            </p>
-            <Link
-              href="/profile"
-              className="inline-block px-6 py-3 bg-[#ff4b26] text-white text-xs font-bold tracking-widest uppercase hover:bg-[#5866f2] transition-colors"
-            >
-              Sync →
-            </Link>
+            <Sticker className="top-3 left-6 bg-[#ffd500] text-black rotate-[3deg]">zzz…</Sticker>
+            {isAuthed ? (
+              <>
+                <p className="font-display uppercase text-4xl md:text-6xl">Empty.</p>
+                <Label className="text-[#666]">Level 1 · 0 XP · 0 workouts</Label>
+                <p className="text-sm text-[#666] max-w-md mx-auto">
+                  Синхронизируй первую тренировку — и прогресс появится здесь.
+                </p>
+                <Link
+                  href="/profile"
+                  className="inline-block px-6 py-3 bg-[#ff4b26] text-white text-xs font-bold tracking-widest uppercase hover:bg-[#5866f2] transition-colors"
+                >
+                  Sync →
+                </Link>
+              </>
+            ) : (
+              <>
+                <p className="font-display uppercase text-4xl md:text-6xl">Sleeping?</p>
+                <Label className="text-[#666]">Войди, чтобы видеть свой прогресс</Label>
+                <p className="text-sm text-[#666] max-w-md mx-auto">
+                  Глобальный рейтинг уже открыт ниже. Войди или зарегистрируйся, чтобы видеть свои тренировки, XP и друзей.
+                </p>
+                <Link
+                  href="/login"
+                  className="inline-block px-6 py-3 bg-[#ff4b26] text-white text-xs font-bold tracking-widest uppercase hover:bg-[#5866f2] transition-colors"
+                >
+                  Login →
+                </Link>
+              </>
+            )}
           </motion.div>
         )}
 
@@ -483,7 +506,9 @@ export default function Dashboard() {
                 ) : rows.length === 0 ? (
                   <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-6">
                     {leaderboardTab === "friends"
-                      ? "No friends yet — find athletes in your profile 👥"
+                      ? isAuthed
+                        ? "No friends yet — find athletes in your profile 👥"
+                        : "Login to see your friends rating 🔐"
                       : "Be the first on the leaderboard! 🏆"}
                   </p>
                 ) : (
@@ -515,12 +540,21 @@ export default function Dashboard() {
 
               {leaderboardTab === "friends" && (
                 <div className="border-t-2 border-black">
-                  <button
-                    onClick={handleInvite}
-                    className="w-full px-4 py-3 text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-[#5866f2] hover:text-white transition-colors"
-                  >
-                    + Invite friends
-                  </button>
+                  {isAuthed ? (
+                    <button
+                      onClick={handleInvite}
+                      className="w-full px-4 py-3 text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-[#5866f2] hover:text-white transition-colors"
+                    >
+                      + Invite friends
+                    </button>
+                  ) : (
+                    <Link
+                      href="/login"
+                      className="block w-full px-4 py-3 text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-[#5866f2] hover:text-white transition-colors"
+                    >
+                      🔐 Login to see friends
+                    </Link>
+                  )}
                   {inviteMessage && (
                     <p className="text-[10px] font-bold text-[#5866f2] text-center py-2 bg-[#5866f2]/10">{inviteMessage}</p>
                   )}

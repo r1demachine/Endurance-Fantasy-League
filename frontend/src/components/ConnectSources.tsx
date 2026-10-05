@@ -17,7 +17,7 @@ interface Source {
 
 const SOURCES: Source[] = [
   { id: "intervals", name: "Intervals.icu", desc: "Strava, Garmin, Wahoo aggregator", emoji: "🔌", available: true },
-  { id: "garmin", name: "Garmin", desc: "Direct Garmin Connect link", emoji: "⌚", available: false },
+  { id: "garmin", name: "Garmin", desc: "Через мост Intervals.icu — отдельный ключ не нужен", emoji: "⌚", available: false },
   { id: "strava", name: "Strava", desc: "Direct Strava link", emoji: "🚴", available: false },
 ];
 
@@ -45,6 +45,15 @@ export default function ConnectSources({
   };
 
   const toggleRow = (s: Source) => {
+    if (s.id === "garmin") {
+      onMessage({
+        type: "info",
+        text: hasKey
+          ? "⌚ Garmin уже течёт через мост Intervals.icu — данные обновляются с каждой синхронизацией."
+          : "⌚ Garmin подключается через мост Intervals.icu: агрегатор сам тянет твои данные из Garmin. Подключи Intervals — и Garmin заработает автоматически!",
+      });
+      return;
+    }
     if (!s.available) {
       onMessage({ type: "info", text: `🚧 ${s.name} sync is under development — coming soon.` });
       return;
@@ -110,6 +119,14 @@ export default function ConnectSources({
                   <span className="px-2 py-0.5 bg-[#5866f2] text-white text-[9px] font-bold tracking-widest uppercase">
                     Connected
                   </span>
+                ) : s.id === "garmin" && hasKey ? (
+                  <span className="px-2 py-0.5 bg-[#16a34a] text-white text-[9px] font-bold tracking-widest uppercase">
+                    via Intervals
+                  </span>
+                ) : s.id === "garmin" ? (
+                  <span className="px-2 py-0.5 border border-black/30 text-[#666] text-[9px] font-bold tracking-widest uppercase">
+                    bridge
+                  </span>
                 ) : s.available ? (
                   <span className="px-2 py-0.5 border border-black/30 text-[#666] text-[9px] font-bold tracking-widest uppercase">
                     Available
@@ -126,6 +143,36 @@ export default function ConnectSources({
               {s.id === "intervals" ? (isOpen ? "▲" : "▼") : "→"}
             </span>
           </button>
+
+          {/* ── Garmin: плашка «подключено через мост Intervals» ── */}
+          <AnimatePresence initial={false}>
+            {s.id === "garmin" && hasKey && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25, ease: "easeInOut" }}
+                className="overflow-hidden"
+              >
+                <div className="px-4 pb-4">
+                  <div className="border-2 border-[#16a34a] bg-[#16a34a]/10 px-4 py-3 flex items-center gap-3">
+                    <span className="text-xl shrink-0">⌚</span>
+                    <div className="min-w-0">
+                      <p className="text-[9px] font-bold tracking-widest uppercase text-[#16a34a]">
+                        Connected via bridge
+                      </p>
+                      <p className="text-sm font-bold uppercase truncate">
+                        Garmin → Intervals.icu → Fantasy League
+                      </p>
+                      <p className="text-[10px] text-[#666] mt-0.5">
+                        Отдельный ключ не нужен — агрегатор сам тянет твои данные из Garmin.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* ── Подключено: статус + 2 кнопки (когда секция свёрнута) ── */}
           <AnimatePresence initial={false}>

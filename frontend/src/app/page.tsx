@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import type { ReactNode } from "react";
+import { KonamiArrows, Runner, useKonami } from "@/components/KonamiRunner";
 
 /* ✦ Звезда-искорка (Dream) */
 function Star({ className = "" }: { className?: string }) {
@@ -53,6 +54,7 @@ function GlobeIcon() {
 }
 
 export default function Home() {
+  const { progress, running, done, press } = useKonami();
   const mechanics = [
     { n: "01", title: "Sync data", tag: "Strava / Garmin / Wahoo", cell: "bg-[#ffd500]", icon: "🔌" },
     { n: "02", title: "XP = Load × IF × Sleep", tag: "Quality over quantity", cell: "bg-[#ff4b26] text-white", icon: "⚡" },
@@ -174,8 +176,8 @@ export default function Home() {
 
         {/* ===== ЛЕНТА (BRUT-структура + Dream-цвета) ===== */}
         <div className="grid md:grid-cols-[auto_1fr_auto] border-b-2 border-black">
-          <div className="hidden md:flex items-center justify-center px-3 border-r-2 border-black">
-            <span className="[writing-mode:vertical-rl] rotate-180 text-[11px] font-bold tracking-widest">(2026)</span>
+          <div className="px-2 border-r-2 border-black flex items-center justify-center bg-[#f4f4f0]">
+            <KonamiArrows progress={progress} onPress={press} />
           </div>
           <div className="px-5 py-5 md:py-6 flex items-center justify-between gap-4 text-sm md:text-lg font-bold uppercase tracking-wide">
             <span>We don't follow chaos.<br />We set the plan.</span>
@@ -201,6 +203,7 @@ export default function Home() {
           ))}
         </div>
       </div>
+      <Runner running={running} onDone={done} />
     </main>
   );
 }

@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from ..dependencies import get_current_user
-from ..auth import decrypt_secret
+from ..auth import decrypt_secret, decode_access_token
 from ..database import get_db
 from ..models import User, Activity, Wellness
 from collections import defaultdict
@@ -20,6 +21,7 @@ from typing import Optional
 
 router = APIRouter(prefix="/api", tags=["Sync"])
 settings = get_settings()
+_optional_bearer = HTTPBearer(auto_error=False)
 
 def _parse_activity(act: dict) -> dict | None:
     """Нормализует активность из JSON или CSV в единый dict."""
@@ -709,10 +711,16 @@ async def reset_all_data(
 async def leaderboard(
     scope: str = Query("global", regex="^(global|friends)$"),
     limit: int = Query(50, ge=1, le=100),
-    current: User = Depends(get_current_user),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer),
     db: Session = Depends(get_db),
 ):
-    """Рейтинг: global — все, friends — только принятые друзья."""
+    """Рейтинг: global — все (публично), friends — только принятые друзья (авторизация)."""
+    current: Optional[User] = None
+    if credentials is not None:
+        uid = decode_access_token(credentials.credentials)
+        if uid is not None:
+            current = db.get(User, uid)
+
     if scope == "global":
         users = (
             db.query(User)
@@ -722,6 +730,8 @@ async def leaderboard(
         )
  
     else:
+        if current is None:
+            raise HTTPException(status_code=401, detail="Friends-рейтинг доступен после входа")
         # друзья = accepted с обеих сторон; нет друзей → пустой рейтинг
         from ..models import Friendship, FriendshipStatus
         friend_ids_rows = (
@@ -760,7 +770,7 @@ async def leaderboard(
                 "username": u.username,
                 "level": u.level,
                 "total_xp": round(float(u.total_xp or 0), 2),
-                "is_you": u.id == current.id,
+                "is_you": current is not None and u.id == current.id,
             }
             for i, u in enumerate(users)
         ],

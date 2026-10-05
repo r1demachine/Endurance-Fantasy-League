@@ -127,3 +127,19 @@ b, strong, .font-bold, .font-extrabold, .font-black {
 * {
   font-synthesis: weight style;
 }
+
+/* 🏃 пасхалка-раннер: правый край → левый край + подпрыгивание */
+@keyframes runner-track {
+  from { transform: translateX(105vw); }
+  to   { transform: translateX(-30vw); }
+}
+@keyframes runner-bounce {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-16px); }
+}
+.runner-track {
+  animation: runner-track 2.6s ease-in-out forwards;
+}
+.runner-bounce {
+  animation: runner-bounce 0.45s ease-in-out infinite;
+}

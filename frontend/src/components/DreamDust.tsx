@@ -1,158 +1,123 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 
-/* ── Искры (звёздная пыль) ── */
-const COLORS = ["#ffd500", "#f6b8d0", "#5866f2", "#ff4b26", "#ffffff"];
-const TYPES = ["dot", "spark", "plus"] as const;
-type PType = (typeof TYPES)[number];
+/* Живая пыль: мерцающие искры + быстрый туман.
+   Каждый шар после завершения цикла ПЕРЕРОЖДАЕТСЯ:
+   новая случайная позиция, новое случайное направление. */
 
-interface Particle {
-  id: number;
-  type: PType;
-  top: number;
-  left: number;
-  size: number;
-  color: string;
-  twinkle: number;
-  drift: number;
-  delay: number;
-  baseOpacity: number;
+interface Spark {
+  id: number; left: string; top: string; size: number;
+  delay: number; dur: number; color: string;
 }
 
-function makeParticles(count: number): Particle[] {
-  return Array.from({ length: count }, (_, i) => {
-    const type = TYPES[Math.floor(Math.random() * TYPES.length)];
-    return {
-      id: i,
-      type,
-      top: Math.random() * 100,
-      left: Math.random() * 100,
-      size: type === "spark" ? 4 + Math.random() * 5 : 2 + Math.random() * 3,
-      color: COLORS[Math.floor(Math.random() * COLORS.length)],
-      twinkle: 2.5 + Math.random() * 4,
-      drift: 9 + Math.random() * 11,
-      delay: Math.random() * 6,
-      baseOpacity: 0.1 + Math.random() * 0.25,
-    };
-  });
+interface Frame {
+  left: number; top: number; size: number;
+  dur: number; delay: number;
+  dx: number; dy: number;   // конечное смещение
+  mx: number; my: number;   // промежуточная точка (кривизна траектории)
 }
 
-function Glyph({ p }: { p: Particle }) {
-  if (p.type === "spark") {
-    return (
-      <svg viewBox="0 0 24 24" width={p.size} height={p.size} fill={p.color}>
-        <path d="M12 0c1 8 4 11 12 12-8 1-11 4-12 12-1-8-4-11-12-12 8-1 11-4 12-12z" />
-      </svg>
-    );
-  }
-  if (p.type === "plus") {
-    return (
-      <svg viewBox="0 0 24 24" width={p.size} height={p.size} stroke={p.color} strokeWidth="4" strokeLinecap="round">
-        <line x1="12" y1="3" x2="12" y2="21" />
-        <line x1="3" y1="12" x2="21" y2="12" />
-      </svg>
-    );
-  }
-  return <div style={{ width: p.size, height: p.size, background: p.color, borderRadius: 9999 }} />;
+const SPARK_COLORS = ["#ffffff", "#ffd500", "#f6b8d0", "#c7d2fe"];
+const BLOB_COLORS = [
+  "rgba(88,102,242,0.20)",
+  "rgba(246,184,208,0.16)",
+  "rgba(255,213,0,0.12)",
+  "rgba(255,255,255,0.10)",
+  "rgba(88,102,242,0.14)",
+  "rgba(246,184,208,0.12)",
+];
+
+function rand(min: number, max: number) {
+  return Math.random() * (max - min) + min;
 }
 
-/* ── Сгустки сна (мягкий туман) ── */
-const SOFT = ["#f6b8d0", "#5866f2", "#a5b4fc", "#ffd500", "#ff4b26", "#ffffff"];
-
-interface Mist {
-  id: number;
-  top: number;
-  left: number;
-  size: number;
-  color: string;
-  blur: number;
-  maxOpacity: number;
-  fade: number;
-  drift: number;
-  morph: number;
-  phase: number;
+/* 🎲 Случайный кадр жизни шара: позиция + направление под любым углом */
+function makeFrame(first: boolean): Frame {
+  const angle = rand(0, Math.PI * 2);          // направление: любой угол 0–360°
+  const dist = rand(80, 240);                  // дальность полёта
+  const midAngle = angle + rand(-1.4, 1.4);    // отклонение середины → кривая траектория
+  const midDist = dist * rand(0.35, 0.8);
+  return {
+    left: rand(-15, 95),
+    top: rand(-15, 95),
+    size: rand(140, 340),
+    dur: rand(9, 15),
+    delay: first ? rand(0, 3) : rand(0, 1.2),
+    dx: Math.cos(angle) * dist,
+    dy: Math.sin(angle) * dist,
+    mx: Math.cos(midAngle) * midDist,
+    my: Math.sin(midAngle) * midDist,
+  };
 }
 
-function makeMist(count: number): Mist[] {
-  return Array.from({ length: count }, (_, i) => {
-    const fade = 16 + Math.random() * 14;
-    const drift = 30 + Math.random() * 25;
-    const morph = 14 + Math.random() * 10;
-    return {
-      id: i,
-      top: Math.random() * 100,
-      left: Math.random() * 100,
-      size: 70 + Math.random() * 100,
-      color: SOFT[Math.floor(Math.random() * SOFT.length)],
-      blur: 10 + Math.random() * 12,
-      maxOpacity: 0.05 + Math.random() * 0.08,
-      fade,
-      drift,
-      morph,
-      phase: -(Math.random() * fade),
-    };
-  });
+/* 💨 Один шар: отжил цикл → переродился с новым рандомом */
+function FastBlob({ color }: { color: string }) {
+  const [cycle, setCycle] = useState(0);
+  const f = useMemo(() => makeFrame(cycle === 0), [cycle]);
+
+  return (
+    <motion.div
+      key={cycle}
+      className="absolute rounded-full"
+      style={{
+        left: `${f.left}%`,
+        top: `${f.top}%`,
+        width: f.size,
+        height: f.size,
+        backgroundColor: color,
+        filter: "blur(40px)",
+      }}
+      initial={{ x: 0, y: 0, opacity: 0, scale: 0.8 }}
+      animate={{
+        x: [0, f.mx, f.dx],
+        y: [0, f.my, f.dy],
+        opacity: [0, 0.9, 0],
+        scale: [0.8, 1.1, 0.9],
+      }}
+      transition={{ duration: f.dur, delay: f.delay, ease: "easeInOut" }}
+      onAnimationComplete={() => setCycle((c) => c + 1)}
+    />
+  );
 }
 
 export default function DreamDust() {
-  // Состояние только для клиента — сервер рендерит пусто
-  const [particles, setParticles] = useState<Particle[]>([]);
-  const [mist, setMist] = useState<Mist[]>([]);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
-  useEffect(() => {
-    // Генерация происходит ТОЛЬКО на клиенте после гидрации
-    setParticles(makeParticles(36));
-    setMist(makeMist(8));
-  }, []);
+  const sparks = useMemo<Spark[]>(
+    () =>
+      Array.from({ length: 26 }, (_, i) => ({
+        id: i,
+        left: `${rand(0, 100)}%`,
+        top: `${rand(0, 100)}%`,
+        size: rand(2, 5),
+        delay: rand(0, 3),
+        dur: rand(1.2, 2.6),
+        color: SPARK_COLORS[Math.floor(rand(0, SPARK_COLORS.length))],
+      })),
+    []
+  );
+
+  if (!mounted) return null;
 
   return (
-    <div className="fixed inset-0 z-[55] pointer-events-none overflow-hidden" aria-hidden>
-      {/* Слой 1: мягкий туман */}
-      {mist.map((m) => (
-        <div
-          key={`m-${m.id}`}
-          className="absolute"
-          style={{
-            top: `${m.top}%`,
-            left: `${m.left}%`,
-            width: m.size,
-            height: m.size,
-            background: m.color,
-            filter: `blur(${m.blur}px)`,
-            borderRadius: "50% 40% 60% 45%",
-            ["--bo" as any]: m.maxOpacity,
-            animation: [
-              `blobFade ${m.fade}s ease-in-out ${m.phase}s infinite`,
-              `blobMorph ${m.morph}s ease-in-out ${m.phase}s infinite`,
-              `blobDrift ${m.drift}s ease-in-out ${m.phase}s infinite`,
-            ].join(", "),
-          }}
+    <div className="fixed inset-0 z-[55] pointer-events-none overflow-hidden" aria-hidden="true">
+      {/* ✨ искры */}
+      {sparks.map((s) => (
+        <motion.span
+          key={`s${s.id}`}
+          className="absolute rounded-full"
+          style={{ left: s.left, top: s.top, width: s.size, height: s.size, backgroundColor: s.color }}
+          animate={{ opacity: [0, 1, 0], scale: [0.6, 1.2, 0.6] }}
+          transition={{ duration: s.dur, delay: s.delay, repeat: Infinity, ease: "easeInOut" }}
         />
       ))}
 
-      {/* Слой 2: звёздная пыль */}
-      {particles.map((p) => (
-        <div
-          key={p.id}
-          className="absolute"
-          style={{
-            top: `${p.top}%`,
-            left: `${p.left}%`,
-            animation: `dustDrift ${p.drift}s ease-in-out ${p.delay}s infinite`,
-          }}
-        >
-          <div
-            style={{
-              ["--o" as any]: p.baseOpacity,
-              opacity: p.baseOpacity,
-              animation: `dustTwinkle ${p.twinkle}s ease-in-out ${p.delay}s infinite`,
-              display: "flex",
-            }}
-          >
-            <Glyph p={p} />
-          </div>
-        </div>
+      {/* 💨 шары тумана — каждый со своим жизненным циклом и рандомом */}
+      {BLOB_COLORS.map((color, i) => (
+        <FastBlob key={i} color={color} />
       ))}
     </div>
   );
