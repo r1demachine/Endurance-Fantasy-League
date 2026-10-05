@@ -39,23 +39,129 @@ function Label({ children, className = "" }: { children: ReactNode; className?: 
   );
 }
 
-function XpTooltip({ active, payload }: any) {
+
+function XpTooltip({
+  active,
+  payload,
+  chartData,
+}: {
+  active?: boolean;
+  payload?: any[];
+  chartData: any[];
+}) {
   if (!active || !payload?.length) return null;
-  const d = payload[0].payload;
-  return (
-    <div className="bg-[#c7d2fe] text-[#111] border-2 border-black p-3 shadow-[4px_4px_0_#000] text-sm min-w-[200px]">
-      <p className="font-display uppercase text-base mb-1">{d.name}</p>
+
+  const current = payload[0]?.payload;
+  if (!current) return null;
+
+  // Берём все тренировки этого дня.
+  // Максимум отображаем 4 карточки.
+  const activities = chartData
+    .filter((item) => item.date === current.date)
+    .slice(0, 4);
+
+  if (!activities.length) return null;
+
+  const renderCard = (d: any) => (
+    <div
+      key={`${d.date}-${d.name}-${d.sport}-${d.xp}`}
+      className="bg-[#c7d2fe] text-[#111] border-2 border-black p-3 shadow-[4px_4px_0_#000] text-sm min-w-[190px] max-w-[220px]"
+    >
+      <p className="font-display uppercase text-base mb-1 truncate">
+        {d.name}
+      </p>
+
       <p className="text-[9px] font-bold tracking-widest uppercase text-[#4b5563] mb-2">
         {d.date} · {d.sport} · {d.distance} km
       </p>
-      <div className="flex justify-between gap-4"><span className="text-[#4b5563] font-bold uppercase text-[10px]">Base XP</span><span className="font-display">{d.base_xp}</span></div>
-      <div className="flex justify-between gap-4"><span className="text-[#4b5563] font-bold uppercase text-[10px]">Intensity</span><span className="font-display text-[#ff4b26]">{d.intensity_category} ×{Number(d.intensityMult).toFixed(2)}</span></div>
-      <div className="flex justify-between gap-4"><span className="text-[#4b5563] font-bold uppercase text-[10px]">Sleep</span><span className="font-display">×{Number(d.sleepMult).toFixed(2)}</span></div>
-      <div className="flex justify-between gap-4"><span className="text-[#4b5563] font-bold uppercase text-[10px]">Streak</span><span className="font-display text-[#16a34a]">×{Number(d.streakMult ?? 1).toFixed(2)}</span></div>
-      <div className="flex justify-between gap-4 mt-1 pt-1 border-t border-black/20"><span className="font-bold uppercase text-[10px]">Total</span><span className="font-display text-[#171a38]">+{d.xp} XP</span></div>
+
+      <div className="flex justify-between gap-4">
+        <span className="text-[#4b5563] font-bold uppercase text-[10px]">
+          Base XP
+        </span>
+        <span className="font-display">
+          {d.base_xp}
+        </span>
+      </div>
+
+      <div className="flex justify-between gap-4">
+        <span className="text-[#4b5563] font-bold uppercase text-[10px]">
+          Intensity
+        </span>
+
+        <span className="font-display text-[#ff4b26]">
+          {d.intensity_category} ×
+          {Number(d.intensityMult).toFixed(2)}
+        </span>
+      </div>
+
+      <div className="flex justify-between gap-4">
+        <span className="text-[#4b5563] font-bold uppercase text-[10px]">
+          Sleep
+        </span>
+
+        <span className="font-display">
+          ×{Number(d.sleepMult).toFixed(2)}
+        </span>
+      </div>
+
+      <div className="flex justify-between gap-4">
+        <span className="text-[#4b5563] font-bold uppercase text-[10px]">
+          Streak
+        </span>
+
+        <span className="font-display text-[#16a34a]">
+          ×{Number(d.streakMult ?? 1).toFixed(2)}
+        </span>
+      </div>
+
+      <div className="flex justify-between gap-4 mt-1 pt-1 border-t border-black/20">
+        <span className="font-bold uppercase text-[10px]">
+          Total
+        </span>
+
+        <span className="font-display text-[#171a38]">
+          +{d.xp} XP
+        </span>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="pointer-events-none">
+      {activities.length === 1 && (
+        <div className="flex justify-center">
+          {renderCard(activities[0])}
+        </div>
+      )}
+
+      {activities.length === 2 && (
+        <div className="grid grid-cols-2 gap-2">
+          {activities.map(renderCard)}
+        </div>
+      )}
+
+      {activities.length === 3 && (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="col-span-2 flex justify-center">
+            {renderCard(activities[0])}
+          </div>
+
+          {renderCard(activities[1])}
+          {renderCard(activities[2])}
+        </div>
+      )}
+
+      {activities.length === 4 && (
+        <div className="grid grid-cols-2 gap-2">
+          {activities.map(renderCard)}
+        </div>
+      )}
     </div>
   );
 }
+
+
 
 function useIsTouch() {
   const [touch, setTouch] = useState(false);
@@ -431,7 +537,7 @@ export default function Dashboard() {
                       <XAxis dataKey="date" tick={{ fill: "#666", fontSize: 10 }} axisLine={{ stroke: "#000" }} tickLine={false} />
                       <YAxis tick={{ fill: "#666", fontSize: 10 }} axisLine={false} tickLine={false} width={36} />
                       <Tooltip
-                        content={<XpTooltip />}
+                        content={<XpTooltip chartData={chartData} />}
                         trigger="hover"
                         active={isTouch ? touchTooltipActive : undefined}
                         cursor={

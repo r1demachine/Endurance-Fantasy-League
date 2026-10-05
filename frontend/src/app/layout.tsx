@@ -6,7 +6,11 @@ import DataWarmup from "@/components/DataWarmup";
 import DreamDust from "@/components/DreamDust";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({
+  subsets: ["latin", "cyrillic"],
+  weight: ["400", "700", "900"],
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Fantasy League - Преврати тренировки в игру",
