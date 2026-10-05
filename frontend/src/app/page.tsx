@@ -4,6 +4,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import type { ReactNode } from "react";
 import { KonamiArrows, Runner, useKonami } from "@/components/KonamiRunner";
+import { useSeason } from "@/lib/seasons";
 
 /* ✦ Звезда-искорка (Dream) */
 function Star({ className = "" }: { className?: string }) {
@@ -55,6 +56,7 @@ function GlobeIcon() {
 
 export default function Home() {
   const { progress, running, done, press } = useKonami();
+  const season = useSeason();
   const mechanics = [
     { n: "01", title: "Sync data", tag: "Strava / Garmin / Wahoo", cell: "bg-[#ffd500]", icon: "🔌" },
     { n: "02", title: "XP = Load × IF × Sleep", tag: "Quality over quantity", cell: "bg-[#ff4b26] text-white", icon: "⚡" },
@@ -78,8 +80,17 @@ export default function Home() {
           <div className="px-4 py-4 md:border-r-2 border-black font-display text-2xl md:text-3xl">
             FANTASY<span className="text-[#ff4b26]">.</span>
           </div>
-          <div className="hidden md:flex items-center px-4 border-r-2 border-black text-[10px] font-bold tracking-widest uppercase leading-relaxed">
-            Season 001<br />Endurance Fantasy league
+          <div className="hidden md:flex flex-col justify-center px-4 border-r-2 border-black text-[10px] font-bold tracking-widest uppercase leading-relaxed">
+            <span>
+              Season {String(season.num).padStart(3, "0")} {" "}
+              <span
+                className="transition-colors duration-700"
+                style={{ color: season.color }}
+              >
+                {season.flower} ✿
+              </span>
+            </span>
+            <span>Endurance Fantasy league</span>
           </div>
           <Link href="/dashboard" className="hidden md:flex items-center px-4 border-r-2 border-black text-[10px] font-bold tracking-widest uppercase hover:bg-black hover:text-white transition-colors">
             Dashboard
