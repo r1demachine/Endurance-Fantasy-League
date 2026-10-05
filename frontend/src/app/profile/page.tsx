@@ -165,24 +165,22 @@ export default function Profile() {
           <SectionTitle>Season Stats</SectionTitle>
           <div className="p-4 md:p-6">
             <Label className="text-[#666] mb-4 block">Since {seasonStats.season_start}</Label>
-            <div className="flex justify-center">
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 -ml-[2px] -mt-[2px] w-full md:w-auto">
-                {[
-                  { label: "Distance", value: `${seasonStats.total_km}`, unit: "km" },
-                  { label: "Time", value: `${seasonStats.total_hours}`, unit: "h" },
-                  { label: "Climb", value: `${seasonStats.total_elevation}`, unit: "m" },
-                  { label: "Workouts", value: `${seasonStats.total_workouts}`, unit: "" },
-                  { label: "XP", value: `${Math.round(seasonStats.total_xp)}`, unit: "" },
-                ].map((s) => (
-                  <div key={s.label} className="p-3 md:p-4 text-center border-l-2 border-t-2 border-black">
-                    <p className="font-display text-xl md:text-3xl">
-                      {s.value}
-                      <span className="text-xs text-[#666] ml-0.5">{s.unit}</span>
-                    </p>
-                    <Label className="text-[#666] mt-1">{s.label}</Label>
-                  </div>
-                ))}
-              </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 w-full">
+              {[
+                { label: "Distance", value: `${seasonStats.total_km}`, unit: "km" },
+                { label: "Time", value: `${seasonStats.total_hours}`, unit: "h" },
+                { label: "Climb", value: `${seasonStats.total_elevation}`, unit: "m" },
+                { label: "Workouts", value: `${seasonStats.total_workouts}`, unit: "" },
+                { label: "XP", value: `${Math.round(seasonStats.total_xp)}`, unit: "" },
+              ].map((s) => (
+                <div key={s.label} className="p-3 md:p-4 text-center">
+                  <p className="font-display text-xl md:text-3xl">
+                    {s.value}
+                    <span className="text-xs text-[#666] ml-0.5">{s.unit}</span>
+                  </p>
+                  <Label className="text-[#666] mt-1">{s.label}</Label>
+                </div>
+              ))}
             </div>
           </div>
         </div>

@@ -309,13 +309,13 @@ async def sync_activities(
     new_xp = 0.0
     synced_count = 0
     skipped_empty = 0
+    sleep_updated = 0
     seen_ids: set[str] = set()
-    
-    existing_ids = {
-        row[0] for row in db.query(Activity.intervals_activity_id)
-        .filter(Activity.user_id == current.id).all()
+    existing_rows = {
+        row.intervals_activity_id: row
+        for row in db.query(Activity).filter(Activity.user_id == current.id).all()
     }
-    
+    existing_ids = set(existing_rows.keys())
     for raw in activities_data:
         if not isinstance(raw, dict):
             continue
@@ -323,9 +323,21 @@ async def sync_activities(
         if not parsed:
             continue
         act_id = parsed["intervals_activity_id"]
-        if act_id in seen_ids or act_id in existing_ids:
+        if act_id in seen_ids:
             continue
         seen_ids.add(act_id)
+        if act_id in existing_ids:
+            # тренировка уже в БД — но ДОДОЛИВАЕМ сон, если он появился в Intervals
+            row = existing_rows[act_id]
+            act_date = parsed["start_date"].strftime("%Y-%m-%d")
+            new_sleep = sleep_by_date.get(act_date)
+            if new_sleep is None:
+                prev = (parsed["start_date"] - timedelta(days=1)).strftime("%Y-%m-%d")
+                new_sleep = sleep_by_date.get(prev)
+            if new_sleep and (row.sleep_secs or 0) != new_sleep:
+                row.sleep_secs = new_sleep
+                sleep_updated += 1
+            continue
         if not _has_real_data(parsed):
             skipped_empty += 1
             continue
@@ -360,6 +372,8 @@ async def sync_activities(
             f"{dist_km:.1f}km | {parsed['moving_time'] // 60} мин"
         )
     
+    if sleep_updated:
+        print(f"😴 Обновлён сон на существующих тренировках: {sleep_updated}")
     db.commit()
 
     total_before = float(current.total_xp or 0)
@@ -372,6 +386,7 @@ async def sync_activities(
         "message": "Синхронизация успешна!",
         "synced_count": synced_count,
         "skipped_empty": skipped_empty,
+        "sleep_updated": sleep_updated,
         "new_xp": new_xp,
         "user": {
             "id": current.id,
