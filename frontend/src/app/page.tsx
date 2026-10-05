@@ -154,8 +154,7 @@ export default function Home() {
 
             {/* "Фото" атлета в оранжевом (BRUT) с мечтательными пузырями (Dream) */}
                         
-                        {/* "Фото" атлета в оранжевом (BRUT) с мечтательными пузырями (Dream) */}
-            <div className="relative flex-1 bg-[#ff4b26] overflow-hidden flex items-center justify-center">
+            <div className="relative flex-1 min-w-0 max-w-full bg-[#ff4b26] overflow-hidden flex items-center justify-center">
               {/* розовые облака-пятна (Dream) — фон по углам */}
               <div className="absolute -left-6 top-6 w-28 h-32 bg-[#f6b8d0] rounded-[50%_50%_40%_60%] opacity-90 z-0" />
               <div className="absolute right-4 top-10 w-16 h-16 bg-[#f6b8d0] rounded-[60%_40%_55%_45%] opacity-90 z-0" />

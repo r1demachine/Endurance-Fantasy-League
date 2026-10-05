@@ -203,7 +203,7 @@ export default function Profile() {
         {/* Источники данных */}
         {/* Intervals.icu key */}
         <div className="border-b-2 border-black">
-          <div className="grid md:grid-cols-[200px_1fr]">
+          <div className="grid grid-cols-[minmax(0,1fr)] md:grid-cols-[200px_1fr]">
             <div className="hidden md:flex flex-col justify-between p-5 border-r-2 border-black bg-[#5866f2] text-white">
               <div>
                 <p className="font-display uppercase text-xl md:text-2xl tracking-tight leading-none">Connect</p>
@@ -245,13 +245,12 @@ export default function Profile() {
                 <button
                   onClick={handleReset}
                   disabled={resetting || !userData}
-                  className="px-5 py-3 bg-[#171a38] text-white text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-[#ff4b26] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
+                  className="w-full md:w-auto px-6 py-3 border-2 border-[#ff4b26] text-[#ff4b26] text-[11px] font-bold tracking-widest uppercase hover:bg-[#ff4b26] hover:text-white transition-colors"                >
                   {resetting ? "Clearing..." : "Clear all data"}
                 </button>
                 <button
                   onClick={handleLogout}
-                  className="px-5 py-3 bg-[#ff4b26] text-white text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-black transition-colors"
+                  className="w-full md:w-auto px-6 py-3 border-2 border-[#ff4b26] text-[#ff4b26] text-[11px] font-bold tracking-widest uppercase hover:bg-[#ff4b26] hover:text-white transition-colors"
                 >
                   Logout →
                 </button>

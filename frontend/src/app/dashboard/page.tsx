@@ -70,7 +70,13 @@ export default function Dashboard() {
   const [isAuthed, setIsAuthed] = useState(false);
   const isTouch = useIsTouch();
   const [touchTooltipActive, setTouchTooltipActive] = useState(false);
+  const [chartKey, setChartKey] = useState(0);
   const [cursorY, setCursorY] = useState<number>(0);
+  const [tooltipPortal, setTooltipPortal] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setTooltipPortal(document.body);
+  }, []);
 
   const touchStartRef = useRef<{
     time: number;
@@ -136,6 +142,15 @@ export default function Dashboard() {
     refreshUser();                                          // фон: прогрев
     setLoading(false);                                      // сразу снимаем лоадер — кэш уже подтянут выше
     return unsub;
+  }, []);
+
+  useEffect(() => {
+    // после перехода с длинной главной скролл/анимации могут оставить
+    // графику съехавшую геометрию — Recharts кеширует offset при монтировании.
+    // Возвращаем скролл и перемонтируем график, когда всё улеглось.
+    window.scrollTo(0, 0);
+    const t = setTimeout(() => setChartKey((k) => k + 1), 150);
+    return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
@@ -442,7 +457,7 @@ export default function Dashboard() {
                   <SectionTitle>XP Dynamics</SectionTitle>
                 </div>
                 <div className="h-64 w-full relative">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer key={chartKey} width="100%" height="100%">
                     <AreaChart
                       data={chartData}
                       margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
@@ -463,7 +478,8 @@ export default function Dashboard() {
                         content={<XpTooltip chartData={chartData} />}
                         trigger="hover"
                         active={isTouch ? touchTooltipActive : undefined}
-                        position={{ x: 0, y: cursorY - 200 }}
+                        portal={tooltipPortal}
+
                         allowEscapeViewBox={{ x: true, y: true }}
                         wrapperStyle={{
                           position: "fixed",

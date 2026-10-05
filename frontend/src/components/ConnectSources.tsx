@@ -113,31 +113,31 @@ export default function ConnectSources({
               {s.emoji}
             </span>
             <span className="min-w-0">
-              <span className="flex items-center gap-2 flex-wrap">
-                <span className="font-bold uppercase tracking-wide text-sm md:text-base">{s.name}</span>
+              <span className="flex items-center gap-2 min-w-0">
+                <span className="font-bold uppercase tracking-wide text-sm md:text-base truncate min-w-0">{s.name}</span>
                 {s.id === "intervals" && hasKey ? (
-                  <span className="px-2 py-0.5 bg-[#5866f2] text-white text-[9px] font-bold tracking-widest uppercase">
+                  <span className="px-2 py-0.5 bg-[#5866f2] text-white text-[9px] font-bold tracking-widest uppercase shrink-0 whitespace-nowrap">
                     Connected
                   </span>
                 ) : s.id === "garmin" && hasKey ? (
-                  <span className="px-2 py-0.5 bg-[#16a34a] text-white text-[9px] font-bold tracking-widest uppercase">
+                  <span className="px-2 py-0.5 bg-[#16a34a] text-white text-[9px] font-bold tracking-widest uppercase shrink-0 whitespace-nowrap">
                     via Intervals
                   </span>
                 ) : s.id === "garmin" ? (
-                  <span className="px-2 py-0.5 border border-black/30 text-[#666] text-[9px] font-bold tracking-widest uppercase">
+                  <span className="px-2 py-0.5 border border-black/30 text-[#666] text-[9px] font-bold tracking-widest uppercase shrink-0 whitespace-nowrap">
                     bridge
                   </span>
                 ) : s.available ? (
-                  <span className="px-2 py-0.5 border border-black/30 text-[#666] text-[9px] font-bold tracking-widest uppercase">
+                  <span className="px-2 py-0.5 border border-black/30 text-[#666] text-[9px] font-bold tracking-widest uppercase shrink-0 whitespace-nowrap">
                     Available
                   </span>
                 ) : (
-                  <span className="px-2 py-0.5 border border-black/30 text-[#666] text-[9px] font-bold tracking-widest uppercase">
+                  <span className="px-2 py-0.5 border border-black/30 text-[#666] text-[9px] font-bold tracking-widest uppercase shrink-0 whitespace-nowrap">
                     Soon
                   </span>
                 )}
               </span>
-              <span className="block text-[10px] text-[#666] truncate mt-0.5">{s.desc}</span>
+              <span className="block text-[10px] text-[#666] break-words mt-0.5">{s.desc}</span>
             </span>
             <span className="font-display text-xl shrink-0">
               {s.id === "intervals" ? (isOpen ? "▲" : "▼") : "→"}
@@ -161,7 +161,7 @@ export default function ConnectSources({
                       <p className="text-[9px] font-bold tracking-widest uppercase text-[#16a34a]">
                         Connected via bridge
                       </p>
-                      <p className="text-sm font-bold uppercase truncate">
+                      <p className="text-sm font-bold uppercase break-words">
                         Garmin → Intervals.icu → Fantasy League
                       </p>
                       <p className="text-[10px] text-[#666] mt-0.5">
@@ -188,21 +188,21 @@ export default function ConnectSources({
                   <div className="border-2 border-[#5866f2] bg-[#5866f2]/10 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-[9px] font-bold tracking-widest uppercase text-[#5866f2]">Connected</p>
-                      <p className="font-bold uppercase truncate">athlete: {athleteId || "—"}</p>
+                      <p className="font-bold uppercase break-words">athlete: {athleteId || "—"}</p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-2 min-w-0 w-full">
                       <button
                         type="button"
                         onClick={handleSync}
                         disabled={syncing}
-                        className="px-4 py-2 bg-[#ff4b26] text-white text-[10px] font-bold tracking-widest uppercase hover:bg-black transition-colors disabled:opacity-50"
+                        className="flex-1 min-w-[120px] px-4 py-2 bg-[#ff4b26] text-white text-[10px] font-bold tracking-widest uppercase hover:bg-black transition-colors disabled:opacity-50"
                       >
                         {syncing ? "Syncing..." : "Sync data ⚡"}
                       </button>
                       <button
                         type="button"
                         onClick={openForm}
-                        className="px-4 py-2 bg-white border-2 border-black text-[10px] font-bold tracking-widest uppercase hover:bg-[#ffd500] transition-colors"
+                        className="flex-1 min-w-[120px] px-4 py-2 bg-white border-2 border-black text-[10px] font-bold tracking-widest uppercase hover:bg-[#ffd500] transition-colors"
                       >
                         Update key 🔑
                       </button>

@@ -177,13 +177,38 @@ b, strong, .font-bold, .font-extrabold, .font-black {
 [data-theme="dark"] .border-black\/20 { border-color: rgba(244, 244, 240, 0.22); }
 [data-theme="dark"] .border-black\/30 { border-color: rgba(244, 244, 240, 0.3); }
 
-/* ── hover/active: инверсия ── */
-[data-theme="dark"] .hover\:bg-black:hover { background-color: #f4f4f0; }
-[data-theme="dark"] .hover\:text-white:hover { color: #14172e; }
+
+/* ── hover/active: инверсия — светлый фон + тёмный текст одним правилом ── */
+[data-theme="dark"] .hover\:bg-black:hover { background-color: #f4f4f0; color: #14172e; }
 [data-theme="dark"] .hover\:bg-black\/5:hover { background-color: rgba(244, 244, 240, 0.08); }
-[data-theme="dark"] .active\:bg-black:active { background-color: #f4f4f0; }
-[data-theme="dark"] .active\:text-white:active { color: #14172e; }
+[data-theme="dark"] .active\:bg-black:active { background-color: #f4f4f0; color: #14172e; }
 
 /* ── исключения: на жёлтом/розовом текст остаётся тёмным ── */
 [data-theme="dark"] .bg-\[\#ffd500\] { color: #111; }
 [data-theme="dark"] .bg-\[\#f6b8d0\] { color: #111; }
+
+/* ── кнопки с яркими фонами: текст остаётся белым в обеих темах ── */
+[data-theme="dark"] .bg-\[\#ff4b26\].text-white,
+[data-theme="dark"] .bg-\[\#5866f2\].text-white,
+[data-theme="dark"] .bg-\[\#16a34a\].text-white,
+[data-theme="dark"] .bg-\[\#171a38\].text-white {
+  color: #ffffff;
+}
+
+/* ── hover на кнопках: инверсия только для светлых фонов ── */
+[data-theme="dark"] .bg-\[\#ff4b26\]:hover,
+[data-theme="dark"] .bg-\[\#5866f2\]:hover {
+  filter: brightness(1.1);
+}
+
+/* ===== ФИНАЛЬНЫЕ HOVER-ПРАВИЛА ТЁМНОЙ ТЕМЫ (поверх всего) ===== */
+[data-theme="dark"] .hover\:bg-black:hover,
+[data-theme="dark"] .active\:bg-black:active {
+  background-color: #f4f4f0 !important;
+  color: #14172e !important;
+}
+
+[data-theme="dark"] .hover\:bg-\[\#ff4b26\]:hover {
+  background-color: #ff4b26 !important;
+  color: #ffffff !important;
+}
