@@ -64,25 +64,45 @@ export default function ActivityCard({ act }: { act: Act }) {
             className="overflow-hidden"
           >
             <div className="px-4 pb-4 pt-1 bg-[#f4f4f0] border-t-2 border-black/10">
-              <p className="text-[9px] font-bold tracking-widest uppercase text-[#666] mb-1">XP за тренировку</p>
-              <p className="font-display text-3xl text-[#ff4b26] mb-3">+{Math.round(act.xp)} XP</p>
+              
 
-              <Row
-                label="Длительность"
-                value={`${act.moving_time_min} мин × ${act.rate_per_hour} XP/ч = ${act.base_xp} XP`}
-              />
+              
+              {/* Длительность: формула + результат */}
+              <div className="flex items-center justify-between gap-3 py-2 border-b border-black/10">
+                <p className="text-[9px] font-bold tracking-widest uppercase text-[#666]">Длительность</p>
+                <div className="text-right">
+                  <p className="font-display text-sm">
+                    {act.moving_time_min} мин × {act.rate_per_hour} XP/ч
+                  </p>
+                  <p className="font-display text-lg text-[#ff4b26]">
+                    = {act.base_xp} XP
+                  </p>
+                </div>
+              </div>
               <Row
                 label="Сон"
                 value={`×${act.sleep_multiplier.toFixed(2)}`}
                 sub={act.sleep_hours != null ? `${act.sleep_hours}ч` : "нет данных → ×1.0"}
                 accent={nonOne(act.sleep_multiplier) ? "text-[#5866f2]" : undefined}
               />
-              <Row
-                label="Интенсивность"
-                value={`${act.intensity_category} → ×${act.intensity_multiplier.toFixed(2)}`}
-                sub={act.intensity_reason}
-                accent={nonOne(act.intensity_multiplier) ? catColor : undefined}
-              />
+              
+              {/* Интенсивность: категория + множитель */}
+              <div className="flex items-center justify-between gap-3 py-2 border-b border-black/10">
+                <div className="min-w-0">
+                  <p className="text-[9px] font-bold tracking-widest uppercase text-[#666]">Интенсивность</p>
+                  {act.intensity_reason && (
+                    <p className="text-[10px] text-[#666] mt-0.5 leading-snug">{act.intensity_reason}</p>
+                  )}
+                </div>
+                <div className="text-right shrink-0">
+                  <p className={`font-display text-sm ${catColor}`}>
+                    {act.intensity_category}
+                  </p>
+                  <p className={`font-display text-lg ${catColor}`}>
+                    ×{act.intensity_multiplier.toFixed(2)}
+                  </p>
+                </div>
+              </div>
               <Row
                 label="Streak"
                 value={`×${act.streak_multiplier.toFixed(2)}`}
