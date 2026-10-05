@@ -523,10 +523,13 @@ export default function Dashboard() {
                         <span className={`font-display text-lg w-8 ${player.rank <= 3 ? "text-[#ff4b26]" : "text-[#999]"}`}>
                           {String(player.rank).padStart(2, "0")}
                         </span>
-                        <div>
-                          <p className={`font-bold uppercase tracking-wide text-sm ${player.is_you ? "text-[#5866f2]" : ""}`}>
+                        <div className="min-w-0">
+                          <Link
+                            href={`/u/${player.username}`}
+                            className={`font-bold uppercase tracking-wide text-sm hover:text-[#5866f2] transition-colors truncate block ${player.is_you ? "text-[#5866f2]" : ""}`}
+                          >
                             {player.display_name} {player.is_you && "(YOU)"}
-                          </p>
+                          </Link>
                           <Label className="text-[#666]">LVL {player.level}</Label>
                         </div>
                       </div>

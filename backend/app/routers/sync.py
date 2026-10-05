@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
+from sqlalchemy import or_, and_
 from ..dependencies import get_current_user
 from ..auth import decrypt_secret, decode_access_token
 from ..database import get_db
-from ..models import User, Activity, Wellness
+from ..models import User, Activity, Wellness, Friendship, FriendshipStatus
 from collections import defaultdict
 from ..services.xp import recalculate_timeline, level_from_xp, round_xp
 from datetime import date as _date
@@ -706,6 +707,141 @@ async def reset_all_data(
         },
     }
 
+
+@router.get("/users/{username}")
+async def public_profile(
+    username: str,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer),
+    db: Session = Depends(get_db),
+):
+    """Публичный профиль атлета (без приватных данных)."""
+    user = db.query(User).filter(User.username == username.lower().strip()).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Athlete not found")
+
+    viewer: Optional[User] = None
+    if credentials is not None:
+        uid = decode_access_token(credentials.credentials)
+        if uid is not None:
+            viewer = db.get(User, uid)
+
+    all_acts = db.query(Activity).filter(Activity.user_id == user.id).all()
+
+    # отношения со зрителем
+    relation = None
+    friendship_id = None
+    if viewer and viewer.id != user.id:
+        rel = (
+            db.query(Friendship)
+            .filter(
+                or_(
+                    and_(Friendship.from_user_id == viewer.id, Friendship.to_user_id == user.id),
+                    and_(Friendship.from_user_id == user.id, Friendship.to_user_id == viewer.id),
+                )
+            )
+            .first()
+        )
+        if rel:
+            friendship_id = rel.id
+            if rel.status == FriendshipStatus.ACCEPTED:
+                relation = "friends"
+            elif rel.from_user_id == viewer.id:
+                relation = "sent"
+            else:
+                relation = "incoming"
+
+    friends_count = (
+        db.query(Friendship)
+        .filter(
+            or_(Friendship.from_user_id == user.id, Friendship.to_user_id == user.id),
+            Friendship.status == FriendshipStatus.ACCEPTED,
+        )
+        .count()
+    )
+
+    # сезонная статистика
+    SEASON_START = datetime(2026, 9, 1)
+    season_acts = [a for a in all_acts if a.start_date and a.start_date >= SEASON_START]
+    season_stats = {
+        "season_start": SEASON_START.strftime("%d.%m.%Y"),
+        "total_km": round(sum(a.distance or 0 for a in season_acts) / 1000, 1),
+        "total_hours": round(sum(a.moving_time or 0 for a in season_acts) / 3600, 1),
+        "total_elevation": int(round(sum(a.elevation_gain or 0 for a in season_acts))),
+        "total_workouts": len(season_acts),
+        "total_xp": round(sum(a.xp_earned or 0 for a in season_acts)),
+    }
+
+    # средний пульс за 30 дней
+    month_ago = datetime.utcnow() - timedelta(days=30)
+    hr_points = [
+        {"date": a.start_date.strftime("%d.%m"), "hr": round(a.average_heartrate, 1)}
+        for a in sorted(all_acts, key=lambda x: x.start_date or datetime.min)
+        if a.start_date and a.start_date >= month_ago and (a.average_heartrate or 0) > 0
+    ]
+
+    return {
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "display_name": user.display_name,
+            "level": user.level,
+            "total_xp": round(float(user.total_xp or 0), 2),
+            "friends_count": friends_count,
+            "is_you": viewer is not None and viewer.id == user.id,
+            "relation": relation,
+            "friendship_id": friendship_id,
+        },
+        "season_stats": season_stats,
+        "hr_last_month": hr_points,
+    }
+
+
+@router.get("/users/{username}/activities")
+async def public_activities(
+    username: str,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    """Тренировки атлета с пагинацией (публично)."""
+    user = db.query(User).filter(User.username == username.lower().strip()).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Athlete not found")
+
+    total = db.query(Activity).filter(Activity.user_id == user.id).count()
+    acts = (
+        db.query(Activity)
+        .filter(Activity.user_id == user.id)
+        .order_by(Activity.start_date.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return {
+        "total": total,
+        "has_more": offset + len(acts) < total,
+        "activities": [
+            {
+                "id": a.id,
+                "name": a.name,
+                "sport": a.sport_type,
+                "distance_km": round((a.distance or 0) / 1000, 2),
+                "moving_time_min": (a.moving_time or 0) // 60,
+                "xp": a.xp_earned,
+                "base_xp": a.base_xp or 0,
+                "rate_per_hour": a.rate_per_hour or 0,
+                "intensity_multiplier": a.intensity_multiplier or 1.0,
+                "intensity_category": a.intensity_category or "UNKNOWN",
+                "intensity_reason": a.intensity_reason or "",
+                "sleep_multiplier": a.sleep_multiplier or 1.0,
+                "sleep_hours": round(a.sleep_secs / 3600, 1) if a.sleep_secs else None,
+                "streak_multiplier": a.streak_multiplier or 1.0,
+                "streak_reason": a.streak_reason or "",
+                "date": a.start_date.strftime("%d.%m.%Y") if a.start_date else "—",
+            }
+            for a in acts
+        ],
+    }
 
 @router.get("/leaderboard")
 async def leaderboard(

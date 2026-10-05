@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { authApi } from "@/lib/auth";
+import Link from "next/link";
 
 type ModalKind = null | "search" | "list";
 type Tab = "friends" | "clubs";
@@ -51,9 +52,9 @@ function ModalShell({ title, onClose, children }: { title: string; onClose: () =
 }
 
 /* ── Строка атлета ── */
-function PersonRow({ p, action }: { p: Person; action?: ReactNode }) {
-  return (
-    <div className="flex items-center gap-3 border-2 border-black bg-white px-3 py-2">
+function PersonRow({ p, action, href }: { p: Person; action?: ReactNode; href?: string }) {
+  const body = (
+    <>
       <span className="w-9 h-9 shrink-0 bg-[#171a38] text-white flex items-center justify-center font-display lowercase text-lg">
         {p.display_name.charAt(0)}
       </span>
@@ -63,6 +64,17 @@ function PersonRow({ p, action }: { p: Person; action?: ReactNode }) {
           @{p.username} · LVL {p.level} · {Math.round(p.total_xp)} XP
         </p>
       </div>
+    </>
+  );
+  return (
+    <div className="flex items-center gap-3 border-2 border-black bg-white px-3 py-2">
+      {href ? (
+        <Link href={href} className="flex items-center gap-3 min-w-0 flex-1 hover:opacity-70 transition-opacity">
+          {body}
+        </Link>
+      ) : (
+        <div className="flex items-center gap-3 min-w-0 flex-1">{body}</div>
+      )}
       {action}
     </div>
   );
@@ -159,7 +171,7 @@ function SearchModal({ onClose, onChanged }: { onClose: () => void; onChanged: (
 
       <div className="space-y-2">
         {results.map((p) => (
-          <PersonRow key={p.id} p={p} action={actionFor(p)} />
+          <PersonRow key={p.id} p={p} action={actionFor(p)} href={`/u/${p.username}`} />
         ))}
         {searched && results.length === 0 && (
           <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-6">
@@ -239,7 +251,7 @@ function ListModal({ onClose, onChanged }: { onClose: () => void; onChanged: () 
           <p className="text-[9px] font-bold tracking-widest uppercase text-[#666] mb-2">Friends · {data.friends.length}</p>
           <div className="space-y-2">
             {data.friends.map((p) => (
-              <PersonRow key={p.id} p={p} action={<span className="font-display text-[#ff4b26] shrink-0">{Math.round(p.total_xp).toLocaleString()}</span>} />
+              <PersonRow key={p.id} p={p} action={<span className="font-display text-[#ff4b26] shrink-0">{Math.round(p.total_xp).toLocaleString()}</span>} href={`/u/${p.username}`} />
             ))}
             {data.friends.length === 0 && (
               <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-4">
