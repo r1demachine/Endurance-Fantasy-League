@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { authApi, isAuthenticated } from "@/lib/auth";
 import ActivityCard from "@/components/ActivityCard";
+import XpTooltip from "@/components/XpTooltip";
 import { Star, Sticker } from "@/components/DreamBits";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -29,6 +30,8 @@ function SectionTitle({ children, tone = "default" }: { children: ReactNode; ton
 function Label({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <p className={`text-[9px] md:text-[10px] font-bold tracking-widest uppercase ${className}`}>{children}</p>;
 }
+
+
 
 export default function PublicProfilePage() {
   const params = useParams();
@@ -134,7 +137,22 @@ export default function PublicProfilePage() {
 
   const u = profile.user;
   const stats = profile.season_stats;
-  const hrData = profile.hr_last_month || [];
+
+  const chartData = [...activities]
+    .slice()
+    .reverse()
+    .map((act: any) => ({
+      date: act.date || "",
+      xp: Math.round(Number(act.xp) || 0),
+      name: act.name || "workout",
+      sport: act.sport || "",
+      distance: act.distance_km ?? 0,
+      sleepMult: act.sleep_multiplier ?? 1,
+      intensityMult: act.intensity_multiplier ?? 1,
+      base_xp: act.base_xp ?? 0,
+      intensity_category: act.intensity_category ?? "UNKNOWN",
+      streakMult: act.streak_multiplier ?? 1,
+    }));
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] px-2 sm:px-4 md:px-6 pb-6 text-[#111] relative overflow-hidden">
@@ -231,26 +249,32 @@ export default function PublicProfilePage() {
           </div>
         </div>
 
-        {/* ── HR за месяц ── */}
-        {hrData.length > 0 && (
+        {/* ── XP Dynamics (как на дашборде) ── */}
+        {chartData.length > 0 && (
           <div className="border-t-2 border-black">
-            <SectionTitle tone="orange">Heart rate</SectionTitle>
+            <SectionTitle tone="orange">XP Dynamics</SectionTitle>
             <div className="p-4 md:p-6 bg-white">
-              <Label className="text-[#666] mb-3 block">Avg HR · last 30 days</Label>
-              <div className="h-48 w-full">
+              <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={hrData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <defs>
-                      <linearGradient id="hrFill" x1="0" y1="0" x2="0" y2="1">
+                      <linearGradient id="xpFillPub" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="#ff4b26" stopOpacity={0.3} />
                         <stop offset="100%" stopColor="#ff4b26" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#00000015" />
-                    <XAxis dataKey="date" tick={{ fill: "#666", fontSize: 9 }} axisLine={{ stroke: "#000" }} tickLine={false} interval="preserveStartEnd" />
-                    <YAxis domain={[40, "auto"]} tick={{ fill: "#666", fontSize: 9 }} axisLine={false} tickLine={false} width={32} />
-                    <Tooltip contentStyle={{ background: "#c7d2fe", border: "2px solid #000", borderRadius: 0, fontSize: 12 }} />
-                    <Area type="monotone" dataKey="hr" stroke="#ff4b26" strokeWidth={2.5} fill="url(#hrFill)" />
+                    <XAxis dataKey="date" tick={{ fill: "#666", fontSize: 10 }} axisLine={{ stroke: "#000" }} tickLine={false} />
+                    <YAxis tick={{ fill: "#666", fontSize: 10 }} axisLine={false} tickLine={false} width={36} />
+                    <Tooltip content={<XpTooltip chartData={chartData} />} />
+                    <Area
+                      type="monotone"
+                      dataKey="xp"
+                      stroke="#ff4b26"
+                      strokeWidth={2.5}
+                      fill="url(#xpFillPub)"
+                      activeDot={{ r: 5, fill: "#171a38", stroke: "#ffd500", strokeWidth: 2 }}
+                    />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
