@@ -248,7 +248,7 @@ export default function ConnectSources({
                       minLength={2}
                       value={athleteInput}
                       onChange={(e) => setAthleteInput(e.target.value)}
-                      placeholder="i337004"
+                      placeholder="i337ххх"
                       className="w-full px-4 py-3 bg-white border-2 border-black font-mono text-sm focus:outline-none focus:bg-[#ffd500]/20 transition-colors"
                     />
                   </div>

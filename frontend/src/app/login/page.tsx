@@ -64,7 +64,7 @@ export default function LoginPage() {
             FANTASY<span className="text-[#ff4b26]">.</span>
           </div>
           <div className="hidden sm:flex items-center px-4 border-r-2 border-black text-[10px] font-bold tracking-widest uppercase leading-relaxed">
-            RideMachine CC<br />Athlete login
+            RideMachineCC<br />Athlete login
           </div>
           <div className="bg-[#ffd500] px-4 py-4 text-[10px] font-bold tracking-widest uppercase flex items-center">
             Season 001
@@ -124,7 +124,7 @@ export default function LoginPage() {
               maxLength={32}
               value={username}
               onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
-              placeholder="ridemachine"
+              placeholder="kinda machine"
               className="w-full px-4 py-3 bg-white border-2 border-black font-bold focus:outline-none focus:bg-[#ffd500]/20 transition-colors"
             />
           </div>
@@ -145,7 +145,7 @@ export default function LoginPage() {
                 maxLength={50}
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="RideMachine CC"
+                placeholder="KindaMachineLider"
                 className="w-full px-4 py-3 bg-white border-2 border-black font-bold focus:outline-none focus:bg-[#ffd500]/20 transition-colors"
               />
             </motion.div>
