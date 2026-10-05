@@ -4,6 +4,7 @@ import Header from "@/components/Header";
 import PageTransition from "@/components/PageTransition";
 import DataWarmup from "@/components/DataWarmup";
 import DreamDust from "@/components/DreamDust";
+import ThemeInit from "@/components/ThemeInit";
 import "./globals.css";
 
 const inter = Inter({
@@ -23,6 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ru">
       {/* ВАЖНО: body НЕ должен иметь bg-gradient, только базовый цвет или transparent */}
       <body className={`${inter.className} bg-[#171a38] text-white antialiased`}>
+        <ThemeInit />
         <Header />
         <DreamDust />
         <DataWarmup />

@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import type { ReactNode } from "react";
 import { KonamiArrows, Runner, useKonami } from "@/components/KonamiRunner";
 import { useSeason } from "@/lib/seasons";
+import { useTheme } from "@/lib/theme";
 
 /* ✦ Звезда-искорка (Dream) */
 function Star({ className = "" }: { className?: string }) {
@@ -57,6 +58,7 @@ function GlobeIcon() {
 export default function Home() {
   const { progress, running, done, press } = useKonami();
   const season = useSeason();
+  const { theme, toggle } = useTheme();
   const mechanics = [
     { n: "01", title: "Sync data", tag: "Strava / Garmin / Wahoo", cell: "bg-[#ffd500]", icon: "🔌" },
     { n: "02", title: "XP = Load × IF × Sleep", tag: "Quality over quantity", cell: "bg-[#ff4b26] text-white", icon: "⚡" },
@@ -195,8 +197,15 @@ export default function Home() {
             <span className="text-2xl">→</span>
           </div>
           <div className="bg-[#5866f2] text-white border-t-2 md:border-t-0 md:border-l-2 border-black px-5 py-4 flex items-center justify-between gap-6 text-[11px] font-bold tracking-widest uppercase">
-            <span>Open for<br />new athletes</span>
-            <span className="w-4 h-4 bg-[#ffd500] rounded-full inline-block shrink-0"></span>
+            <span>Change theme?<br />over here!</span>
+            <button
+              type="button"
+              onClick={toggle}
+              title="Переключить тему"
+              className="w-9 h-9 bg-[#ffd500] text-black rounded-full inline-flex items-center justify-center shrink-0 border-2 border-black hover:rotate-45 transition-transform"
+            >
+              {theme === "dark" ? "☀" : "🌙"}
+            </button>
           </div>
         </div>
 

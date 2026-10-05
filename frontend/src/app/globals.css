@@ -143,3 +143,47 @@ b, strong, .font-bold, .font-extrabold, .font-black {
 .runner-bounce {
   animation: runner-bounce 0.45s ease-in-out infinite;
 }
+
+
+/* ============================================================
+   🌙 ТЁМНАЯ ТЕМА — «ночная газета»
+   бумага #f4f4f0 -> #14172e | чернила #111 -> #f2f2ea
+   чёрные рамки -> светлые #f4f4f0
+   ============================================================ */
+[data-theme="dark"] { color-scheme: dark; }
+
+/* ── фоны ── */
+[data-theme="dark"] .bg-\[\#f4f4f0\] { background-color: #14172e; }
+[data-theme="dark"] .bg-white { background-color: #1d2140; }
+[data-theme="dark"] .bg-white\/50 { background-color: rgba(29, 33, 64, 0.6); }
+[data-theme="dark"] .bg-\[\#c7d2fe\] { background-color: #262b55; }
+[data-theme="dark"] .bg-\[\#171a38\] { background-color: #2a2f6b; }
+[data-theme="dark"] .bg-black\/5 { background-color: rgba(244, 244, 240, 0.06); }
+[data-theme="dark"] .bg-black\/10 { background-color: rgba(244, 244, 240, 0.12); }
+[data-theme="dark"] .bg-\[\#5866f2\]\/10,
+[data-theme="dark"] .bg-\[\#5866f2\]\/15 { background-color: rgba(88, 102, 242, 0.25); }
+
+/* ── текст ── */
+[data-theme="dark"] .text-\[\#111\] { color: #f2f2ea; }
+[data-theme="dark"] .text-\[\#111\]\/30 { color: rgba(242, 242, 234, 0.35); }
+[data-theme="dark"] .text-\[\#666\] { color: #a6acc4; }
+[data-theme="dark"] .text-\[\#999\] { color: #8b91ab; }
+[data-theme="dark"] .text-\[\#4b5563\] { color: #a6acc4; }
+[data-theme="dark"] .text-\[\#171a38\] { color: #ffd500; }
+
+/* ── рамки: светлые вместо чёрных ── */
+[data-theme="dark"] .border-black { border-color: #f4f4f0; }
+[data-theme="dark"] .border-black\/10 { border-color: rgba(244, 244, 240, 0.15); }
+[data-theme="dark"] .border-black\/20 { border-color: rgba(244, 244, 240, 0.22); }
+[data-theme="dark"] .border-black\/30 { border-color: rgba(244, 244, 240, 0.3); }
+
+/* ── hover/active: инверсия ── */
+[data-theme="dark"] .hover\:bg-black:hover { background-color: #f4f4f0; }
+[data-theme="dark"] .hover\:text-white:hover { color: #14172e; }
+[data-theme="dark"] .hover\:bg-black\/5:hover { background-color: rgba(244, 244, 240, 0.08); }
+[data-theme="dark"] .active\:bg-black:active { background-color: #f4f4f0; }
+[data-theme="dark"] .active\:text-white:active { color: #14172e; }
+
+/* ── исключения: на жёлтом/розовом текст остаётся тёмным ── */
+[data-theme="dark"] .bg-\[\#ffd500\] { color: #111; }
+[data-theme="dark"] .bg-\[\#f6b8d0\] { color: #111; }
