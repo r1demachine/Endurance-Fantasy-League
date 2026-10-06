@@ -1,5 +1,5 @@
 """Безопасность: пароли (PBKDF2), JWT-токены, шифрование API-ключей (Fernet)."""
-import base64
+
 import hashlib
 import hmac
 import os
@@ -11,7 +11,7 @@ from cryptography.fernet import Fernet
 from .config import get_settings
 
 _settings = get_settings()
-SECRET_KEY = _settings.SECRET_KEY
+JWT_SECRET = _settings.JWT_SECRET
 JWT_ALGORITHM = "HS256"
 TOKEN_EXPIRE_DAYS = 7
 
@@ -40,21 +40,20 @@ def create_access_token(user_id: int) -> str:
         "sub": str(user_id),
         "exp": datetime.now(timezone.utc) + timedelta(days=TOKEN_EXPIRE_DAYS),
     }
-    return jwt.encode(payload, SECRET_KEY, algorithm=JWT_ALGORITHM)
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
 def decode_access_token(token: str) -> int | None:
     """Возвращает user_id или None."""
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return int(payload["sub"])
     except jwt.PyJWTError:
         return None
 
 
 # ─── Fernet: шифруем API-ключи Intervals ───
-_fernet_key = base64.urlsafe_b64encode(hashlib.sha256(SECRET_KEY.encode()).digest())
-_fernet = Fernet(_fernet_key)
+_fernet = Fernet(_settings.ENCRYPTION_KEY.encode())
 
 
 def encrypt_secret(value: str) -> str:

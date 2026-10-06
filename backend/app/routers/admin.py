@@ -1,16 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
+from sqlalchemy import func
 from sqlalchemy.orm import Session
-from sqlalchemy import text
-from ..database import get_db, engine
 
-router = APIRouter(prefix="/api/admin", tags=["Admin"])
+from ..database import get_db
+from ..dependencies import require_admin
+from ..models import Activity, Friendship, User
 
-@router.post("/reset-db")
-def reset_database(db: Session = Depends(get_db)):
-    """Одноразовая очистка таблицы users (и связанных данных). Удали этот роутер после использования!"""
-    try:
-        with engine.begin() as conn:
-            conn.execute(text("TRUNCATE users CASCADE"))
-        return {"message": "✅ Таблица users очищена"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# dependencies на уровне роутера: КАЖДЫЙ эндпоинт, который ты добавишь
+# в этот файл в будущем, автоматически закрыт проверкой require_admin.
+router = APIRouter(
+    prefix="/api/admin",
+    tags=["Admin"],
+    dependencies=[Depends(require_admin)],
+)
+
+
+@router.get("/stats")
+def stats(db: Session = Depends(get_db)):
+    """Безопасная read-only сводка. Деструктивных операций здесь нет."""
+    return {
+        "users": db.query(func.count(User.id)).scalar(),
+        "activities": db.query(func.count(Activity.id)).scalar(),
+        "friendships": db.query(func.count(Friendship.id)).scalar(),
+    }

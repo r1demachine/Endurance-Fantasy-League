@@ -55,13 +55,17 @@ try:
 except Exception as e:
     print(f"⚠️ Auto-migration warning: {type(e).__name__}: {e}")
 
+settings = get_settings()
+_is_prod = settings.APP_ENV == "production"
+
 app = FastAPI(
     title="Fantasy League for Endurance Athletes",
     description="API для геймифицированной спортивной платформы (Intervals.icu)",
     version="0.2.0",
+    docs_url=None if _is_prod else "/docs",
+    redoc_url=None if _is_prod else "/redoc",
+    openapi_url=None if _is_prod else "/openapi.json",
 )
-
-settings = get_settings()
 
 app.add_middleware(
     CORSMiddleware,
@@ -105,9 +109,3 @@ async def health_check():
     return {"status": "healthy"}
 
 
-@app.get("/config-check")
-async def config_check():
-    return {
-        "api_url": settings.INTERVALS_API_URL,
-        "has_secret_key": bool(settings.SECRET_KEY),
-    }

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .models import User
 from .auth import decode_access_token
+from .config import get_settings
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -28,3 +29,15 @@ def get_current_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Пользователь не найден")
     return user
+
+
+def _admin_ids() -> set[int]:
+    raw = get_settings().ADMIN_USER_IDS
+    return {int(x) for x in raw.split(",") if x.strip().isdigit()}
+
+
+def require_admin(current: User = Depends(get_current_user)) -> User:
+    """Пускает только пользователей из ADMIN_USER_IDS. Список пуст -> никого."""
+    if current.id not in _admin_ids():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
+    return current
