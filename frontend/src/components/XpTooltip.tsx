@@ -51,16 +51,23 @@ export default function XpTooltip({
           {d.date} · {d.sport} · {d.distance} km
         </p>
 
-        {/* Base XP */}
-        <div className="flex items-center justify-between gap-4">
-          <span className="shrink-0 text-[#4b5563] font-bold uppercase text-[10px]">
-            Base XP
-          </span>
-
-          <span className="flex-1 text-right font-display">
-            {d.base_xp}
-          </span>
-        </div>
+        {d.base_xp == null ? (
+          <>
+            <div className="flex items-center justify-between gap-4">
+              <span className="shrink-0 text-[#4b5563] font-bold uppercase text-[10px]">Load XP</span>
+              <span className="flex-1 text-right font-display">+{d.xp}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="shrink-0 text-[#4b5563] font-bold uppercase text-[10px]">Source</span>
+              <span className="flex-1 text-right font-display">{d.tss_estimated ? "EST" : "TSS"}</span>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center justify-between gap-4">
+            <span className="shrink-0 text-[#4b5563] font-bold uppercase text-[10px]">Base XP</span>
+            <span className="flex-1 text-right font-display">{d.base_xp}</span>
+          </div>
+        )}
 
         {/* Intensity */}
         <div className="flex items-center justify-between gap-4">
@@ -75,27 +82,29 @@ export default function XpTooltip({
           </span>
         </div>
 
-        {/* Sleep */}
-        <div className="flex items-center justify-between gap-4">
-          <span className="shrink-0 text-[#4b5563] font-bold uppercase text-[10px]">
-            Sleep
-          </span>
+        {d.base_xp == null && (
+          <div className="flex items-center justify-between gap-4">
+            <span className="shrink-0 text-[#4b5563] font-bold uppercase text-[10px]">
+              Sleep
+            </span>
 
-          <span className="flex-1 text-right font-display">
-            ×{Number(d.sleepMult ?? 1).toFixed(2)}
-          </span>
-        </div>
+            <span className="flex-1 text-right font-display">
+              ×{Number(d.sleepMult ?? 1).toFixed(2)}
+            </span>
+          </div>
+        )}
 
-        {/* Streak */}
-        <div className="flex items-center justify-between gap-4">
-          <span className="shrink-0 text-[#4b5563] font-bold uppercase text-[10px]">
-            Streak
-          </span>
+        {d.base_xp == null && (
+          <div className="flex items-center justify-between gap-4">
+            <span className="shrink-0 text-[#4b5563] font-bold uppercase text-[10px]">
+              Streak
+            </span>
 
-          <span className="flex-1 text-right font-display text-[#16a34a]">
-            ×{Number(d.streakMult ?? 1).toFixed(2)}
-          </span>
-        </div>
+            <span className="flex-1 text-right font-display text-[#16a34a]">
+              ×{Number(d.streakMult ?? 1).toFixed(2)}
+            </span>
+          </div>
+        )}
 
         {/* Total */}
         <div className="flex items-center justify-between gap-4 mt-1 pt-1 border-t border-black/20">

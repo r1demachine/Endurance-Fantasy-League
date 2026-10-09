@@ -223,6 +223,12 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
         shares = X6.allocate_daily_effort_xp([{"tss": a.tss} for a in day_acts], day_xp)
         for a, share in zip(day_acts, shares):
             a.xp_earned = share
+            # v6: старые множители больше не математика — гасим, чтобы UI не показывал призрак v5
+            a.base_xp = None
+            a.rate_per_hour = None
+            a.sleep_multiplier = None
+            a.intensity_multiplier = None
+            a.streak_multiplier = None
             med = X6.medians_by_sport(hist, {a.id}).get(str(a.sport_type or "").upper())
             a.is_long = bool(med and (a.moving_time or 0) >= med * X6.LONG_WORKOUT_MEDIAN_MULTIPLIER)
         day_info[d] = {
@@ -640,6 +646,7 @@ async def get_user_profile(
             "xp_to_next_level": round(((user.level) ** 2) * 100 - float(user.total_xp or 0), 2),
             "has_intervals_key": bool(user.api_key_encrypted),
             "intervals_id": user.intervals_id,
+            "xp_version": get_settings().XP_ENGINE,
         },
         "stats": {
             "day_streak": day_streak,
@@ -665,6 +672,8 @@ async def get_user_profile(
                 "sleep_hours": round(act.sleep_secs / 3600, 1) if act.sleep_secs else None,
                 "streak_multiplier": act.streak_multiplier or 1.0,
                 "streak_reason": act.streak_reason or "",
+                "tss_estimated": bool(act.tss_estimated),
+                "is_long": bool(act.is_long),
                 "date": act.start_date.strftime("%d.%m.%Y") if act.start_date else "Неизвестно",
             }
             for act in activities
@@ -836,6 +845,8 @@ async def public_activities(
                 "sleep_hours": round(a.sleep_secs / 3600, 1) if a.sleep_secs else None,
                 "streak_multiplier": a.streak_multiplier or 1.0,
                 "streak_reason": a.streak_reason or "",
+                "tss_estimated": bool(a.tss_estimated),
+                "is_long": bool(a.is_long),
                 "date": a.start_date.strftime("%d.%m.%Y") if a.start_date else "—",
             }
             for a in acts

@@ -202,6 +202,7 @@ export default function Dashboard() {
       base_xp: act.base_xp ?? 0,
       intensity_category: act.intensity_category ?? "UNKNOWN",
       streakMult: act.streak_multiplier ?? 1,
+      tss_estimated: act.tss_estimated ?? false,
     }));
 
   const xpProgress = isEmpty ? 0 : (data.user.total_xp % 100);

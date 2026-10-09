@@ -64,3 +64,29 @@ def xp_compare(user_id: int, db: Session = Depends(get_db)):
             for ws, w in sorted(weeks.items())
         ],
     }
+
+
+@router.post("/xp-migrate")
+def xp_migrate(db: Session = Depends(get_db)):
+    """Одноразовый бэкфилл XP v6 на ВСЕХ пользователей (идемпотентный).
+    Прогоняет v6-пересчёт: миграционная компенсация (одноразово),
+    исторические WeeklySummary, события только от недели активации.
+    Возвращает отчёт before/after — это же снапшот для сверки."""
+    from ..routers.sync import _recalculate_user_xp_v6
+
+    report = []
+    for user in db.query(User).order_by(User.id.asc()).all():
+        before_total = round(float(user.total_xp or 0), 2)
+        before_level = user.level
+        _recalculate_user_xp_v6(db, user)
+        db.commit()
+        report.append({
+            "user_id": user.id,
+            "username": user.username,
+            "total_before": before_total,
+            "total_after": round(float(user.total_xp or 0), 2),
+            "level_before": before_level,
+            "level_after": user.level,
+            "legacy_offset": round(float(user.legacy_xp_offset or 0), 2),
+        })
+    return {"migrated": len(report), "report": report}
