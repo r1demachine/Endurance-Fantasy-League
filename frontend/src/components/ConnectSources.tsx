@@ -88,7 +88,7 @@ export default function ConnectSources({
       const res = await authApi.post("/api/sync");
       onMessage({
         type: "success",
-        text: `✅ Sync done: ${res.data.synced_count} workouts · +${Math.round(res.data.new_xp)} XP`,
+        text: `✅ Sync done: ${res.data.synced_count} new · ${res.data.updated_count ?? 0} updated · +${Math.round(res.data.new_xp)} XP`,
       });
       await refreshUser(true);
     } catch (err: any) {

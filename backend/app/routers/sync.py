@@ -111,13 +111,26 @@ def _has_real_data(parsed: dict) -> bool:
         return True
     return False
 
+def _parse_w_float(v):
+    try:
+        return float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_w_int(v):
+    try:
+        return int(float(v)) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
 
 def _recalculate_user_xp(db: Session, user: User) -> None:
     """Пересчитывает XP ВСЕХ активностей юзера по календарным дням (согласованно)."""
     acts = (db.query(Activity)
-              .filter(Activity.user_id == user.id)
-              .order_by(Activity.start_date.asc())
-              .all())
+            .filter(Activity.user_id == user.id)
+            .order_by(Activity.start_date.asc(), Activity.id.asc())
+            .all())
     if not acts:
         user.total_xp = 0.0
         user.level = 1
@@ -214,11 +227,11 @@ async def sync_activities(
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Intervals.icu недоступен: {type(e).__name__}")
     
-    if not activities_data:
-        return {"message": "Нет активностей для синхронизации", "synced_count": 0, "new_xp": 0}
+
     
-    # ── Тянем wellness этим же юзером ──
+    # ── Тянем wellness этим же юзером + upsert в БД (не зависит от активностей) ──
     sleep_by_date: dict = {}
+    wellness_upserted = 0
     try:
         wellness_records = await fetch_wellness_for_user(
             api_key=api_key, athlete_id=athlete_id, oldest=oldest, newest=newest
@@ -236,20 +249,71 @@ async def sync_activities(
                 secs = None
             if secs is not None and secs > 0:
                 sleep_by_date[date_str] = secs
+            score = _parse_w_float(row.get("sleepScore") if row.get("sleepScore") is not None else row.get("sleep_score"))
+            hrv = _parse_w_float(row.get("hrv"))
+            resting = _parse_w_int(row.get("restingHR") if row.get("restingHR") is not None else row.get("resting_hr"))
+            ctl = _parse_w_float(row.get("ctl"))
+            atl = _parse_w_float(row.get("atl"))
+            existing_w = (
+                db.query(Wellness)
+                .filter(Wellness.user_id == current.id, Wellness.date == date_str)
+                .first()
+            )
+            if existing_w:
+                # upsert: повторный синк ОБНОВЛЯЕТ, а не дублирует
+                if secs is not None:
+                    existing_w.sleep_secs = secs
+                if score is not None:
+                    existing_w.sleep_score = score
+                if hrv is not None:
+                    existing_w.hrv = hrv
+                if resting is not None:
+                    existing_w.resting_hr = resting
+                if ctl is not None:
+                    existing_w.ctl = ctl
+                if atl is not None:
+                    existing_w.atl = atl
+            else:
+                db.add(Wellness(
+                    user_id=current.id,
+                    date=date_str,
+                    sleep_secs=secs,
+                    sleep_score=score,
+                    hrv=hrv,
+                    resting_hr=resting,
+                    ctl=ctl,
+                    atl=atl,
+                ))
+            wellness_upserted += 1
+        db.commit()
     except Exception as e:
+        db.rollback()
         print(f"⚠️ Wellness skip: {type(e).__name__}: {e}")
     
-    # ── Пишем в БД ──
+    # ── Нет новых тренировок: сон всё равно обновился → пересчитываем ──
+    if not activities_data:
+        total_before = float(current.total_xp or 0)
+        _recalculate_user_xp(db, current)
+        db.commit()
+        db.refresh(current)
+        return {
+            "message": "Новых активностей нет, но сон и восстановление обновлены",
+            "synced_count": 0,
+            "updated_count": 0,
+            "wellness_upserted": wellness_upserted,
+            "new_xp": round(float(current.total_xp or 0) - total_before, 2),
+        }
+
+    # ── Пишем в БД (upsert: существующие обновляем, новые создаём) ──
     new_xp = 0.0
     synced_count = 0
+    updated_count = 0
     skipped_empty = 0
-    sleep_updated = 0
     seen_ids: set[str] = set()
     existing_rows = {
         row.intervals_activity_id: row
         for row in db.query(Activity).filter(Activity.user_id == current.id).all()
     }
-    existing_ids = set(existing_rows.keys())
     for raw in activities_data:
         if not isinstance(raw, dict):
             continue
@@ -260,28 +324,36 @@ async def sync_activities(
         if act_id in seen_ids:
             continue
         seen_ids.add(act_id)
-        if act_id in existing_ids:
-            # тренировка уже в БД — но ДОДОЛИВАЕМ сон, если он появился в Intervals
-            row = existing_rows[act_id]
-            act_date = parsed["start_date"].strftime("%Y-%m-%d")
-            new_sleep = sleep_by_date.get(act_date)
-            if new_sleep is None:
-                prev = (parsed["start_date"] - timedelta(days=1)).strftime("%Y-%m-%d")
-                new_sleep = sleep_by_date.get(prev)
-            if new_sleep and (row.sleep_secs or 0) != new_sleep:
-                row.sleep_secs = new_sleep
-                sleep_updated += 1
-            continue
         if not _has_real_data(parsed):
             skipped_empty += 1
             continue
-        
         act_date = parsed["start_date"].strftime("%Y-%m-%d")
         sleep_secs = sleep_by_date.get(act_date)
         if sleep_secs is None:
             prev = (parsed["start_date"] - timedelta(days=1)).strftime("%Y-%m-%d")
             sleep_secs = sleep_by_date.get(prev)
-
+        if act_id in existing_rows:
+            # UPSERT: Intervals досылает TSS/пульс/сон ПОЗЖЕ самой тренировки
+            row = existing_rows[act_id]
+            changed = False
+            for field, value in (
+                ("training_load", parsed.get("training_load") or 0),
+                ("intensity", parsed.get("intensity") or 0),
+                ("moving_time", parsed.get("moving_time") or 0),
+                ("average_heartrate", parsed.get("average_heartrate") or 0),
+                ("distance", parsed.get("distance") or 0),
+                ("elevation_gain", parsed.get("elevation_gain") or 0),
+            ):
+                old = getattr(row, field) or 0
+                if value and abs(old - value) > 1e-6:
+                    setattr(row, field, value)
+                    changed = True
+            if sleep_secs and (row.sleep_secs or 0) != sleep_secs:
+                row.sleep_secs = sleep_secs
+                changed = True
+            if changed:
+                updated_count += 1
+            continue
         new_activity = Activity(
             user_id=current.id,
             intervals_activity_id=act_id,
@@ -297,18 +369,15 @@ async def sync_activities(
             start_date=parsed["start_date"],
         )
         db.add(new_activity)
-        existing_ids.add(act_id)
+        existing_rows[act_id] = new_activity
         synced_count += 1
-
         dist_km = parsed["distance"] / 1000 if parsed["distance"] else 0
         print(
             f"✅ {parsed['name']} | {parsed['sport_type']} | "
             f"{dist_km:.1f}km | {parsed['moving_time'] // 60} мин"
         )
-    
-    if sleep_updated:
-        print(f"😴 Обновлён сон на существующих тренировках: {sleep_updated}")
     db.commit()
+
 
     total_before = float(current.total_xp or 0)
     _recalculate_user_xp(db, current)
@@ -319,8 +388,9 @@ async def sync_activities(
     return {
         "message": "Синхронизация успешна!",
         "synced_count": synced_count,
+        "updated_count": updated_count,
+        "wellness_upserted": wellness_upserted,
         "skipped_empty": skipped_empty,
-        "sleep_updated": sleep_updated,
         "new_xp": new_xp,
         "user": {
             "id": current.id,
