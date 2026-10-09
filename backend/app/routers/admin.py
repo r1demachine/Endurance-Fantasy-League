@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-
+from fastapi import APIRouter, Depends, HTTPException
 from ..database import get_db
 from ..dependencies import require_admin
 from ..models import Activity, Friendship, User
@@ -22,4 +22,45 @@ def stats(db: Session = Depends(get_db)):
         "users": db.query(func.count(User.id)).scalar(),
         "activities": db.query(func.count(Activity.id)).scalar(),
         "friendships": db.query(func.count(Friendship.id)).scalar(),
+    }
+
+@router.get("/xp-compare")
+def xp_compare(user_id: int, db: Session = Depends(get_db)):
+    """Диагностика v5 vs v6 по неделям. НИЧЕГО не записывает."""
+    from collections import defaultdict as _dd
+    from datetime import date as _d
+    from ..services import xp_v6 as X6
+
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    acts = (db.query(Activity).filter(Activity.user_id == user_id)
+            .order_by(Activity.start_date.asc(), Activity.id.asc()).all())
+    by_day = _dd(list)
+    for a in acts:
+        by_day[a.start_date.date() if a.start_date else _d.today()].append(a)
+    weeks = _dd(lambda: {"v5": 0.0, "v6_load": 0.0, "days": 0})
+    for d, day_acts in by_day.items():
+        ws = X6.week_start(d)
+        weeks[ws]["v5"] += sum(a.xp_earned or 0 for a in day_acts)
+        tss_day = sum(X6.resolve_training_load({
+            "training_load": a.training_load, "moving_time": a.moving_time,
+            "intensity": a.intensity, "sport_type": a.sport_type})[0] for a in day_acts)
+        weeks[ws]["v6_load"] += X6.effort_xp_day(tss_day)
+        if X6.is_qualifying_day([{"moving_time": a.moving_time} for a in day_acts]):
+            weeks[ws]["days"] += 1
+    return {
+        "user_id": user_id,
+        "current_total_xp": round(float(user.total_xp or 0), 2),
+        "legacy_offset": round(float(user.legacy_xp_offset or 0), 2),
+        "weeks": [
+            {
+                "week": ws.isoformat(),
+                "v5_xp": round(w["v5"], 2),
+                "v6_load_xp": round(w["v6_load"], 2),
+                "v6_load_plus_consistency": round(
+                    w["v6_load"] + min(w["days"], X6.CONSISTENCY_DAYS_CAP) * X6.CONSISTENCY_XP_PER_DAY, 2),
+            }
+            for ws, w in sorted(weeks.items())
+        ],
     }

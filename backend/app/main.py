@@ -27,6 +27,10 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN display_name VARCHAR(100)"))
             if "api_key_encrypted" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN api_key_encrypted VARCHAR(500)"))
+            if "legacy_xp_offset" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN legacy_xp_offset FLOAT DEFAULT 0"))
+            if "xp_migrated_at" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN xp_migrated_at TIMESTAMP"))
             conn.execute(text("ALTER TABLE users ALTER COLUMN intervals_id DROP NOT NULL"))
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)"))
 
@@ -43,6 +47,12 @@ try:
                 conn.execute(text("ALTER TABLE activities ADD COLUMN streak_reason VARCHAR"))
             if "rate_per_hour" not in acols:
                 conn.execute(text("ALTER TABLE activities ADD COLUMN rate_per_hour FLOAT DEFAULT 0.0"))
+            if "tss" not in acols:
+                conn.execute(text("ALTER TABLE activities ADD COLUMN tss FLOAT"))
+            if "tss_estimated" not in acols:
+                conn.execute(text("ALTER TABLE activities ADD COLUMN tss_estimated BOOLEAN DEFAULT FALSE"))
+            if "is_long" not in acols:
+                conn.execute(text("ALTER TABLE activities ADD COLUMN is_long BOOLEAN DEFAULT FALSE"))
 
         # ── notifications (живые уведомления v4.2) ──
         # таблица создаётся через create_all, но на всякий случай проверяем колонку read

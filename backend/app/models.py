@@ -28,6 +28,8 @@ class User(Base):
     # Game data
     total_xp = Column(Float, default=0)
     level = Column(Integer, default=1)
+    legacy_xp_offset = Column(Float, default=0.0)            # v6: миграционная компенсация
+    xp_migrated_at = Column(DateTime, nullable=True)         # v6: маркер одноразовой миграции
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -75,7 +77,10 @@ class Activity(Base):
     intensity_reason = Column(String, nullable=True)        # текст для Activity Card
     streak_multiplier = Column(Float, default=1.0)          # множитель дневного streak
     streak_reason = Column(String, nullable=True)           # текст для Activity Card
-    rate_per_hour = Column(Float, default=0.0)              # ставка XP/ч (для разбивки)
+    rate_per_hour = Column(Float, default=0.0)               # ставка XP/ч (для разбивки)
+    tss = Column(Float, nullable=True)                       # v6: нагрузка (реал/оценка)
+    tss_estimated = Column(Boolean, default=False)           # v6: нагрузка оценочная
+    is_long = Column(Boolean, default=False)                 # v6: ≥1.3× своей медианы             
     
     start_date = Column(DateTime)
     start_date_local = Column(DateTime, nullable=True)
@@ -158,3 +163,56 @@ class Notification(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", backref="notifications")
+
+
+
+class WeeklySummary(Base):
+    __tablename__ = "weekly_summaries"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    week_start = Column(DateTime, nullable=False)          # понедельник 00:00
+    actual_load = Column(Float, default=0)
+    target_load = Column(Float, nullable=True)
+    completion_ratio = Column(Float, nullable=True)
+    training_days = Column(Integer, default=0)
+    target_training_days = Column(Integer, nullable=True)
+    effort_xp = Column(Float, default=0)
+    goal_xp = Column(Float, default=0)
+    consistency_xp = Column(Float, default=0)
+    quality_xp = Column(Float, default=0)
+    recovery_xp = Column(Float, default=0)
+    quest_xp = Column(Float, default=0)
+    total_xp = Column(Float, default=0)
+    league_score = Column(Float, nullable=True)
+    division = Column(String, nullable=True)
+    division_source = Column(String, nullable=True)        # ctl | load_fallback | provisional
+    finalized = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("uq_weekly_summary_user_week", "user_id", "week_start", unique=True),
+    )
+
+
+class XPEvent(Base):
+    __tablename__ = "xp_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    week_start = Column(DateTime, nullable=False)
+    date = Column(DateTime, nullable=False)
+    event_type = Column(String, nullable=False)   # consistency|quality_hard|quality_long|weekly_goal|recovery|quest|achievement
+    event_key = Column(String, nullable=False)    # стабильный ключ идемпотентности
+    amount = Column(Float, nullable=False, default=0)
+    source_type = Column(String, nullable=True)   # day | week | quest
+    source_id = Column(String, nullable=True)
+    title = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("uq_xp_event_key", "user_id", "event_key", unique=True),
+        Index("ix_xp_events_user_week", "user_id", "week_start"),
+    )
