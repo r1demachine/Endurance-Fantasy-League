@@ -4,13 +4,26 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 interface Act {
-  name: string; sport: string; distance_km: number; moving_time_min: number;
-  xp: number; base_xp: number; rate_per_hour: number;
-  intensity_multiplier: number; intensity_category: string; intensity_reason: string;
-  sleep_multiplier: number; sleep_hours: number | null;
-  streak_multiplier: number; streak_reason: string; date: string;
+  id: number;
+  name: string;
+  sport: string;
+  date: string;
+  distance_km: number;
+  moving_time_min: number;
+  xp: number;
+  base_xp: number | null;
+  rate_per_hour: number;
+  intensity_multiplier: number;
+  intensity_category: string;
+  intensity_reason: string;
+  sleep_multiplier: number;
+  sleep_hours: number | null;
+  streak_multiplier: number;
+  streak_reason: string;
+  // v6 fields
+  tss_estimated?: boolean;
+  is_long?: boolean;
 }
-
 const CAT_COLOR: Record<string, string> = {
   LOW: "text-[#16a34a]", MEDIUM: "text-[#5866f2]", HIGH: "text-[#ff4b26]",
   UNKNOWN: "text-[#999]",
