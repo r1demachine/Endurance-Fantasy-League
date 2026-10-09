@@ -4,17 +4,14 @@ import { useState, useEffect, useRef } from "react";
 import type { ReactNode, TouchEvent } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import axios from "axios";
 import { getCachedUser, subscribeUser, refreshUser } from "@/lib/apiCache";
 import { authApi, isAuthenticated } from "@/lib/auth";
 import ActivityCard from "@/components/ActivityCard";
-import { Star, Sticker, DreamDecor } from "@/components/DreamBits";
+import { Star, Sticker } from "@/components/DreamBits";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts";
 import XpTooltip from "@/components/XpTooltip";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 type Tone = "default" | "yellow" | "orange" | "indigo";
 
@@ -40,10 +37,8 @@ function Label({ children, className = "" }: { children: ReactNode; className?: 
   );
 }
 
-
 function useIsTouch() {
   const [touch, setTouch] = useState(false);
-
   useEffect(() => {
     setTouch(
       typeof window !== "undefined" &&
@@ -54,13 +49,141 @@ function useIsTouch() {
         )
     );
   }, []);
-
   return touch;
 }
- 
+
+function WeekBlock({ weekData }: { weekData: any }) {
+  if (!weekData) return null;
+  const pct = Math.min(Math.max(weekData.completion_ratio || 0, 0), 150);
+  const isReady = weekData.state === "ready";
+  const isInProgress = weekData.state === "in_progress";
+
+  return (
+    <div className="border-b-2 border-black bg-white p-4 md:p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-display uppercase text-xl md:text-2xl">Твоя неделя</h3>
+        {isInProgress && (
+          <span className="px-2 py-1 bg-[#ffd500] text-[10px] font-bold tracking-widest uppercase">
+            В процессе
+          </span>
+        )}
+        {weekData.state === "no_data" && (
+          <span className="px-2 py-1 bg-[#666] text-white text-[10px] font-bold tracking-widest uppercase">
+            {weekData.target_load > 0 ? "Стартовая норма" : "Нет данных"}
+          </span>
+        )}
+      </div>
+
+      {/* Кольцо цели */}
+      <div className="flex items-center gap-6 mb-6">
+        <div className="relative w-24 h-24 shrink-0">
+          <svg className="w-full h-full transform -rotate-90">
+            <circle cx="48" cy="48" r="40" stroke="#e5e7eb" strokeWidth="8" fill="none" />
+            <circle
+              cx="48" cy="48" r="40"
+              stroke={pct >= 100 ? "#16a34a" : "#ff4b26"}
+              strokeWidth="8"
+              fill="none"
+              strokeDasharray={`${Math.min(pct, 100) * 2.51} 251`}
+              strokeLinecap="round"
+            />
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="font-display text-xl">{Math.round(pct)}%</span>
+          </div>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] font-bold tracking-widest uppercase text-[#666] mb-1">
+            Цель нагрузки
+          </p>
+          <p className="font-display text-2xl mb-1">
+            {weekData.actual_load} / {weekData.target_load} TSS
+          </p>
+          <p className="text-[10px] text-[#666]">
+            {weekData.training_days} тренировочных дней
+          </p>
+        </div>
+      </div>
+
+      {weekData.state === "no_data" && weekData.target_load > 0 && (
+        <p className="text-[10px] text-[#666] mb-4">
+          История ещё не накоплена — цель равна стартовой норме (3 тренировки × 45 мин).
+          Синхронизируй тренировки, и цель станет персональной.
+        </p>
+      )}
+
+      {/* Разбивка XP */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {[
+          { label: "Нагрузка", value: weekData.effort_xp, color: "text-[#ff4b26]" },
+          { label: "Цель", value: weekData.goal_xp, color: "text-[#16a34a]" },
+          { label: "Регулярность", value: weekData.consistency_xp, color: "text-[#5866f2]" },
+          { label: "Качество", value: weekData.quality_xp, color: "text-[#ffd500]" },
+          { label: "Восстановление", value: weekData.recovery_xp, color: "text-[#0ea5e9]" },
+          { label: "Квесты", value: weekData.quest_xp, color: "text-[#a855f7]" },
+        ].map((item) => (
+          <div key={item.label} className="border border-black/10 p-2">
+            <p className="text-[9px] font-bold tracking-widest uppercase text-[#666]">
+              {item.label}
+            </p>
+            <p className={`font-display text-lg ${item.color}`}>+{item.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {isReady && (
+        <div className="mt-4 pt-4 border-t border-black/10 flex items-center justify-between">
+          <span className="text-[10px] font-bold tracking-widest uppercase text-[#666]">
+            League Score
+          </span>
+          <span className="font-display text-xl text-[#171a38]">
+            {weekData.league_score}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EventsFeed({ events }: { events: any[] }) {
+  if (!events.length) return null;
+  const typeIcons: Record<string, string> = {
+    consistency: "📅",
+    quality_hard: "⚡",
+    quality_long: "🏃",
+    weekly_goal: "🎯",
+    recovery: "😴",
+    quest: "🏆",
+    achievement: "⭐",
+  };
+  return (
+    <div className="border-b-2 border-black bg-white p-4 md:p-6">
+      <h3 className="font-display uppercase text-xl md:text-2xl mb-4">XP-события</h3>
+      <div className="space-y-2">
+        {events.map((e) => (
+          <div
+            key={e.id}
+            className="flex items-center gap-3 p-2 border border-black/10 hover:bg-black/5 transition-colors"
+          >
+            <span className="text-xl shrink-0">{typeIcons[e.type] || "✨"}</span>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold uppercase text-sm truncate">{e.title}</p>
+              <p className="text-[9px] font-bold tracking-widest uppercase text-[#666]">
+                {e.date}
+              </p>
+            </div>
+            <span className="font-display text-lg text-[#16a34a] shrink-0">+{e.amount}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const [userData, setUserData] = useState<any>(null);
+  const [weekData, setWeekData] = useState<any>(null);
+  const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [leaderboardTab, setLeaderboardTab] = useState<"global" | "friends">("global");
   const [inviteMessage, setInviteMessage] = useState("");
@@ -86,21 +209,17 @@ export default function Dashboard() {
 
   const TOUCH_HOLD_MS = 250;
 
-
   const handleChartTouchStart = (
     _nextState: unknown,
     event: TouchEvent<SVGGraphicsElement>
   ) => {
     const touch = event.touches[0];
-
     if (!touch) return;
-
     touchStartRef.current = {
       time: Date.now(),
       x: touch.clientX,
       y: touch.clientY,
     };
-
     setTouchTooltipActive(false);
   };
 
@@ -109,16 +228,12 @@ export default function Dashboard() {
     event: TouchEvent<SVGGraphicsElement>
   ) => {
     if (!touchStartRef.current) return;
-
     const touch = event.touches[0];
     if (!touch) return;
-
-    setCursorY(touch.clientY); // сохраняем Y-координату пальца
-
+    setCursorY(touch.clientY);
     const elapsed = Date.now() - touchStartRef.current.time;
     const dx = Math.abs(touch.clientX - touchStartRef.current.x);
     const dy = Math.abs(touch.clientY - touchStartRef.current.y);
-
     if (elapsed >= TOUCH_HOLD_MS && (dx > 4 || dy > 4)) {
       setTouchTooltipActive(true);
     }
@@ -137,10 +252,18 @@ export default function Dashboard() {
 
   useEffect(() => {
     const cached = getCachedUser();
-    if (cached) { setUserData(cached); setLoading(false); } // мгновенно из кэша
-    const unsub = subscribeUser(setUserData);               // живые обновления
-    refreshUser();                                          // фон: прогрев
-    setLoading(false);                                      // сразу снимаем лоадер — кэш уже подтянут выше
+    if (cached) {
+      setUserData(cached);
+      setWeekData(cached.week || null);
+      setEvents(cached.recent_events || []);
+    }
+    const unsub = subscribeUser((u) => {
+      setUserData(u);
+      setWeekData(u?.week || null);
+      setEvents(u?.recent_events || []);
+    });
+    refreshUser();
+    setLoading(false);
     return unsub;
   }, []);
 
@@ -228,7 +351,7 @@ export default function Dashboard() {
       <Star className="absolute w-7 h-7 text-white/80 bottom-[5%] right-[4%] animate-pulse" />
 
       {/* 📰 жёсткая таблица поверх сна */}
-      <div className="relative max-w-[1400px] w-full mx-auto border-2 border-t-0 border-black bg-[#f4f4f0] flex-1 flex flex-col breathe-table">        
+      <div className="relative max-w-[1400px] w-full mx-auto border-2 border-t-0 border-black bg-[#f4f4f0] flex-1 flex flex-col breathe-table">
 
         {/* Гость / пустое состояние */}
         {(!isAuthed || isEmpty) && (
@@ -288,7 +411,6 @@ export default function Dashboard() {
         </div>
 
         {/* Статистика */}
-        
         <div className="grid md:grid-cols-3 border-b-2 border-black">
           <div className="md:border-r-2 border-black">
             <SectionTitle>Level</SectionTitle>
@@ -332,6 +454,14 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* ── Твоя неделя + события (v6) — ВНУТРИ основной рамки ── */}
+        {isAuthed && !isEmpty && (
+          <>
+            <WeekBlock weekData={weekData} />
+            <EventsFeed events={events} />
+          </>
+        )}
 
         {/* Рейтинг */}
         <div className="border-b-2 border-black">
@@ -480,7 +610,6 @@ export default function Dashboard() {
                         trigger="hover"
                         active={isTouch ? touchTooltipActive : undefined}
                         portal={tooltipPortal}
-
                         allowEscapeViewBox={{ x: true, y: true }}
                         wrapperStyle={{
                           position: "fixed",
@@ -543,7 +672,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        
       </div>
     </main>
   );

@@ -252,6 +252,11 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
 
     all_weeks = sorted({X6.week_start(d) for d in day_info})
     this_week = X6.week_start(_date.today())
+    # Текущая неделя ВСЕГДА присутствует в сводках — даже без тренировок:
+    # иначе блок «Твоя неделя» показывает «нет данных» вместо цели
+    if this_week not in all_weeks:
+        all_weeks.append(this_week)
+        all_weeks.sort()
     week_load = {ws: 0.0 for ws in all_weeks}
     week_days = {ws: 0 for ws in all_weeks}
     for d, info in day_info.items():
@@ -635,6 +640,61 @@ async def get_user_profile(
         "total_workouts": len(season_acts),
         "total_xp": round(sum(a.xp_earned or 0 for a in season_acts)),
     }
+
+    # ── v6: текущая неделя и лента событий ──
+    from ..models import WeeklySummary, XPEvent
+    this_week_start = week_start(today)
+    current_summary = (
+        db.query(WeeklySummary)
+        .filter(WeeklySummary.user_id == user.id, WeeklySummary.week_start == datetime.combine(this_week_start, datetime.min.time()))
+        .first()
+    )
+    
+    # Если сводки нет (ещё не синхронизировался в v6), создаём заглушку
+    if not current_summary:
+        from ..services import xp_v6 as X6
+        last_summ = (
+            db.query(WeeklySummary)
+            .filter(WeeklySummary.user_id == user.id)
+            .order_by(WeeklySummary.week_start.desc())
+            .first()
+        )
+        fallback_target = (
+            round(last_summ.target_load, 1)
+            if last_summ and last_summ.target_load
+            else X6.starter_target()
+        )
+        week_data = {
+            "actual_load": 0, "target_load": fallback_target, "completion_ratio": 0,
+            "training_days": 0, "effort_xp": 0, "goal_xp": 0,
+            "consistency_xp": 0, "quality_xp": 0, "recovery_xp": 0,
+            "quest_xp": 0, "total_xp": 0, "league_score": 0,
+            "state": "no_data",
+        }
+    else:
+        week_data = {
+            "actual_load": round(current_summary.actual_load or 0, 1),
+            "target_load": round(current_summary.target_load or 0, 1),
+            "completion_ratio": round((current_summary.completion_ratio or 0) * 100, 1),
+            "training_days": current_summary.training_days or 0,
+            "effort_xp": round(current_summary.effort_xp or 0, 1),
+            "goal_xp": round(current_summary.goal_xp or 0, 1),
+            "consistency_xp": round(current_summary.consistency_xp or 0, 1),
+            "quality_xp": round(current_summary.quality_xp or 0, 1),
+            "recovery_xp": round(current_summary.recovery_xp or 0, 1),
+            "quest_xp": round(current_summary.quest_xp or 0, 1),
+            "total_xp": round(current_summary.total_xp or 0, 1),
+            "league_score": round(current_summary.league_score or 0, 1),
+            "state": "ready" if current_summary.finalized else "in_progress",
+        }
+
+    recent_events = (
+        db.query(XPEvent)
+        .filter(XPEvent.user_id == user.id)
+        .order_by(XPEvent.date.desc(), XPEvent.id.desc())
+        .limit(10)
+        .all()
+    )
     
     return {
         "user": {
@@ -655,6 +715,19 @@ async def get_user_profile(
             "week_goal_hours": 10,
         },
         "season_stats": season_stats,
+
+        "week": week_data,
+        "recent_events": [
+            {
+                "id": e.id,
+                "type": e.event_type,
+                "amount": round(e.amount, 1),
+                "title": e.title or e.event_type,
+                "date": e.date.strftime("%d.%m") if e.date else "",
+            }
+            for e in recent_events
+        ],
+
         "recent_activities": [
             {
                 "id": act.id,

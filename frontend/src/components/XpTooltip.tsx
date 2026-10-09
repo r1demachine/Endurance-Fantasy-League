@@ -51,7 +51,7 @@ export default function XpTooltip({
           {d.date} · {d.sport} · {d.distance} km
         </p>
 
-        {d.base_xp == null ? (
+        {d.base_xp == null || d.base_xp === 0 ? (
           <>
             <div className="flex items-center justify-between gap-4">
               <span className="shrink-0 text-[#4b5563] font-bold uppercase text-[10px]">Load XP</span>
@@ -82,7 +82,7 @@ export default function XpTooltip({
           </span>
         </div>
 
-        {d.base_xp == null && (
+        {(d.base_xp != null && d.base_xp !== 0) && (
           <div className="flex items-center justify-between gap-4">
             <span className="shrink-0 text-[#4b5563] font-bold uppercase text-[10px]">
               Sleep
@@ -94,7 +94,7 @@ export default function XpTooltip({
           </div>
         )}
 
-        {d.base_xp == null && (
+        {(d.base_xp != null && d.base_xp !== 0) && (
           <div className="flex items-center justify-between gap-4">
             <span className="shrink-0 text-[#4b5563] font-bold uppercase text-[10px]">
               Streak
