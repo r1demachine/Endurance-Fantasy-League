@@ -90,3 +90,25 @@ def xp_migrate(db: Session = Depends(get_db)):
             "legacy_offset": round(float(user.legacy_xp_offset or 0), 2),
         })
     return {"migrated": len(report), "report": report}
+
+@router.post("/reset-all")
+def reset_all(db: Session = Depends(get_db)):
+    """ПОЛНЫЙ сброс базы данных (только для админа).
+    Удаляет ВСЕХ пользователей, тренировки, wellness, события, рейтинги.
+    Использовать только на чистой базе перед запуском v6."""
+    from sqlalchemy import text
+    
+    # Отключаем проверки внешних ключей для CASCADE
+    db.execute(text("TRUNCATE TABLE xp_events RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE weekly_summaries RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE notifications RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE friendships RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE wellness RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE activities RESTART IDENTITY CASCADE"))
+    db.execute(text("TRUNCATE TABLE users RESTART IDENTITY CASCADE"))
+    db.commit()
+    
+    return {
+        "message": "✅ База данных полностью очищена",
+        "warning": "Все пользователи, тренировки и данные удалены. Зарегистрируйся заново.",
+    }
