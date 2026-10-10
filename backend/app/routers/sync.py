@@ -369,6 +369,33 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
         summ.league_score = X6.league_score(ratio, days, t_days, quality_xp)
         summ.finalized = finalized
 
+    # ── Квесты: одноразовые ачивки поверх журнала событий ──
+    from ..services import quests as Q
+    summaries_all = (
+        db.query(WeeklySummary)
+        .filter(WeeklySummary.user_id == user.id)
+        .order_by(WeeklySummary.week_start.asc())
+        .all()
+    )
+    Q.grant_quests(db, user, acts, summaries_all)
+    # quest_xp текущей недели учитывает только что выданные ачивки
+    this_ws_dt = datetime.combine(this_week, datetime.min.time())
+    summ_now = (
+        db.query(WeeklySummary)
+        .filter(WeeklySummary.user_id == user.id, WeeklySummary.week_start == this_ws_dt)
+        .first()
+    )
+    if summ_now:
+        summ_now.quest_xp = round_xp(sum(e.amount for e in db.query(XPEvent).filter(
+            XPEvent.user_id == user.id,
+            XPEvent.event_type == "quest",
+            XPEvent.week_start == this_ws_dt,
+        ).all()))
+        summ_now.total_xp = round_xp(
+            summ_now.effort_xp + summ_now.consistency_xp + summ_now.quality_xp
+            + summ_now.goal_xp + summ_now.recovery_xp + summ_now.quest_xp
+        )
+
     db.flush()
     events_sum = round_xp(sum(e.amount for e in db.query(XPEvent).filter(XPEvent.user_id == user.id).all()))
     acts_sum = round_xp(sum(a.xp_earned or 0 for a in acts))
@@ -705,6 +732,7 @@ async def sync_activities(
 async def get_user_profile(
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    
 ):
     """Данные ТЕКУЩЕГО пользователя."""
     user = current
@@ -852,6 +880,7 @@ async def get_user_profile(
 
         "week": week_data,
         "last_league": last_league,
+        "quests": __import__("app.services.quests", fromlist=["quest_states"]).quest_states(db, user),
         "recent_events": [
             {
                 "id": e.id,

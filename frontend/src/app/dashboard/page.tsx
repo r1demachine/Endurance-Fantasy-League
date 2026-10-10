@@ -187,10 +187,48 @@ function EventsFeed({ events }: { events: any[] }) {
   );
 }
 
+function QuestsBoard({ quests }: { quests: any[] }) {
+  if (!quests?.length) return null;
+  return (
+    <div className="border-b-2 border-black bg-white p-4 md:p-6">
+      <h3 className="font-display uppercase text-xl md:text-2xl mb-4">Достижения</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+        {quests.map((q) => (
+          <div
+            key={q.slug}
+            className={`p-3 border-2 ${
+              q.status === "earned"
+                ? "border-[#16a34a] bg-[#16a34a]/10"
+                : q.status === "unavailable"
+                ? "border-black/10 bg-black/5 opacity-60"
+                : "border-black/20"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-bold uppercase text-sm truncate">
+                {q.status === "earned" ? "⭐" : q.status === "unavailable" ? "🔒" : "🏆"} {q.title}
+              </p>
+              <span className="font-display text-[#16a34a] shrink-0">+{q.reward}</span>
+            </div>
+            <p className="text-[9px] font-bold tracking-widest uppercase text-[#666] mt-1">{q.desc}</p>
+            {q.status === "earned" && q.earned_at && (
+              <p className="text-[9px] text-[#16a34a] mt-1">получено {q.earned_at}</p>
+            )}
+            {q.status === "unavailable" && (
+              <p className="text-[9px] text-[#999] mt-1">данные ещё не синхронизируются</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [userData, setUserData] = useState<any>(null);
   const [weekData, setWeekData] = useState<any>(null);
   const [events, setEvents] = useState<any[]>([]);
+  const [quests, setQuests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [leaderboardTab, setLeaderboardTab] = useState<"global" | "friends" | "weekly">("weekly");
   const [weeklyBoard, setWeeklyBoard] = useState<any>(null);
@@ -264,11 +302,13 @@ export default function Dashboard() {
       setUserData(cached);
       setWeekData(cached.week || null);
       setEvents(cached.recent_events || []);
+      setQuests(cached.quests || []);
     }
     const unsub = subscribeUser((u) => {
       setUserData(u);
       setWeekData(u?.week || null);
       setEvents(u?.recent_events || []);
+      setQuests(u?.quests || []);
     });
     refreshUser();
     setLoading(false);
@@ -474,6 +514,7 @@ export default function Dashboard() {
           <>
             <WeekBlock weekData={weekData} />
             <EventsFeed events={events} />
+            <QuestsBoard quests={quests} />
           </>
         )}
 
