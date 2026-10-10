@@ -20,6 +20,7 @@ interface Act {
   sleep_hours: number | null;
   streak_multiplier: number;
   streak_reason: string;
+
   // v6 fields
   tss_estimated?: boolean;
   is_long?: boolean;

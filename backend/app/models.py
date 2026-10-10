@@ -14,6 +14,7 @@ class User(Base):
     username = Column(String(64), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     display_name = Column(String(100), nullable=False)  # имя для лидерборда
+
     
     # Intervals.icu привязка (опциональна до первого sync)
     intervals_id = Column(String, unique=True, index=True, nullable=True)
