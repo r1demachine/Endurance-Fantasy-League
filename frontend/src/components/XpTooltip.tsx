@@ -7,10 +7,12 @@ export default function XpTooltip({
   active,
   payload,
   chartData,
+  showSleep = true,
 }: {
   active?: boolean;
   payload?: any[];
   chartData: any[];
+  showSleep?: boolean;
 }) {
   if (!active || !payload?.length) return null;
 
@@ -82,7 +84,7 @@ export default function XpTooltip({
           </span>
         </div>
 
-        {(d.base_xp != null && d.base_xp !== 0) && (
+        {showSleep && (d.base_xp != null && d.base_xp !== 0) && (
           <div className="flex items-center justify-between gap-4">
             <span className="shrink-0 text-[#4b5563] font-bold uppercase text-[10px]">
               Sleep
