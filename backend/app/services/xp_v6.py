@@ -232,6 +232,45 @@ def league_score(completion_ratio: float, training_days: int, target_days: int, 
     return round_xp(LEAGUE_GOAL_WEIGHT * goal + LEAGUE_CONSISTENCY_WEIGHT * cons + LEAGUE_QUALITY_WEIGHT * qual)
 
 
+# ── Синтетические атлеты (калибровка, этап 15) ──
+def synthetic_week(week_tss: float, days: int, goal_pct: float = 1.0,
+                   quality: float = 15.0, recovery: float = 8.0) -> dict:
+    """Модель недели: нагрузка равномерно по дням, цель выполнена на goal_pct."""
+    per_day = week_tss / days if days else 0.0
+    load_xp = round_xp(effort_xp_day(per_day) * days)
+    consistency = consistency_xp_week(days)
+    goal = weekly_goal_xp(goal_pct)
+    total = round_xp(load_xp + consistency + goal + quality + recovery)
+    score = league_score(goal_pct, days, target_training_days([days] * 6), quality)
+    return {
+        "load_xp": load_xp,
+        "consistency_xp": consistency,
+        "goal_xp": goal,
+        "quality_xp": quality,
+        "recovery_xp": recovery,
+        "total_xp": total,
+        "completion_pct": round(goal_pct * 100, 1),
+        "league_score": score,
+    }
+
+
+def synthetic_report() -> list[dict]:
+    out = []
+    for name, tss, days in (("Newbie", 125, 3), ("Amateur", 376, 5), ("Pro", 866, 7)):
+        row = synthetic_week(tss, days, goal_pct=1.0)
+        row.update(athlete=name, scenario="ideal week (100% goal)")
+        out.append(row)
+    extra = (
+        ("Pro", 866, 7, 0.65, "65% of plan"),
+        ("Amateur", 376, 3, 1.0, "3 workouts by own plan"),
+        ("Amateur", 250, 5, 0.66, "5 workouts below own norm"),
+    )
+    for name, tss, days, pct, scenario in extra:
+        row = synthetic_week(tss, days, goal_pct=pct)
+        row.update(athlete=name, scenario=scenario)
+        out.append(row)
+    return out
+
 # ═══════════════ САМОТЕСТ ═══════════════
 if __name__ == "__main__":
     # нагрузка
@@ -261,4 +300,15 @@ if __name__ == "__main__":
     assert weekly_baseline([100, 100]) is None                   # холодный старт
     # league: 100% своих целей → равный Goal Score
     assert league_score(1.0, 3, 3, 0) == league_score(1.0, 5, 5, 0) or True
+
+    # синтетика: объём награждается, но справедливость живёт в League Score
+    syn = {f"{r['athlete']}|{r['scenario']}": r for r in synthetic_report()}
+    n100 = syn["Newbie|ideal week (100% goal)"]
+    p100 = syn["Pro|ideal week (100% goal)"]
+    p65 = syn["Pro|65% of plan"]
+    assert p100["total_xp"] > n100["total_xp"]                 # объём важен
+    assert p100["total_xp"] < n100["total_xp"] * 3             # без разрыва ×10
+    assert n100["league_score"] > p65["league_score"]          # свой план > чужой объём
+    assert syn["Amateur|3 workouts by own plan"]["league_score"] >= 90
+
     print("✅ xp_v6.py self-test passed")
