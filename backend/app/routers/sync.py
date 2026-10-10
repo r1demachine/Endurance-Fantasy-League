@@ -113,12 +113,19 @@ def _has_real_data(parsed: dict) -> bool:
     return False
 
 def _detect_manual(raw: dict) -> bool:
-    """Признак ручной записи из payload Intervals. Если источника в payload нет —
-    НЕ выдумываем: запись считается автоматической (ограничение документировано)."""
+    """Определяет ручную запись по явным полям payload Intervals."""
     src = str(raw.get("source") or raw.get("icu_source") or "").strip().lower()
     if src in {"manual", "manually", "entered", "manual entry"}:
         return True
-    return raw.get("manual") in (True, 1, "true")
+
+    # Поддерживаем оба варианта флага, включая строковые значения из JSON/CSV.
+    for key in ("is_manual", "manual"):
+        value = raw.get(key)
+        if value is True or value == 1:
+            return True
+        if isinstance(value, str) and value.strip().lower() in {"true", "1", "yes"}:
+            return True
+    return False
 
 def _parse_w_float(v):
     try:
