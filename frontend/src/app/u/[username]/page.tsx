@@ -161,7 +161,6 @@ export default function PublicProfilePage() {
       name: act.name || "workout",
       sport: act.sport || "",
       distance: act.distance_km ?? 0,
-      sleepMult: act.sleep_multiplier ?? 1,
       intensityMult: act.intensity_multiplier ?? 1,
       base_xp: act.base_xp ?? 0,
       intensity_category: act.intensity_category ?? "UNKNOWN",
@@ -310,7 +309,7 @@ export default function PublicProfilePage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#00000015" />
                     <XAxis dataKey="date" tick={{ fill: "#666", fontSize: 10 }} axisLine={{ stroke: "#000" }} tickLine={false} />
                     <YAxis tick={{ fill: "#666", fontSize: 10 }} axisLine={false} tickLine={false} width={36} />
-                    <Tooltip content={<XpTooltip chartData={chartData} />} />
+                    <Tooltip content={<XpTooltip chartData={chartData} showSleep={false} />} />
                     <Area
                       type="monotone"
                       dataKey="xp"

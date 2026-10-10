@@ -80,7 +80,10 @@ try:
 
     print("✅ Auto-migration complete (users + activities + weekly_summaries + notifications)")
 except Exception as e:
-    print(f"⚠️ Auto-migration warning: {type(e).__name__}: {e}")
+    print(f"❌ Critical database migration failure: {type(e).__name__}: {e}")
+    raise RuntimeError(
+        "Critical database migration failed; application startup aborted."
+    ) from e
 
 settings = get_settings()
 _is_prod = settings.APP_ENV == "production"

@@ -113,12 +113,19 @@ def _has_real_data(parsed: dict) -> bool:
     return False
 
 def _detect_manual(raw: dict) -> bool:
-    """Признак ручной записи из payload Intervals. Если источника в payload нет —
-    НЕ выдумываем: запись считается автоматической (ограничение документировано)."""
+    """Определяет ручную запись по явным полям payload Intervals."""
     src = str(raw.get("source") or raw.get("icu_source") or "").strip().lower()
     if src in {"manual", "manually", "entered", "manual entry"}:
         return True
-    return raw.get("manual") in (True, 1, "true")
+
+    # Поддерживаем оба варианта флага, включая строковые значения из JSON/CSV.
+    for key in ("is_manual", "manual"):
+        value = raw.get(key)
+        if value is True or value == 1:
+            return True
+        if isinstance(value, str) and value.strip().lower() in {"true", "1", "yes"}:
+            return True
+    return False
 
 def _parse_w_float(v):
     try:
@@ -220,6 +227,7 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
         tss, source = X6.resolve_training_load({
             "training_load": a.training_load, "moving_time": a.moving_time,
             "intensity": a.intensity, "sport_type": a.sport_type,
+            "is_manual": bool(a.is_manual),
         })
         a.tss = round(tss, 2)
         a.tss_estimated = (source == "estimated")
@@ -739,6 +747,7 @@ async def sync_activities(
             intensity=parsed.get("intensity") or 0,
             sleep_secs=sleep_secs,
             start_date=parsed["start_date"],
+            is_manual=bool(parsed.get("is_manual", False)),
         )
         db.add(new_activity)
         existing_rows[act_id] = new_activity
@@ -1144,8 +1153,6 @@ async def public_activities(
                 "intensity_multiplier": a.intensity_multiplier or 1.0,
                 "intensity_category": a.intensity_category or "UNKNOWN",
                 "intensity_reason": a.intensity_reason or "",
-                "sleep_multiplier": a.sleep_multiplier or 1.0,
-                "sleep_hours": round(a.sleep_secs / 3600, 1) if a.sleep_secs else None,
                 "streak_multiplier": a.streak_multiplier or 1.0,
                 "streak_reason": a.streak_reason or "",
                 "tss_estimated": bool(a.tss_estimated),
