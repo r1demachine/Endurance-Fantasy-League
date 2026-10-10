@@ -330,6 +330,23 @@ def synthetic_report() -> list[dict]:
 
 # ═══════════════ САМОТЕСТ ═══════════════
 if __name__ == "__main__":
+    # ручные записи: реальная и оценочная нагрузка уменьшается вдвое
+    manual_real, manual_real_source = resolve_training_load({
+        "training_load": 100, "moving_time": 3600, "intensity": 0.8,
+        "sport_type": "RIDE", "is_manual": True,
+    })
+    normal_real, normal_real_source = resolve_training_load({
+        "training_load": 100, "moving_time": 3600, "intensity": 0.8,
+        "sport_type": "RIDE", "is_manual": False,
+    })
+    manual_estimated, manual_estimated_source = resolve_training_load({
+        "training_load": 0, "moving_time": 3600, "intensity": 0.75,
+        "sport_type": "RIDE", "is_manual": True,
+    })
+    assert manual_real == 50.0 and manual_real_source == "manual"
+    assert normal_real == 100.0 and normal_real_source == "real"
+    assert abs(manual_estimated - 28.125) < 1e-9 and manual_estimated_source == "manual"
+
     # нагрузка
     assert effort_xp_day(0) == 0.0 and effort_xp_day(-50) == 0.0
     assert effort_xp_day(100) == 14.0
