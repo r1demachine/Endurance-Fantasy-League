@@ -102,6 +102,13 @@ function WeekBlock({ weekData }: { weekData: any }) {
           <p className="text-[10px] text-[#666]">
             {weekData.training_days} тренировочных дней
           </p>
+          <p className="text-[10px] text-[#666] mt-1">
+            Дивизион:{" "}
+            <span className="font-bold text-[#171a38]">{weekData.division ?? "Provisional"}</span>
+            {weekData.division_source && (
+              <span className="text-[#999]"> · {weekData.division_source}</span>
+            )}
+          </p>
         </div>
       </div>
 
@@ -185,7 +192,8 @@ export default function Dashboard() {
   const [weekData, setWeekData] = useState<any>(null);
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [leaderboardTab, setLeaderboardTab] = useState<"global" | "friends">("global");
+  const [leaderboardTab, setLeaderboardTab] = useState<"global" | "friends" | "weekly">("weekly");
+  const [weeklyBoard, setWeeklyBoard] = useState<any>(null);
   const [inviteMessage, setInviteMessage] = useState("");
   const [globalBoard, setGlobalBoard] = useState<any[]>([]);
   const [friendsBoard, setFriendsBoard] = useState<any[]>([]);
@@ -292,6 +300,11 @@ export default function Dashboard() {
           setFriendsBoard(f.data.entries || []);
         } catch {}
       }
+      // Weekly League — публичный, как global
+      try {
+        const w = await authApi.get("/api/leaderboard", { params: { scope: "weekly" } });
+        setWeeklyBoard(w.data);
+      } catch {}
       setBoardsLoaded(true);
     })();
   }, []);
@@ -341,6 +354,7 @@ export default function Dashboard() {
   };
 
   const rows = leaderboardTab === "global" ? globalBoard : friendsBoard;
+  const weeklyEntries = weeklyBoard?.entries || [];
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] px-2 sm:px-4 md:px-6 pb-2 sm:pb-4 md:pb-6 text-[#111] relative overflow-hidden flex flex-col">
@@ -496,6 +510,14 @@ export default function Dashboard() {
                 >
                   Friends
                 </button>
+                <button
+                  onClick={() => setLeaderboardTab("weekly")}
+                  className={`flex-1 px-4 py-3 text-[10px] md:text-xs font-bold tracking-widest uppercase border-l-2 border-black transition-colors ${
+                    leaderboardTab === "weekly" ? "bg-[#ffd500] text-[#111]" : "hover:bg-black/5"
+                  }`}
+                >
+                  Week
+                </button>
               </div>
 
               <div>
@@ -511,6 +533,35 @@ export default function Dashboard() {
                         : "Login to see your friends rating 🔐"
                       : "Be the first on the leaderboard! 🏆"}
                   </p>
+                ) : leaderboardTab === "weekly" ? (
+                  <div>
+                    {!weeklyBoard?.formed && (
+                      <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-3 bg-[#ffd500]/20">
+                        Лига формируется: {weeklyEntries.length}/{weeklyBoard?.min_size ?? 5} атлетов
+                      </p>
+                    )}
+                    {weeklyEntries.map((p: any, idx: number) => (
+                      <div key={p.id}>
+                        {(idx === 0 || weeklyEntries[idx - 1].division !== p.division) && (
+                          <div className="px-4 py-2 bg-[#171a38] text-white text-[10px] font-bold tracking-widest uppercase flex justify-between">
+                            <span>{p.division ?? "Open · provisional"}</span>
+                            <span className="text-white/60">{p.division_source}</span>
+                          </div>
+                        )}
+                        <div className={`flex justify-between items-center px-4 py-3 border-t border-black/10 ${p.is_you ? "bg-[#ffd500]/20" : "hover:bg-black/5"} transition-colors`}>
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="font-display text-lg w-8 text-[#999]">
+                              {String(p.rank).padStart(2, "0")}
+                            </span>
+                            <Link href={`/u/${p.username}`} className="font-bold uppercase tracking-wide text-sm hover:text-[#5866f2] transition-colors truncate">
+                              {p.display_name} {p.is_you && "(YOU)"}
+                            </Link>
+                          </div>
+                          <span className="font-display text-[#171a38]">{p.score}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   rows.map((player, idx) => (
                     <div

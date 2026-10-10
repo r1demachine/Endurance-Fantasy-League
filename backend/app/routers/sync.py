@@ -5,7 +5,7 @@ from sqlalchemy import or_, and_
 from ..dependencies import get_current_user
 from ..auth import decrypt_secret, decode_access_token
 from ..database import get_db
-from ..models import User, Activity, Wellness, Friendship, FriendshipStatus
+from ..models import User, Activity, Wellness, Friendship, FriendshipStatus, WeeklySummary, XPEvent, LeagueWeek, LeagueMembership
 from collections import defaultdict
 from ..services.xp import recalculate_timeline, level_from_xp, round_xp
 from datetime import date as _date
@@ -375,6 +375,116 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
     user.total_xp = round_xp(float(user.legacy_xp_offset or 0) + acts_sum + events_sum)
     user.level = level_from_xp(user.total_xp)
 
+    # ── Лиги: закрываем завершённые недели, у которых ещё нет лиги ──
+    for ws in all_weeks:
+        if ws < this_week:
+            _close_league_week(db, ws)
+
+
+def _user_division(db: Session, user: User, week_start_d: _date, week_load: float):
+    """(division, source): CTL первичен; нет CTL → fallback по 12 неделям нагрузки;
+    мало истории → provisional (без фиктивного дивизиона)."""
+    from ..services import xp_v6 as X6
+    week_end = week_start_d + timedelta(days=7)
+    ctl_rows = (
+        db.query(Wellness.ctl)
+        .filter(Wellness.user_id == user.id,
+                Wellness.date >= week_start_d.isoformat(),
+                Wellness.date < week_end.isoformat())
+        .all()
+    )
+    ctls = [float(r[0]) for r in ctl_rows if r[0] is not None and float(r[0]) > 0]
+    if ctls:
+        return X6.division_name(X6.division_index_from_ctl(sum(ctls) / len(ctls))), "ctl"
+    finalized_count = (
+        db.query(WeeklySummary)
+        .filter(WeeklySummary.user_id == user.id, WeeklySummary.finalized == True)  # noqa: E712
+        .count()
+    )
+    if finalized_count >= 3:
+        recent = (
+            db.query(WeeklySummary.actual_load)
+            .filter(WeeklySummary.user_id == user.id, WeeklySummary.finalized == True)  # noqa: E712
+            .order_by(WeeklySummary.week_start.desc())
+            .limit(12)
+            .all()
+        )
+        avg12 = sum(r[0] or 0 for r in recent) / len(recent)
+        return X6.division_name(X6.division_index_from_load(avg12)), "load_fallback"
+    return None, "provisional"
+
+
+def _close_league_week(db: Session, week_start_d: _date) -> None:
+    """Закрытие недельной лиги: дивизионы, ранги, зоны ↑↓. Идемпотентно."""
+    from ..services import xp_v6 as X6
+    from ..models import LeagueWeek, LeagueMembership
+
+    ws_dt = datetime.combine(week_start_d, datetime.min.time())
+    if db.query(LeagueWeek).filter(LeagueWeek.week_start == ws_dt).first():
+        return
+    summaries = (
+        db.query(WeeklySummary)
+        .filter(WeeklySummary.week_start == ws_dt, WeeklySummary.finalized == True)  # noqa: E712
+        .all()
+    )
+    if not summaries:
+        return
+
+    entries = []
+    for s in summaries:
+        u = db.get(User, s.user_id)
+        if not u:
+            continue
+        div, source = _user_division(db, u, week_start_d, s.actual_load or 0)
+        entries.append(dict(user=u, summ=s, div=div, source=source,
+                            score=s.league_score or 0))
+
+    # группы по дивизионам; provisional → общая группа "Open"
+    groups: dict = {}
+    for e in entries:
+        groups.setdefault(e["div"] or "Open", []).append(e)
+
+    # слияние малых групп с соседними (порядок дивизионов)
+    order = list(X6.DIVISION_NAMES) + ["Open"]
+    keys = [k for k in order if k in groups] + [k for k in groups if k not in order]
+    merged = []
+    for k in keys:
+        if merged and len(merged[-1][1]) < X6.MIN_LEAGUE_SIZE:
+            merged[-1][0].append(k)
+            merged[-1][1].extend(groups[k])
+        else:
+            merged.append(([k], list(groups[k])))
+    if len(merged) > 1 and len(merged[-1][1]) < X6.MIN_LEAGUE_SIZE:
+        merged[-2][0].extend(merged[-1][0])
+        merged[-2][1].extend(merged[-1][1])
+        merged.pop()
+
+    formed = len(entries) >= X6.MIN_LEAGUE_SIZE
+    db.add(LeagueWeek(week_start=ws_dt, status="closed" if formed else "not_formed"))
+
+    for group_keys, members in merged:
+        members.sort(key=lambda e: (-e["score"], e["user"].id))
+        n = len(members)
+        zone = X6.PROMOTION_ZONE if formed and n >= 2 * X6.PROMOTION_ZONE else 0
+        for i, e in enumerate(members):
+            u = e["user"]
+            protected = False
+            if u.xp_migrated_at:
+                weeks_since = (week_start_d - X6.week_start(u.xp_migrated_at.date())).days // 7
+                protected = weeks_since < X6.NEWCOMER_PROTECTION_WEEKS
+            promoted = bool(zone) and i < zone
+            demoted = bool(zone) and i >= n - zone and not protected
+            db.add(LeagueMembership(
+                week_start=ws_dt, user_id=u.id,
+                division=e["div"], division_source=e["source"],
+                league_score=round(e["score"], 2), rank=i + 1,
+                group_key="+".join(group_keys),
+                promoted=promoted, demoted=demoted, protected=protected,
+            ))
+            e["summ"].division = e["div"]
+            e["summ"].division_source = e["source"]
+    db.commit()
+
 @router.post("/sync")
 async def sync_activities(
     oldest: str | None = None,
@@ -688,6 +798,30 @@ async def get_user_profile(
             "state": "ready" if current_summary.finalized else "in_progress",
         }
 
+    div, div_src = _user_division(db, user, this_week_start, week_data["actual_load"])
+    week_data["division"] = div
+    week_data["division_source"] = div_src
+
+    from ..models import LeagueMembership
+    last_mem = (
+        db.query(LeagueMembership)
+        .filter(LeagueMembership.user_id == user.id)
+        .order_by(LeagueMembership.week_start.desc())
+        .first()
+    )
+    last_league = None
+    if last_mem:
+        last_league = {
+            "week": last_mem.week_start.strftime("%d.%m"),
+            "division": last_mem.division,
+            "division_source": last_mem.division_source,
+            "rank": last_mem.rank,
+            "group": last_mem.group_key,
+            "promoted": bool(last_mem.promoted),
+            "demoted": bool(last_mem.demoted),
+            "protected": bool(last_mem.protected),
+        }
+
     recent_events = (
         db.query(XPEvent)
         .filter(XPEvent.user_id == user.id)
@@ -717,6 +851,7 @@ async def get_user_profile(
         "season_stats": season_stats,
 
         "week": week_data,
+        "last_league": last_league,
         "recent_events": [
             {
                 "id": e.id,
@@ -928,7 +1063,7 @@ async def public_activities(
 
 @router.get("/leaderboard")
 async def leaderboard(
-    scope: str = Query("global", regex="^(global|friends)$"),
+    scope: str = Query("global", regex="^(global|friends|weekly)$"),
     limit: int = Query(50, ge=1, le=100),
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer),
     db: Session = Depends(get_db),
@@ -939,6 +1074,56 @@ async def leaderboard(
         uid = decode_access_token(credentials.credentials)
         if uid is not None:
             current = db.get(User, uid)
+
+    # ── Weekly League (текущая неделя, live-борд по дивизионам) ──
+    if scope == "weekly":
+        from ..services import xp_v6 as X6
+        from ..models import LeagueWeek, WeeklySummary
+        today = datetime.utcnow().date()
+        this_ws_d = X6.week_start(today)
+        this_ws = datetime.combine(this_ws_d, datetime.min.time())
+        sums = (
+            db.query(WeeklySummary)
+            .filter(WeeklySummary.week_start == this_ws)
+            .all()
+        )
+        entries = []
+        for s in sums:
+            u = db.get(User, s.user_id)
+            if not u:
+                continue
+            div, src = _user_division(db, u, this_ws_d, s.actual_load or 0)
+            entries.append({
+                "id": u.id,
+                "username": u.username,
+                "display_name": u.display_name,
+                "level": u.level,
+                "score": round(s.league_score or 0, 1),
+                "division": div,
+                "division_source": src,
+                "is_you": current is not None and current.id == u.id,
+            })
+        order = {name: i for i, name in enumerate(X6.DIVISION_NAMES)}
+        order["Open"] = len(order)
+        order[None] = len(order) + 1
+        entries.sort(key=lambda e: (order.get(e["division"], 99), -e["score"]))
+        per_div: dict = {}
+        for e in entries:
+            per_div[e["division"]] = per_div.get(e["division"], 0) + 1
+            e["rank"] = per_div[e["division"]]
+        last_lw = (
+            db.query(LeagueWeek)
+            .order_by(LeagueWeek.week_start.desc())
+            .first()
+        )
+        return {
+            "scope": "weekly",
+            "week": this_ws_d.isoformat(),
+            "formed": len(entries) >= X6.MIN_LEAGUE_SIZE,
+            "min_size": X6.MIN_LEAGUE_SIZE,
+            "last_closed": last_lw.week_start.strftime("%d.%m") if last_lw else None,
+            "entries": entries,
+        }
 
     if scope == "global":
         users = (

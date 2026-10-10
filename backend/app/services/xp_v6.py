@@ -60,6 +60,33 @@ TARGET_DAYS_STARTER = 3
 
 assert abs(LEAGUE_GOAL_WEIGHT + LEAGUE_CONSISTENCY_WEIGHT + LEAGUE_QUALITY_WEIGHT - 1.0) < 1e-9
 
+# ── Дивизионы и недельные лиги (PR4) ──
+DIVISION_NAMES = ["Foundation", "Builder", "Contender", "Elite", "Legend"]
+DIVISION_CTL_THRESHOLDS = (25.0, 45.0, 70.0, 100.0)       # полосы CTL
+DIVISION_LOAD_THRESHOLDS = (150.0, 300.0, 500.0, 800.0)   # недельный TSS (fallback)
+MIN_LEAGUE_SIZE = 5          # минимум участников лиги
+PROMOTION_ZONE = 5           # зона повышения
+DEMOTION_ZONE = 5            # зона понижения
+NEWCOMER_PROTECTION_WEEKS = 2
+
+
+def division_index_from_ctl(ctl: float) -> int:
+    for i, thr in enumerate(DIVISION_CTL_THRESHOLDS):
+        if ctl < thr:
+            return i
+    return len(DIVISION_CTL_THRESHOLDS)
+
+
+def division_index_from_load(weekly_load: float) -> int:
+    for i, thr in enumerate(DIVISION_LOAD_THRESHOLDS):
+        if weekly_load < thr:
+            return i
+    return len(DIVISION_LOAD_THRESHOLDS)
+
+
+def division_name(idx: int) -> str:
+    return DIVISION_NAMES[min(max(idx, 0), len(DIVISION_NAMES) - 1)]
+
 
 def round_xp(v: float) -> float:
     return round(float(v or 0.0), 2)

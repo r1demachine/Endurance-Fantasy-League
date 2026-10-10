@@ -216,3 +216,33 @@ class XPEvent(Base):
         Index("uq_xp_event_key", "user_id", "event_key", unique=True),
         Index("ix_xp_events_user_week", "user_id", "week_start"),
     )
+
+
+class LeagueWeek(Base):
+    __tablename__ = "league_weeks"
+
+    id = Column(Integer, primary_key=True)
+    week_start = Column(DateTime, nullable=False, unique=True)
+    status = Column(String, default="closed")   # closed | not_formed
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class LeagueMembership(Base):
+    __tablename__ = "league_memberships"
+
+    id = Column(Integer, primary_key=True)
+    week_start = Column(DateTime, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    division = Column(String, nullable=True)         # имя дивизиона или None (provisional)
+    division_source = Column(String, nullable=True)  # ctl | load_fallback | provisional
+    league_score = Column(Float, default=0)
+    rank = Column(Integer, nullable=True)            # ранг внутри своей лиги
+    group_key = Column(String, nullable=True)        # лейбл слившейся группы
+    promoted = Column(Boolean, default=False)
+    demoted = Column(Boolean, default=False)
+    protected = Column(Boolean, default=False)       # защита новичка
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("uq_league_membership", "week_start", "user_id", unique=True),
+    )
