@@ -525,7 +525,7 @@ export default function Dashboard() {
                   <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-6">
                     Loading rating...
                   </p>
-                ) : rows.length === 0 ? (
+                ) : leaderboardTab !== "weekly" && rows.length === 0 ? (
                   <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-6">
                     {leaderboardTab === "friends"
                       ? isAuthed
@@ -535,6 +535,11 @@ export default function Dashboard() {
                   </p>
                 ) : leaderboardTab === "weekly" ? (
                   <div>
+                    {weeklyEntries.length === 0 && (
+                      <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-6">
+                        Weekly league пуста — синхронизируй тренировку на этой неделе 🏁
+                      </p>
+                    )}
                     {!weeklyBoard?.formed && (
                       <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-3 bg-[#ffd500]/20">
                         Лига формируется: {weeklyEntries.length}/{weeklyBoard?.min_size ?? 5} атлетов
