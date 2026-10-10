@@ -191,7 +191,13 @@ def _recalculate_user_xp(db: Session, user: User) -> None:
 
 
 def _recalculate_user_xp_v6(db: Session, user: User) -> None:
-    """XP v6: аддитивный пересчёт всей истории + upsert XPEvent/WeeklySummary."""
+    """XP v6: аддитивный пересчёт всей истории + upsert XPEvent/WeeklySummary.
+
+    Недели: ВСЕ календарные недели от первой активности до текущей, нулевые тоже —
+    иначе после перерыва база цели остаётся докризисной и возвращающегося наказывают.
+    Производительность: медианы по спорту считаются один раз (O(n log n)),
+    события загружаются одним запросом и апсертятся из памяти.
+    """
     from ..models import WeeklySummary, XPEvent
     from ..services import xp_v6 as X6
 
@@ -200,7 +206,7 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
             .order_by(Activity.start_date.asc(), Activity.id.asc())
             .all())
 
-    # 1) нагрузка каждой активности + источник
+    # 1) нагрузка каждой активности + источник + гашение legacy-полей
     for a in acts:
         tss, source = X6.resolve_training_load({
             "training_load": a.training_load, "moving_time": a.moving_time,
@@ -208,12 +214,24 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
         })
         a.tss = round(tss, 2)
         a.tss_estimated = (source == "estimated")
+        a.base_xp = None
+        a.rate_per_hour = None
+        a.sleep_multiplier = None
+        a.intensity_multiplier = None
+        a.streak_multiplier = None
 
     hist = [{"id": a.id, "sport_type": a.sport_type, "moving_time": a.moving_time} for a in acts]
 
     by_day: dict[_date, list] = defaultdict(list)
     for a in acts:
         by_day[a.start_date.date() if a.start_date else _date.today()].append(a)
+
+    # медианы по спорту — один раз
+    sorted_by_sport: dict[str, list[float]] = {}
+    for a in acts:
+        sorted_by_sport.setdefault(str(a.sport_type or "").upper(), []).append(float(a.moving_time or 0))
+    for v in sorted_by_sport.values():
+        v.sort()
 
     # 2) дни: effort, распределение долей, qualifying, is_long
     day_info: dict[_date, dict] = {}
@@ -223,13 +241,8 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
         shares = X6.allocate_daily_effort_xp([{"tss": a.tss} for a in day_acts], day_xp)
         for a, share in zip(day_acts, shares):
             a.xp_earned = share
-            # v6: старые множители больше не математика — гасим, чтобы UI не показывал призрак v5
-            a.base_xp = None
-            a.rate_per_hour = None
-            a.sleep_multiplier = None
-            a.intensity_multiplier = None
-            a.streak_multiplier = None
-            med = X6.medians_by_sport(hist, {a.id}).get(str(a.sport_type or "").upper())
+            sport_key = str(a.sport_type or "").upper()
+            med = X6.median_excluding_sorted(sorted_by_sport.get(sport_key, []), float(a.moving_time or 0))
             a.is_long = bool(med and (a.moving_time or 0) >= med * X6.LONG_WORKOUT_MEDIAN_MULTIPLIER)
         day_info[d] = {
             "acts": day_acts, "tss": tss_day, "day_xp": day_xp,
@@ -250,13 +263,18 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
         except ValueError:
             pass
 
-    all_weeks = sorted({X6.week_start(d) for d in day_info})
+    # 4) ВСЕ календарные недели, включая нулевые (справедливо после перерыва)
     this_week = X6.week_start(_date.today())
-    # Текущая неделя ВСЕГДА присутствует в сводках — даже без тренировок:
-    # иначе блок «Твоя неделя» показывает «нет данных» вместо цели
-    if this_week not in all_weeks:
-        all_weeks.append(this_week)
-        all_weeks.sort()
+    if day_info:
+        first_week = min(X6.week_start(d) for d in day_info)
+        all_weeks: list[_date] = []
+        w = first_week
+        while w <= this_week:
+            all_weeks.append(w)
+            w += timedelta(days=7)
+    else:
+        all_weeks = [this_week]
+
     week_load = {ws: 0.0 for ws in all_weeks}
     week_days = {ws: 0 for ws in all_weeks}
     for d, info in day_info.items():
@@ -266,35 +284,53 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
             week_days[ws] += 1
 
     scores_by_week: dict[_date, list] = defaultdict(list)
-    for w in db.query(Wellness).filter(Wellness.user_id == user.id).all():
-        if w.date and w.sleep_score:
+    for wrow in db.query(Wellness).filter(Wellness.user_id == user.id).all():
+        if wrow.date and wrow.sleep_score:
             try:
-                scores_by_week[X6.week_start(datetime.fromisoformat(w.date).date())].append(float(w.sleep_score))
+                scores_by_week[X6.week_start(datetime.fromisoformat(wrow.date).date())].append(float(wrow.sleep_score))
             except Exception:
                 continue
 
+    # события: один запрос, апсерт из памяти (без N+1)
+    from ..services import quests as Q
+    summaries_all = (
+        db.query(WeeklySummary)
+        .filter(WeeklySummary.user_id == user.id)
+        .order_by(WeeklySummary.week_start.asc())
+        .all()
+    )
+    Q.grant_quests(db, user, acts, summaries_all)
+    all_events = db.query(XPEvent).filter(XPEvent.user_id == user.id).all()
+    events_by_key = {e.event_key: e for e in all_events}
+    quest_by_week: dict = {}
+    for e in all_events:
+        if e.event_type in ("quest", "achievement"):
+            quest_by_week[e.week_start] = quest_by_week.get(e.week_start, 0.0) + e.amount
+
     def upsert_event(key, etype, amount, ws, dt, title):
-        ev = (db.query(XPEvent)
-              .filter(XPEvent.user_id == user.id, XPEvent.event_key == key)
-              .first())
+        ev = events_by_key.get(key)
         if amount <= 0:
-            if ev:
+            if ev is not None and ev.id is not None:
                 db.delete(ev)
+                events_by_key.pop(key, None)
             return
-        if ev:
+        if ev is not None:
             ev.amount = round_xp(amount)
             ev.title = title
         else:
-            db.add(XPEvent(
+            ev = XPEvent(
                 user_id=user.id,
                 week_start=datetime.combine(ws, datetime.min.time()),
                 date=datetime.combine(dt, datetime.min.time()),
                 event_type=etype, event_key=key,
                 amount=round_xp(amount), source_type="week", title=title,
-            ))
+            )
+            db.add(ev)
+            events_by_key[key] = ev
 
     medians = X6.medians_by_sport(hist, set())
 
+    # 5) недели: сводки + недельные события
     for ws in all_weeks:
         finalized = ws < this_week
         prior = [p for p in all_weeks if p < ws]
@@ -304,14 +340,12 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
         days = week_days[ws]
         t_days = X6.target_training_days([week_days[p] for p in prior])
 
-        # регулярность: по дням, сразу (недели от активации)
         if ws >= activation_ws:
             for d, info in day_info.items():
                 if X6.week_start(d) == ws and info["qualifying"]:
                     upsert_event(f"consistency:{d.isoformat()}", "consistency",
                                  X6.CONSISTENCY_XP_PER_DAY, ws, d, "Training day +30")
 
-        # качество: недельные ключи, сразу (недели от активации)
         quality_xp = 0.0
         if ws >= activation_ws:
             day_dicts = {
@@ -327,7 +361,6 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
                              "High intensity +15" if kind == "quality_hard" else "Long workout +15")
                 quality_xp += amt
 
-        # цель и восстановление: только на закрытой неделе
         goal_xp = 0.0
         recovery = 0.0
         if finalized and ws >= activation_ws:
@@ -338,11 +371,7 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
             upsert_event(f"recovery:{ws.isoformat()}", "recovery", recovery, ws, ws,
                          "Recovery (sleep score)")
 
-        quest_xp = round_xp(sum(e.amount for e in db.query(XPEvent).filter(
-            XPEvent.user_id == user.id,
-            XPEvent.week_start == datetime.combine(ws, datetime.min.time()),
-            XPEvent.event_type.in_(["quest", "achievement"])).all()))
-
+        quest_xp = round_xp(quest_by_week.get(datetime.combine(ws, datetime.min.time()), 0.0))
         consistency_xp = round_xp(min(days, X6.CONSISTENCY_DAYS_CAP) * X6.CONSISTENCY_XP_PER_DAY) if ws >= activation_ws else 0.0
         effort_week = round_xp(sum(i["day_xp"] for d, i in day_info.items() if X6.week_start(d) == ws))
         total_week = round_xp(effort_week + consistency_xp + quality_xp + goal_xp + recovery + quest_xp)
@@ -369,43 +398,16 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
         summ.league_score = X6.league_score(ratio, days, t_days, quality_xp)
         summ.finalized = finalized
 
-    # ── Квесты: одноразовые ачивки поверх журнала событий ──
-    from ..services import quests as Q
-    summaries_all = (
-        db.query(WeeklySummary)
-        .filter(WeeklySummary.user_id == user.id)
-        .order_by(WeeklySummary.week_start.asc())
-        .all()
-    )
-    Q.grant_quests(db, user, acts, summaries_all)
-    # quest_xp текущей недели учитывает только что выданные ачивки
-    this_ws_dt = datetime.combine(this_week, datetime.min.time())
-    summ_now = (
-        db.query(WeeklySummary)
-        .filter(WeeklySummary.user_id == user.id, WeeklySummary.week_start == this_ws_dt)
-        .first()
-    )
-    if summ_now:
-        summ_now.quest_xp = round_xp(sum(e.amount for e in db.query(XPEvent).filter(
-            XPEvent.user_id == user.id,
-            XPEvent.event_type == "quest",
-            XPEvent.week_start == this_ws_dt,
-        ).all()))
-        summ_now.total_xp = round_xp(
-            summ_now.effort_xp + summ_now.consistency_xp + summ_now.quality_xp
-            + summ_now.goal_xp + summ_now.recovery_xp + summ_now.quest_xp
-        )
-
-    db.flush()
-    events_sum = round_xp(sum(e.amount for e in db.query(XPEvent).filter(XPEvent.user_id == user.id).all()))
-    acts_sum = round_xp(sum(a.xp_earned or 0 for a in acts))
-    user.total_xp = round_xp(float(user.legacy_xp_offset or 0) + acts_sum + events_sum)
-    user.level = level_from_xp(user.total_xp)
-
-    # ── Лиги: закрываем завершённые недели, у которых ещё нет лиги ──
+    # 6) лиги: закрываем завершённые недели без лиги
     for ws in all_weeks:
         if ws < this_week:
             _close_league_week(db, ws)
+
+    db.flush()
+    events_sum = round_xp(sum(e.amount for e in events_by_key.values()))
+    acts_sum = round_xp(sum(a.xp_earned or 0 for a in acts))
+    user.total_xp = round_xp(float(user.legacy_xp_offset or 0) + acts_sum + events_sum)
+    user.level = level_from_xp(user.total_xp)
 
 
 def _user_division(db: Session, user: User, week_start_d: _date, week_load: float):
@@ -613,11 +615,10 @@ async def sync_activities(
     
     # ── Нет новых тренировок: сон всё равно обновился → пересчитываем ──
     if not activities_data:
-        total_before = float(current.total_xp or 0)
-    if get_settings().XP_ENGINE == "v6":
-        _recalculate_user_xp_v6(db, current)
-    else:
-        _recalculate_user_xp(db, current)
+        if get_settings().XP_ENGINE == "v6":
+            _recalculate_user_xp_v6(db, current)
+        else:
+            _recalculate_user_xp(db, current)
         db.commit()
         db.refresh(current)
         return {
@@ -625,7 +626,7 @@ async def sync_activities(
             "synced_count": 0,
             "updated_count": 0,
             "wellness_upserted": wellness_upserted,
-            "new_xp": round(float(current.total_xp or 0) - total_before, 2),
+            "new_xp": 0,
         }
 
     # ── Пишем в БД (upsert: существующие обновляем, новые создаём) ──
@@ -703,6 +704,21 @@ async def sync_activities(
     db.commit()
 
 
+    # ── Удаляем тренировки, исчезнувшие из Intervals (только полный синк) ──
+    deleted_count = 0
+    if not oldest and not newest and seen_ids:
+        missing = [aid for aid in existing_rows if aid not in seen_ids]
+        if len(missing) <= max(1, len(existing_rows) // 2):
+            for aid in missing:
+                db.delete(existing_rows[aid])
+                deleted_count += 1
+        else:
+            print(
+                f"⚠️ Prune пропущен: {len(missing)} из {len(existing_rows)} отсутствуют "
+                f"в ответе — похоже на обрезанное окно, не рискуем удалять"
+            )
+    db.commit()
+
     total_before = float(current.total_xp or 0)
     if get_settings().XP_ENGINE == "v6":
         _recalculate_user_xp_v6(db, current)
@@ -716,6 +732,7 @@ async def sync_activities(
         "message": "Синхронизация успешна!",
         "synced_count": synced_count,
         "updated_count": updated_count,
+        "deleted_count": deleted_count,
         "wellness_upserted": wellness_upserted,
         "skipped_empty": skipped_empty,
         "new_xp": new_xp,

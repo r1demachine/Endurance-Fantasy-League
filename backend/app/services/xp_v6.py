@@ -223,6 +223,26 @@ def medians_by_sport(history_acts: list[dict], exclude_ids: set) -> dict:
         by_sport.setdefault(str(a.get("sport_type") or "").upper(), []).append(float(a.get("moving_time") or 0))
     return {k: median(v) for k, v in by_sport.items() if v}
 
+def median_excluding_sorted(sorted_vals: list[float], value: float):
+    """Медиана списка без одного экземпляра value — O(log n) по отсортированному."""
+    import bisect
+    n = len(sorted_vals)
+    if n <= 1:
+        return None
+    i = bisect.bisect_left(sorted_vals, value)
+    while i < n and sorted_vals[i] != value:
+        i += 1
+    if i >= n:
+        i = n - 1
+    m = n - 1
+
+    def rem(j: int) -> float:
+        return sorted_vals[j] if j < i else sorted_vals[j + 1]
+
+    if m % 2 == 1:
+        return rem(m // 2)
+    return (rem(m // 2 - 1) + rem(m // 2)) / 2
+
 
 def league_score(completion_ratio: float, training_days: int, target_days: int, quality_xp: float) -> float:
     goal = 100.0 * min(max(completion_ratio or 0.0, 0.0), 1.0)

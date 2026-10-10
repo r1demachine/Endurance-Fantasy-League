@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # "production" на Render -> отключает /docs, /redoc, /openapi.json
     APP_ENV: str = "development"
     # Движок XP: "v5" (старые множители) | "v6" (аддитивная система)
-    XP_ENGINE: str = "v5"
+    XP_ENGINE: str = "v6"
     # Дата активации v6 (ISO). Пусто = неделя миграции каждого юзера.
     XP_V6_ACTIVATION_DATE: str = ""
 
