@@ -47,7 +47,7 @@ def xp_compare(user_id: int, db: Session = Depends(get_db)):
             "training_load": a.training_load, "moving_time": a.moving_time,
             "intensity": a.intensity, "sport_type": a.sport_type})[0] for a in day_acts)
         weeks[ws]["v6_load"] += X6.effort_xp_day(tss_day)
-        if X6.is_qualifying_day([{"moving_time": a.moving_time} for a in day_acts]):
+        if X6.is_qualifying_day([{"moving_time": a.moving_time} for a in day_acts], tss_day):
             weeks[ws]["days"] += 1
     return {
         "user_id": user_id,

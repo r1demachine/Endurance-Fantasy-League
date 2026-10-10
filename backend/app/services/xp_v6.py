@@ -32,8 +32,19 @@ GOAL_CAP_RATIO = 1.15
 BASE_WEEKS_SHORT = 6
 BASE_WEEKS_LONG = 12
 BASE_LONG_FACTOR = 0.8
-STARTER_WORKOUTS = 3
+STARTER_WORKOUTS = 4   # PR8: было 3 — норма была слишком мягкой (100 XP за цель на 1-й неделе)
 STARTER_MINUTES = 45
+
+# ── Ручные записи и качество дня (PR8) ──
+MANUAL_LOAD_FACTOR = 0.5          # вклад ручной записи в нагрузку
+QUALIFYING_DAY_MIN_TSS = 20.0     # пол дня: 20-минутная прогулка (~12 TSS) не открывает бонус
+
+# ── Разгрузочные недели (PR8) ──
+DELOAD_MIN_RATIO = 0.55
+DELOAD_MAX_RATIO = 0.85
+DELOAD_GOAL_FLOOR = 0.85          # в deload цель не падает ниже 85%
+DELOAD_PREV_WEEKS = 3
+DELOAD_PREV_RATIO = 0.90
 
 # ── Регулярность ──
 CONSISTENCY_XP_PER_DAY = 30.0
@@ -105,14 +116,20 @@ def resolve_training_load(act: dict) -> tuple[float, str]:
     """(tss, source): 'real' | 'estimated' | 'none'. Оценочный TSS не даёт
     право на бонусы, требующие подтверждённой интенсивности."""
     tss = float(act.get("training_load") or 0.0)
+    manual = bool(act.get("is_manual"))
     if tss > 0:
+        if manual:
+            return tss * MANUAL_LOAD_FACTOR, "manual"
         return tss, "real"
     seconds = float(act.get("moving_time") or 0.0)
     if seconds <= 0:
         return 0.0, "none"
     intensity = float(act.get("intensity") or 0.0)
     if_val = intensity if 0 < intensity <= 1.5 else sport_if(act.get("sport_type"))
-    return (seconds / 3600.0) * if_val ** 2 * 100.0, "estimated"
+    est = (seconds / 3600.0) * if_val ** 2 * 100.0
+    if manual:
+        return est * MANUAL_LOAD_FACTOR, "manual"
+    return est, "estimated"
 
 
 def effort_xp_day(tss_day: float) -> float:
@@ -137,7 +154,11 @@ def allocate_daily_effort_xp(acts: list[dict], day_xp: float) -> list[float]:
     return shares
 
 
-def is_qualifying_day(day_acts: list[dict]) -> bool:
+def is_qualifying_day(day_acts: list[dict], tss_day: float) -> bool:
+    """День квалифицирует, если нагрузка ≥ пола И есть занятие ≥20 мин.
+    20-минутная прогулка (~12 TSS оценки) бонус больше не открывает."""
+    if float(tss_day or 0.0) < QUALIFYING_DAY_MIN_TSS:
+        return False
     return any(float(a.get("moving_time") or 0.0) >= MIN_TRAINING_DURATION_SECONDS for a in day_acts)
 
 
@@ -155,7 +176,11 @@ def quality_events_week(day_acts_by_date: dict, medians_by_sport: dict) -> list[
             if a.get("load_source") == "real" and float(a.get("intensity") or 0.0) >= QUALITY_IF_THRESHOLD:
                 hard = True
             med = medians_by_sport.get(str(a.get("sport_type") or "").upper())
-            if med and float(a.get("moving_time") or 0.0) >= med * LONG_WORKOUT_MEDIAN_MULTIPLIER:
+            if (
+                a.get("load_source") != "manual"
+                and med
+                and float(a.get("moving_time") or 0.0) >= med * LONG_WORKOUT_MEDIAN_MULTIPLIER
+            ):
                 long_ = True
     events = []
     if hard:
@@ -169,6 +194,18 @@ def quality_events_week(day_acts_by_date: dict, medians_by_sport: dict) -> list[
             out.append((kind, take))
             budget -= take
     return out
+
+def is_deload_week(week_load: float, baseline: float, prev_loads: list[float]) -> bool:
+    """Разгрузка: 55–85% базы после 3 недель роста ≥90% базы. Не штрафуется."""
+    if not baseline or baseline <= 0:
+        return False
+    r = week_load / baseline
+    if not (DELOAD_MIN_RATIO <= r <= DELOAD_MAX_RATIO):
+        return False
+    prev = prev_loads[-DELOAD_PREV_WEEKS:]
+    if len(prev) < DELOAD_PREV_WEEKS:
+        return False
+    return all(p >= DELOAD_PREV_RATIO * baseline for p in prev)
 
 
 def weekly_goal_xp(completion_ratio: float) -> float:

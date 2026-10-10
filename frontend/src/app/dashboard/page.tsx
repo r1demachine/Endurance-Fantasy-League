@@ -62,11 +62,23 @@ function WeekBlock({ weekData }: { weekData: any }) {
     <div className="border-b-2 border-black bg-white p-4 md:p-6">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-display uppercase text-xl md:text-2xl">Твоя неделя</h3>
-        {isInProgress && (
-          <span className="px-2 py-1 bg-[#ffd500] text-[10px] font-bold tracking-widest uppercase">
-            В процессе
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {isInProgress && (
+            <span className="px-2 py-1 bg-[#ffd500] text-[10px] font-bold tracking-widest uppercase">
+              В процессе
+            </span>
+          )}
+          {weekData.is_deload && (
+            <span className="px-2 py-1 bg-[#0ea5e9] text-white text-[10px] font-bold tracking-widest uppercase">
+              Deload 🌊
+            </span>
+          )}
+          {weekData.paused && (
+            <span className="px-2 py-1 bg-[#666] text-white text-[10px] font-bold tracking-widest uppercase">
+              Пауза ⏸
+            </span>
+          )}
+        </div>
         {weekData.state === "no_data" && (
           <span className="px-2 py-1 bg-[#666] text-white text-[10px] font-bold tracking-widest uppercase">
             {weekData.target_load > 0 ? "Стартовая норма" : "Нет данных"}
@@ -118,6 +130,23 @@ function WeekBlock({ weekData }: { weekData: any }) {
           Синхронизируй тренировки, и цель станет персональной.
         </p>
       )}
+
+      <div className="mb-4">
+        <button
+          type="button"
+          onClick={async () => {
+            const w = window.prompt("Пауза на сколько недель? (0 — снять, макс 8)", "0");
+            if (w === null) return;
+            try {
+              await authApi.post("/api/pause", { weeks: parseInt(w, 10) || 0 });
+              await refreshUser(true);
+            } catch {}
+          }}
+          className="px-3 py-2 border-2 border-black text-[10px] font-bold tracking-widest uppercase hover:bg-[#ffd500] transition-colors"
+        >
+          ⏸ Пауза (болезнь / отпуск)
+        </button>
+      </div>
 
       {/* Разбивка XP */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">

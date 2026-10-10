@@ -30,6 +30,10 @@ class User(Base):
     level = Column(Integer, default=1)
     legacy_xp_offset = Column(Float, default=0.0)            # v6: миграционная компенсация
     xp_migrated_at = Column(DateTime, nullable=True)         # v6: маркер одноразовой миграции
+    division_current = Column(Integer, nullable=True)      # PR8: ступень лестницы 1..5
+    division_placed_at = Column(DateTime, nullable=True)
+    pause_set_at = Column(DateTime, nullable=True)         # PR8: окно паузы
+    paused_until = Column(DateTime, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -80,7 +84,8 @@ class Activity(Base):
     rate_per_hour = Column(Float, default=0.0)               # ставка XP/ч (для разбивки)
     tss = Column(Float, nullable=True)                       # v6: нагрузка (реал/оценка)
     tss_estimated = Column(Boolean, default=False)           # v6: нагрузка оценочная
-    is_long = Column(Boolean, default=False)                 # v6: ≥1.3× своей медианы             
+    is_long = Column(Boolean, default=False)                 # v6: ≥1.3× своей медианы      
+    is_manual = Column(Boolean, default=False)             # PR8: ручная запись       
     
     start_date = Column(DateTime)
     start_date_local = Column(DateTime, nullable=True)
@@ -188,6 +193,8 @@ class WeeklySummary(Base):
     division = Column(String, nullable=True)
     division_source = Column(String, nullable=True)        # ctl | load_fallback | provisional
     finalized = Column(Boolean, default=False)
+    is_deload = Column(Boolean, default=False)             # PR8: разгрузочная неделя
+    paused = Column(Boolean, default=False)                # PR8: неделя паузы
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

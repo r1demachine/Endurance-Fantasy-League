@@ -106,6 +106,8 @@ def _cond_record_duration(ctx):
     prev_max = 0
     seen = 0
     for a in acts:
+        if getattr(a, "is_manual", False):
+            continue
         dur = a.moving_time or 0
         if seen >= 3 and prev_max > 0 and dur >= prev_max * 1.1:
             return True

@@ -88,6 +88,7 @@ def _parse_activity(act: dict) -> dict | None:
         "intensity_multiplier": intensity_multiplier,
         "xp_earned": xp_earned,
         "start_date": start_date,
+        "is_manual": _detect_manual(act),
         "average_heartrate": _f("average_heartrate") or _f("avg_hr"),
         "average_watts": _f("average_watts") or _f("icu_average_watts"),
         "normalized_power": _f("normalized_power") or _f("icu_weighted_avg_watts"),
@@ -110,6 +111,14 @@ def _has_real_data(parsed: dict) -> bool:
     if (parsed.get("xp_earned") or 0) > 0:
         return True
     return False
+
+def _detect_manual(raw: dict) -> bool:
+    """Признак ручной записи из payload Intervals. Если источника в payload нет —
+    НЕ выдумываем: запись считается автоматической (ограничение документировано)."""
+    src = str(raw.get("source") or raw.get("icu_source") or "").strip().lower()
+    if src in {"manual", "manually", "entered", "manual entry"}:
+        return True
+    return raw.get("manual") in (True, 1, "true")
 
 def _parse_w_float(v):
     try:
@@ -246,7 +255,7 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
             a.is_long = bool(med and (a.moving_time or 0) >= med * X6.LONG_WORKOUT_MEDIAN_MULTIPLIER)
         day_info[d] = {
             "acts": day_acts, "tss": tss_day, "day_xp": day_xp,
-            "qualifying": X6.is_qualifying_day([{"moving_time": a.moving_time} for a in day_acts]),
+            "qualifying": X6.is_qualifying_day([{"moving_time": a.moving_time} for a in day_acts], tss_day),
         }
 
     # 3) одноразовая миграция: компенсация, чтобы уровни не просели
@@ -334,9 +343,16 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
     for ws in all_weeks:
         finalized = ws < this_week
         prior = [p for p in all_weeks if p < ws]
-        baseline = X6.weekly_baseline([week_load[p] for p in prior])
+        paused = _is_paused_week(user, ws)
+        # паузы исключаются из базы цели: болезнь не повышает будущую норму
+        prior_loads = [week_load[p] for p in prior if not _is_paused_week(user, p)]
+        baseline = X6.weekly_baseline(prior_loads)
         target = baseline or X6.starter_target()
         ratio = (week_load[ws] / target) if target else 0.0
+        deload = (not paused) and X6.is_deload_week(
+            week_load[ws], baseline or 0.0, [week_load[p] for p in prior]
+        )
+        eff_ratio = max(ratio, X6.DELOAD_GOAL_FLOOR) if deload else ratio
         days = week_days[ws]
         t_days = X6.target_training_days([week_days[p] for p in prior])
 
@@ -395,7 +411,9 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
         summ.recovery_xp = recovery
         summ.quest_xp = quest_xp
         summ.total_xp = total_week
-        summ.league_score = X6.league_score(ratio, days, t_days, quality_xp)
+        summ.league_score = None if paused else X6.league_score(eff_ratio, days, t_days, quality_xp)
+        summ.is_deload = bool(deload)
+        summ.paused = bool(paused)
         summ.finalized = finalized
 
     # 6) лиги: закрываем завершённые недели без лиги
@@ -409,6 +427,27 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
     user.total_xp = round_xp(float(user.legacy_xp_offset or 0) + acts_sum + events_sum)
     user.level = level_from_xp(user.total_xp)
 
+
+def _is_paused_week(user: User, ws: _date) -> bool:
+    from ..services import xp_v6 as X6
+    return (
+        user.pause_set_at is not None
+        and user.paused_until is not None
+        and X6.week_start(user.pause_set_at.date()) <= ws < X6.week_start(user.paused_until.date())
+    )
+
+
+def _division_for_week(db: Session, user: User, week_start_d: _date, week_load: float):
+    """Лестница: дивизион липкий. Новые юзеры размещаются по CTL/нагрузке один раз."""
+    from ..services import xp_v6 as X6
+    if user.division_current:
+        return X6.division_name(user.division_current - 1), "ladder"
+    div, src = _user_division(db, user, week_start_d, week_load)
+    if div:
+        user.division_current = X6.DIVISION_NAMES.index(div) + 1
+        user.division_placed_at = datetime.utcnow()
+        return div, src
+    return None, "provisional"
 
 def _user_division(db: Session, user: User, week_start_d: _date, week_load: float):
     """(division, source): CTL первичен; нет CTL → fallback по 12 неделям нагрузки;
@@ -462,9 +501,9 @@ def _close_league_week(db: Session, week_start_d: _date) -> None:
     entries = []
     for s in summaries:
         u = db.get(User, s.user_id)
-        if not u:
+        if not u or _is_paused_week(u, week_start_d):
             continue
-        div, source = _user_division(db, u, week_start_d, s.actual_load or 0)
+        div, source = _division_for_week(db, u, week_start_d, s.actual_load or 0)
         entries.append(dict(user=u, summ=s, div=div, source=source,
                             score=s.league_score or 0))
 
@@ -503,6 +542,11 @@ def _close_league_week(db: Session, week_start_d: _date) -> None:
                 protected = weeks_since < X6.NEWCOMER_PROTECTION_WEEKS
             promoted = bool(zone) and i < zone
             demoted = bool(zone) and i >= n - zone and not protected
+            # реальная лестница: флаги двигают ступень дивизиона на следующую неделю
+            if promoted and u.division_current:
+                u.division_current = min(u.division_current + 1, len(X6.DIVISION_NAMES))
+            elif demoted and u.division_current:
+                u.division_current = max(u.division_current - 1, 1)
             db.add(LeagueMembership(
                 week_start=ws_dt, user_id=u.id,
                 division=e["div"], division_source=e["source"],
@@ -669,6 +713,9 @@ async def sync_activities(
                 ("distance", parsed.get("distance") or 0),
                 ("elevation_gain", parsed.get("elevation_gain") or 0),
             ):
+                if bool(parsed.get("is_manual")) != bool(row.is_manual):
+                    row.is_manual = bool(parsed.get("is_manual"))
+                    changed = True
                 old = getattr(row, field) or 0
                 if value and abs(old - value) > 1e-6:
                     setattr(row, field, value)
@@ -824,7 +871,7 @@ async def get_user_profile(
             "training_days": 0, "effort_xp": 0, "goal_xp": 0,
             "consistency_xp": 0, "quality_xp": 0, "recovery_xp": 0,
             "quest_xp": 0, "total_xp": 0, "league_score": 0,
-            "state": "no_data",
+            "state": "no_data", "is_deload": False, "paused": False,
         }
     else:
         week_data = {
@@ -841,6 +888,8 @@ async def get_user_profile(
             "total_xp": round(current_summary.total_xp or 0, 1),
             "league_score": round(current_summary.league_score or 0, 1),
             "state": "ready" if current_summary.finalized else "in_progress",
+            "is_deload": bool(current_summary.is_deload),
+            "paused": bool(current_summary.paused),
         }
 
     div, div_src = _user_division(db, user, this_week_start, week_data["actual_load"])
@@ -1227,3 +1276,26 @@ async def leaderboard(
     }
 
 
+@router.post("/pause")
+async def set_pause(
+    payload: dict,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Пауза (болезнь/отпуск): недели окна не ждут цели и не входят в базу нормы."""
+    weeks = int(payload.get("weeks") or 0)
+    if weeks < 0 or weeks > 8:
+        raise HTTPException(status_code=400, detail="weeks должно быть 0..8")
+    if weeks == 0:
+        current.pause_set_at = None
+        current.paused_until = None
+        message = "Пауза снята"
+    else:
+        current.pause_set_at = datetime.utcnow()
+        current.paused_until = datetime.utcnow() + timedelta(weeks=weeks)
+        message = f"Пауза установлена на {weeks} нед."
+    db.commit()
+    return {
+        "message": message,
+        "paused_until": current.paused_until.isoformat() if current.paused_until else None,
+    }
