@@ -110,6 +110,14 @@ def login(request: Request, data: LoginIn, db: Session = Depends(get_db)):
     )
 
 
+@router.post("/logout")
+def logout(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Отзывает все сессии пользователя, увеличивая token_version."""
+    current.token_version = int(current.token_version or 0) + 1
+    db.commit()
+    return {"message": "Выход выполнен; все активные сессии отозваны"}
+
+
 @router.get("/me")
 def me(current: User = Depends(get_current_user)):
     return _user_payload(current)
