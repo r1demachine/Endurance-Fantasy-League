@@ -1020,37 +1020,48 @@ async def reset_all_data(
     }
 
 
+def _is_accepted_friend(db: Session, viewer_id: int, owner_id: int) -> bool:
+    if viewer_id == owner_id:
+        return True
+    return db.query(Friendship.id).filter(
+        Friendship.status == FriendshipStatus.ACCEPTED,
+        or_(
+            and_(Friendship.from_user_id == viewer_id, Friendship.to_user_id == owner_id),
+            and_(Friendship.from_user_id == owner_id, Friendship.to_user_id == viewer_id),
+        ),
+    ).first() is not None
+
+
 @router.get("/users/{username}")
 async def public_profile(
     username: str,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer),
+    viewer: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Публичный профиль атлета (без приватных данных)."""
+    """Профиль доступен только после входа; права определяются настройками и дружбой."""
     user = db.query(User).filter(User.username == username.lower().strip()).first()
     if not user:
         raise HTTPException(status_code=404, detail="Athlete not found")
 
-    viewer: Optional[User] = None
-    if credentials is not None:
-        uid = decode_access_token(credentials.credentials)
-        if uid is not None:
-            viewer = db.get(User, uid)
+    is_owner = viewer.id == user.id
+    is_friend = _is_accepted_friend(db, viewer.id, user.id)
+    profile_visibility = user.profile_visibility or "authenticated"
+    activity_visibility = user.activity_visibility or "friends"
 
-    all_acts = db.query(Activity).filter(Activity.user_id == user.id).all()
+    if not is_owner and profile_visibility == "private":
+        raise HTTPException(status_code=403, detail="Этот профиль скрыт владельцем")
+    can_view_profile_stats = is_owner or is_friend or profile_visibility == "authenticated"
+    can_view_activities = is_owner or (is_friend and activity_visibility == "friends")
 
-    # отношения со зрителем
     relation = None
     friendship_id = None
-    if viewer and viewer.id != user.id:
+    if not is_owner:
         rel = (
             db.query(Friendship)
-            .filter(
-                or_(
-                    and_(Friendship.from_user_id == viewer.id, Friendship.to_user_id == user.id),
-                    and_(Friendship.from_user_id == user.id, Friendship.to_user_id == viewer.id),
-                )
-            )
+            .filter(or_(
+                and_(Friendship.from_user_id == viewer.id, Friendship.to_user_id == user.id),
+                and_(Friendship.from_user_id == user.id, Friendship.to_user_id == viewer.id),
+            ))
             .first()
         )
         if rel:
@@ -1071,25 +1082,36 @@ async def public_profile(
         .count()
     )
 
-    # сезонная статистика
-    SEASON_START = datetime(2026, 9, 1)
-    season_acts = [a for a in all_acts if a.start_date and a.start_date >= SEASON_START]
     season_stats = {
-        "season_start": SEASON_START.strftime("%d.%m.%Y"),
-        "total_km": round(sum(a.distance or 0 for a in season_acts) / 1000, 1),
-        "total_hours": round(sum(a.moving_time or 0 for a in season_acts) / 3600, 1),
-        "total_elevation": int(round(sum(a.elevation_gain or 0 for a in season_acts))),
-        "total_workouts": len(season_acts),
-        "total_xp": round(sum(a.xp_earned or 0 for a in season_acts)),
+        "season_start": "01.09.2026",
+        "total_km": 0,
+        "total_hours": 0,
+        "total_elevation": 0,
+        "total_workouts": 0,
+        "total_xp": 0,
     }
+    hr_points = []
+    if can_view_profile_stats:
+        all_acts = db.query(Activity).filter(Activity.user_id == user.id).all()
+        season_start = datetime(2026, 9, 1)
+        season_acts = [a for a in all_acts if a.start_date and a.start_date >= season_start]
+        season_stats = {
+            "season_start": season_start.strftime("%d.%m.%Y"),
+            "total_km": round(sum(a.distance or 0 for a in season_acts) / 1000, 1),
+            "total_hours": round(sum(a.moving_time or 0 for a in season_acts) / 3600, 1),
+            "total_elevation": int(round(sum(a.elevation_gain or 0 for a in season_acts))),
+            "total_workouts": len(season_acts),
+            "total_xp": round(sum(a.xp_earned or 0 for a in season_acts)),
+        }
 
-    # средний пульс за 30 дней
-    month_ago = datetime.utcnow() - timedelta(days=30)
-    hr_points = [
-        {"date": a.start_date.strftime("%d.%m"), "hr": round(a.average_heartrate, 1)}
-        for a in sorted(all_acts, key=lambda x: x.start_date or datetime.min)
-        if a.start_date and a.start_date >= month_ago and (a.average_heartrate or 0) > 0
-    ]
+        # Heart-rate history is sensitive: visible only to the owner or an accepted friend.
+        if is_owner or is_friend:
+            month_ago = datetime.utcnow() - timedelta(days=30)
+            hr_points = [
+                {"date": a.start_date.strftime("%d.%m"), "hr": round(a.average_heartrate, 1)}
+                for a in sorted(all_acts, key=lambda x: x.start_date or datetime.min)
+                if a.start_date and a.start_date >= month_ago and (a.average_heartrate or 0) > 0
+            ]
 
     return {
         "user": {
@@ -1099,9 +1121,13 @@ async def public_profile(
             "level": user.level,
             "total_xp": round(float(user.total_xp or 0), 2),
             "friends_count": friends_count,
-            "is_you": viewer is not None and viewer.id == user.id,
+            "is_you": is_owner,
             "relation": relation,
             "friendship_id": friendship_id,
+            "profile_visibility": profile_visibility,
+            "activity_visibility": activity_visibility,
+            "can_view_profile_stats": can_view_profile_stats,
+            "can_view_activities": can_view_activities,
         },
         "season_stats": season_stats,
         "hr_last_month": hr_points,
@@ -1113,22 +1139,27 @@ async def public_activities(
     username: str,
     offset: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=50),
+    viewer: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Тренировки атлета с пагинацией (публично)."""
+    """Детали тренировок доступны только владельцу либо принятому другу по настройке владельца."""
     user = db.query(User).filter(User.username == username.lower().strip()).first()
     if not user:
         raise HTTPException(status_code=404, detail="Athlete not found")
 
-    total = db.query(Activity).filter(Activity.user_id == user.id).count()
-    acts = (
-        db.query(Activity)
-        .filter(Activity.user_id == user.id)
-        .order_by(Activity.start_date.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    is_owner = viewer.id == user.id
+    is_friend = _is_accepted_friend(db, viewer.id, user.id)
+    if not is_owner:
+        if (user.profile_visibility or "authenticated") == "private":
+            raise HTTPException(status_code=403, detail="Этот профиль скрыт владельцем")
+        if (user.profile_visibility or "authenticated") == "friends" and not is_friend:
+            raise HTTPException(status_code=403, detail="Подробности профиля доступны только друзьям")
+        if (user.activity_visibility or "friends") != "friends" or not is_friend:
+            raise HTTPException(status_code=403, detail="Тренировки доступны только владельцу или друзьям")
+
+    query = db.query(Activity).filter(Activity.user_id == user.id)
+    total = query.count()
+    acts = query.order_by(Activity.start_date.desc(), Activity.id.desc()).offset(offset).limit(limit).all()
     return {
         "total": total,
         "has_more": offset + len(acts) < total,
