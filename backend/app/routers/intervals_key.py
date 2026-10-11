@@ -118,6 +118,8 @@ def disconnect_key(
     current.lastname = None
     current.legacy_xp_offset = 0.0
     current.xp_migrated_at = None
+    current.division_current = None
+    current.division_placed_at = None
     current.total_xp = 0.0
     current.level = 1
     db.commit()
