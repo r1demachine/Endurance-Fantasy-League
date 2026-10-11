@@ -64,7 +64,7 @@ def search_users(q: str = Query(..., min_length=2, max_length=64), current: User
     users = (
         db.query(User)
         .filter(User.id != current.id)
-        .filter(or_(User.username.ilike(like, escape="\\\\"), User.display_name.ilike(like, escape="\\\\")))
+        .filter(or_(User.username.ilike(like, escape="\\"), User.display_name.ilike(like, escape="\\")))
         .order_by(User.total_xp.desc())
         .limit(10)
         .all()
