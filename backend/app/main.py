@@ -32,6 +32,8 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN display_name VARCHAR(100)"))
             if "api_key_encrypted" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN api_key_encrypted VARCHAR(500)"))
+            if "last_full_sync_at" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN last_full_sync_at TIMESTAMP"))
             if "legacy_xp_offset" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN legacy_xp_offset FLOAT DEFAULT 0"))
             if "xp_migrated_at" not in cols:

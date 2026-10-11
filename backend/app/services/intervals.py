@@ -2,7 +2,8 @@
 
 import httpx
 import logging
-from datetime import datetime, timedelta
+import asyncio
+from datetime import date, datetime, timedelta
 from typing import Optional
 from ..config import get_settings
 
@@ -44,77 +45,122 @@ def _auth_for(api_key: str) -> httpx.BasicAuth:
 # Per-user функции (основные)
 # ═══════════════════════════════════════════════════════════════
 
-async def fetch_activities_for_user(
-    api_key: str,
-    athlete_id: str,
-    oldest: Optional[str] = None,
-    newest: Optional[str] = None,
-    limit: int = 200,
-) -> list[dict]:
-    """Тянет активности конкретного юзера его ключом (JSON API)."""
-    if not oldest:
-        oldest = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
-    if not newest:
-        newest = datetime.now().strftime("%Y-%m-%d")
+def _month_ranges(oldest: date, newest: date) -> list[tuple[date, date]]:
+    ranges = []
+    cursor = oldest.replace(day=1)
+    while cursor <= newest:
+        next_month = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
+        ranges.append((max(oldest, cursor), min(newest, next_month - timedelta(days=1))))
+        cursor = next_month
+    return ranges
 
-    url = f"{settings.INTERVALS_API_URL}/athlete/{athlete_id}/activities"
-    params = {"oldest": oldest, "newest": newest, "limit": limit}
+
+def _split_range(oldest: date, newest: date, days: int) -> list[tuple[date, date]]:
+    ranges, cursor = [], oldest
+    while cursor <= newest:
+        end = min(newest, cursor + timedelta(days=days - 1))
+        ranges.append((cursor, end))
+        cursor = end + timedelta(days=1)
+    return ranges
+
+
+async def _request_json(client: httpx.AsyncClient, url: str, api_key: str, params: dict, timeout: float):
     headers = {"Accept": "application/json", "User-Agent": "FantasyLeagueApp/2.0"}
-
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            url, auth=_auth_for(api_key), headers=headers, params=params, timeout=30.0
-        )
-
+    for attempt in range(4):
+        try:
+            response = await client.get(url, auth=_auth_for(api_key), headers=headers, params=params, timeout=timeout)
+        except httpx.RequestError:
+            if attempt == 3:
+                raise
+            await asyncio.sleep(2 ** attempt)
+            continue
         if response.status_code == 401:
             raise PermissionError("Неверный API-ключ Intervals.icu — привяжи заново в профиле")
         if response.status_code == 404:
-            raise ValueError(f"Athlete ID '{athlete_id}' не найден в Intervals.icu")
-        if response.status_code >= 400:
-            logger.warning("Intervals activities request failed with HTTP %s", response.status_code)
-            return []
+            raise ValueError("Athlete ID не найден в Intervals.icu")
+        if response.status_code == 429 or 500 <= response.status_code <= 599:
+            if attempt == 3:
+                response.raise_for_status()
+            retry_after = response.headers.get("Retry-After")
+            try:
+                delay = min(10.0, max(0.0, float(retry_after))) if retry_after else 2 ** attempt
+            except ValueError:
+                delay = 2 ** attempt
+            await asyncio.sleep(delay)
+            continue
+        response.raise_for_status()
+        return response.json()
+    raise RuntimeError("Intervals.icu request failed after retries")
 
-        data = response.json()
-        if isinstance(data, list):
-            activities = data
-        elif isinstance(data, dict) and "data" in data:
-            activities = data["data"]
+
+def _records(data) -> list[dict]:
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    if isinstance(data, dict) and isinstance(data.get("data"), list):
+        return [item for item in data["data"] if isinstance(item, dict)]
+    return []
+
+
+async def _fetch_activity_chunk(client, url, api_key, start: date, end: date) -> list[dict]:
+    data = await _request_json(client, url, api_key,
+        {"oldest": start.isoformat(), "newest": end.isoformat(), "limit": 200}, 30.0)
+    rows = _records(data)
+    if len(rows) < 200:
+        return rows
+    chunks = _split_range(start, end, 7)
+    if len(chunks) == 1:
+        chunks = _split_range(start, end, 1)
+    result = []
+    for chunk_start, chunk_end in chunks:
+        await asyncio.sleep(0.25)
+        chunk_data = await _request_json(client, url, api_key,
+            {"oldest": chunk_start.isoformat(), "newest": chunk_end.isoformat(), "limit": 200}, 30.0)
+        chunk_rows = _records(chunk_data)
+        if len(chunk_rows) >= 200 and chunk_start < chunk_end:
+            for day_start, day_end in _split_range(chunk_start, chunk_end, 1):
+                await asyncio.sleep(0.25)
+                day_data = await _request_json(client, url, api_key,
+                    {"oldest": day_start.isoformat(), "newest": day_end.isoformat(), "limit": 200}, 30.0)
+                result.extend(_records(day_data))
         else:
-            activities = []
+            result.extend(chunk_rows)
+    return result
 
-        logger.info("Intervals activities sync returned %s records", len(activities))
-        return activities
+
+async def fetch_activities_for_user(
+    api_key: str, athlete_id: str, oldest: Optional[str] = None,
+    newest: Optional[str] = None, limit: int = 200,
+) -> list[dict]:
+    start = date.fromisoformat(oldest) if oldest else date.today() - timedelta(days=90)
+    end = date.fromisoformat(newest) if newest else date.today()
+    if start > end:
+        return []
+    url, result = f"{settings.INTERVALS_API_URL}/athlete/{athlete_id}/activities", []
+    async with httpx.AsyncClient() as client:
+        for chunk_start, chunk_end in _month_ranges(start, end):
+            if result:
+                await asyncio.sleep(0.25)
+            result.extend(await _fetch_activity_chunk(client, url, api_key, chunk_start, chunk_end))
+    return result
 
 
 async def fetch_wellness_for_user(
-    api_key: str,
-    athlete_id: str,
-    oldest: Optional[str] = None,
+    api_key: str, athlete_id: str, oldest: Optional[str] = None,
     newest: Optional[str] = None,
 ) -> list[dict]:
-    """Сон, HRV, resting HR для конкретного юзера."""
-    if not oldest:
-        oldest = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-    if not newest:
-        newest = datetime.now().strftime("%Y-%m-%d")
-
-    url = f"{settings.INTERVALS_API_URL}/athlete/{athlete_id}/wellness"
-    params = {"oldest": oldest, "newest": newest}
-    headers = {"Accept": "application/json", "User-Agent": "FantasyLeagueApp/2.0"}
-
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            url, auth=_auth_for(api_key), headers=headers, params=params, timeout=20.0
-        )
-        if response.status_code >= 400:
-            logger.warning("Intervals wellness request failed with HTTP %s", response.status_code)
-            return []
-        data = response.json()
-        if isinstance(data, list):
-            return data
-        if isinstance(data, dict) and "data" in data:
-            return data["data"]
+    start = date.fromisoformat(oldest) if oldest else date.today() - timedelta(days=30)
+    end = date.fromisoformat(newest) if newest else date.today()
+    if start > end:
         return []
+    url, result = f"{settings.INTERVALS_API_URL}/athlete/{athlete_id}/wellness", []
+    async with httpx.AsyncClient() as client:
+        for chunk_start, chunk_end in _month_ranges(start, end):
+            if result:
+                await asyncio.sleep(0.25)
+            data = await _request_json(client, url, api_key,
+                {"oldest": chunk_start.isoformat(), "newest": chunk_end.isoformat()}, 20.0)
+            result.extend(_records(data))
+    return result
 
 
 async def validate_credentials(api_key: str, athlete_id: str) -> dict | None:

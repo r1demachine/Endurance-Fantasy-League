@@ -7,6 +7,7 @@ from ..dependencies import get_current_user
 from ..auth import decrypt_secret, decode_access_token_claims
 from ..database import get_db
 from ..models import User, Activity, Wellness, Friendship, FriendshipStatus, WeeklySummary, XPEvent, LeagueWeek, LeagueMembership
+import asyncio
 from collections import defaultdict
 from ..services.xp import recalculate_timeline, level_from_xp, round_xp
 from datetime import date as _date
@@ -569,12 +570,27 @@ def _close_league_week(db: Session, week_start_d: _date) -> None:
             e["summ"].division_source = e["source"]
     db.commit()
 
+_sync_progress: dict[int, dict] = {}
+
+def _sync_month_ranges(start: _date, end: _date) -> list[tuple[_date, _date]]:
+    ranges, cursor = [], start.replace(day=1)
+    while cursor <= end:
+        next_month = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
+        ranges.append((max(start, cursor), min(end, next_month - timedelta(days=1))))
+        cursor = next_month
+    return ranges
+
+@router.get("/sync/progress")
+def get_sync_progress(current: User = Depends(get_current_user)):
+    return _sync_progress.get(current.id, {"active": False, "status": "idle", "months_done": 0, "months_total": 0})
+
 @router.post("/sync")
 @limiter.limit("3/minute")
 async def sync_activities(
     request: Request,
     oldest: str | None = None,
     newest: str | None = None,
+    since: _date | None = Query(default=None),
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -603,16 +619,48 @@ async def sync_activities(
     
     athlete_id = current.intervals_id
     
-    # ── Тянем активности этим юзером/ключом ──
+    today = _date.today()
+    if since is not None:
+        earliest = _date(today.year - 1, 1, 1)
+        if since < earliest:
+            raise HTTPException(status_code=422, detail=f"Дата начала не может быть раньше {earliest.isoformat()}")
+        if since > today:
+            raise HTTPException(status_code=422, detail="Дата начала не может быть в будущем")
+        last_sync = getattr(current, "last_full_sync_at", None)
+        if last_sync and datetime.utcnow() - last_sync < timedelta(hours=1):
+            remaining = int((timedelta(hours=1) - (datetime.utcnow() - last_sync)).total_seconds())
+            raise HTTPException(status_code=429, detail=f"Полный импорт доступен не чаще одного раза в час. Повтори через {max(1, remaining // 60 + 1)} мин.")
+    start_date = since or (_date.fromisoformat(oldest) if oldest else today - timedelta(days=90))
+    end_date = min(today, _date.fromisoformat(newest) if newest else today)
+    if start_date > end_date:
+        raise HTTPException(status_code=422, detail="Дата начала не может быть позже конечной даты")
+    month_ranges = _sync_month_ranges(start_date, end_date)
+    if _sync_progress.get(current.id, {}).get("active"):
+        raise HTTPException(status_code=409, detail="Синхронизация уже выполняется")
+    if since is not None:
+        current.last_full_sync_at = datetime.utcnow()
+        db.commit()
+        db.refresh(current)
+    progress = {"active": True, "status": "running", "months_done": 0, "months_total": len(month_ranges), "current_month": None}
+    _sync_progress[current.id] = progress
+    activities_data = []
     try:
-        activities_data = await fetch_activities_for_user(
-            api_key=api_key, athlete_id=athlete_id, oldest=oldest, newest=newest
-        )
+        for chunk_start, chunk_end in month_ranges:
+            if progress["months_done"]:
+                await asyncio.sleep(0.25)
+            progress["current_month"] = chunk_start.strftime("%Y-%m")
+            activities_data.extend(await fetch_activities_for_user(
+                api_key=api_key, athlete_id=athlete_id, oldest=chunk_start.isoformat(), newest=chunk_end.isoformat()
+            ))
+            progress["months_done"] += 1
     except PermissionError as e:
+        progress["status"], progress["active"] = "error", False
         raise HTTPException(status_code=401, detail=str(e))
     except ValueError as e:
+        progress["status"], progress["active"] = "error", False
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        progress["status"], progress["active"] = "error", False
         raise HTTPException(status_code=502, detail=f"Intervals.icu недоступен: {type(e).__name__}")
     
 
@@ -621,9 +669,12 @@ async def sync_activities(
     sleep_by_date: dict = {}
     wellness_upserted = 0
     try:
-        wellness_records = await fetch_wellness_for_user(
-            api_key=api_key, athlete_id=athlete_id, oldest=oldest, newest=newest
-        )
+        wellness_records = []
+        for chunk_start, chunk_end in month_ranges:
+            wellness_records.extend(await fetch_wellness_for_user(
+                api_key=api_key, athlete_id=athlete_id,
+                oldest=chunk_start.isoformat(), newest=chunk_end.isoformat()
+            ))
         for row in wellness_records:
             if not isinstance(row, dict):
                 continue
@@ -686,11 +737,13 @@ async def sync_activities(
             _recalculate_user_xp(db, current)
         db.commit()
         db.refresh(current)
+        progress["status"], progress["active"] = "complete", False
         return {
             "message": "Новых активностей нет, но сон и восстановление обновлены",
             "synced_count": 0,
             "updated_count": 0,
             "wellness_upserted": wellness_upserted,
+            "months_done": len(month_ranges), "months_total": len(month_ranges),
             "new_xp": 0,
         }
 
@@ -787,12 +840,15 @@ async def sync_activities(
     db.refresh(current)
     new_xp = round(float(current.total_xp or 0) - total_before, 2)
 
+    progress["status"], progress["active"] = "complete", False
+    progress["current_month"] = None
     return {
         "message": "Синхронизация успешна!",
         "synced_count": synced_count,
         "updated_count": updated_count,
         "deleted_count": deleted_count,
         "wellness_upserted": wellness_upserted,
+        "months_done": len(month_ranges), "months_total": len(month_ranges),
         "skipped_empty": skipped_empty,
         "new_xp": new_xp,
         "user": {
