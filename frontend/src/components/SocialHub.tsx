@@ -126,7 +126,11 @@ function SearchModal({ onClose, onChanged }: { onClose: () => void; onChanged: (
     };
   }, [q, performSearch]);
 
-  useEffect(() => () => controllerRef.current?.abort(), []);
+  useEffect(() => {
+    return () => {
+      controllerRef.current?.abort();
+    };
+  }, []);
 
   const doSearch = () => {
     const query = q.trim();

@@ -791,6 +791,16 @@ async def sync_activities(
             # UPSERT: Intervals досылает TSS/пульс/сон ПОЗЖЕ самой тренировки
             row = existing_rows[act_id]
             changed = False
+            if bool(parsed.get("is_manual")) != bool(row.is_manual):
+                row.is_manual = bool(parsed.get("is_manual"))
+                changed = True
+            is_indoor = bool(parsed.get("is_indoor"))
+            if bool(getattr(row, "is_indoor", False)) != is_indoor:
+                row.is_indoor = is_indoor
+                changed = True
+            if bool(row.indoor) != is_indoor:
+                row.indoor = is_indoor
+                changed = True
             for field, value in (
                 ("training_load", parsed.get("training_load") or 0),
                 ("intensity", parsed.get("intensity") or 0),
@@ -799,16 +809,6 @@ async def sync_activities(
                 ("distance", parsed.get("distance") or 0),
                 ("elevation_gain", parsed.get("elevation_gain") or 0),
             ):
-                if bool(parsed.get("is_manual")) != bool(row.is_manual):
-                    row.is_manual = bool(parsed.get("is_manual"))
-                    changed = True
-                is_indoor = bool(parsed.get("is_indoor"))
-                if bool(getattr(row, "is_indoor", False)) != is_indoor:
-                    row.is_indoor = is_indoor
-                    changed = True
-                if bool(row.indoor) != is_indoor:
-                    row.indoor = is_indoor
-                    changed = True
                 old = getattr(row, field) or 0
                 if value and abs(old - value) > 1e-6:
                     setattr(row, field, value)
@@ -1510,8 +1510,10 @@ async def leaderboard(
             .order_by(LeagueWeek.week_start.desc())
             .first()
         )
+        your_rank = next((entry["rank"] for entry in entries if entry["is_you"]), None)
         return {
             "scope": "weekly",
+            "your_rank": your_rank,
             "week": this_ws_d.isoformat(),
             "formed": len(entries) >= X6.MIN_LEAGUE_SIZE,
             "min_size": X6.MIN_LEAGUE_SIZE,
