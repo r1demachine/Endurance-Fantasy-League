@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { authApi } from "@/lib/auth";
 import Link from "next/link";
@@ -85,15 +85,56 @@ function SearchModal({ onClose, onChanged }: { onClose: () => void; onChanged: (
   const [q, setQ] = useState("");
   const [results, setResults] = useState<Person[]>([]);
   const [searched, setSearched] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
 
-  const doSearch = async () => {
-    if (q.trim().length < 2) return;
+  const performSearch = useCallback(async (query: string) => {
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setSearching(true);
     try {
-      const r = await authApi.get("/api/friends/search", { params: { q: q.trim() } });
-      setResults(r.data.results);
-      setSearched(true);
-    } catch {}
+      const r = await authApi.get("/api/friends/search", { params: { q: query }, signal: controller.signal });
+      if (!controller.signal.aborted) {
+        setResults(r.data.results || []);
+        setSearched(true);
+      }
+    } catch (error: any) {
+      if (!controller.signal.aborted && error.name !== "CanceledError" && error.name !== "AbortError") {
+        setResults([]);
+        setSearched(true);
+      }
+    } finally {
+      if (!controller.signal.aborted) setSearching(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const query = q.trim();
+    if (query.length < 2) {
+      controllerRef.current?.abort();
+      setResults([]);
+      setSearched(false);
+      setSearching(false);
+      return;
+    }
+    const timer = window.setTimeout(() => { void performSearch(query); }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      controllerRef.current?.abort();
+    };
+  }, [q, performSearch]);
+
+  useEffect(() => {
+    return () => {
+      controllerRef.current?.abort();
+    };
+  }, []);
+
+  const doSearch = () => {
+    const query = q.trim();
+    if (query.length >= 2) void performSearch(query);
   };
 
   const add = async (p: Person) => {
@@ -163,9 +204,10 @@ function SearchModal({ onClose, onChanged }: { onClose: () => void; onChanged: (
         />
         <button
           onClick={doSearch}
-          className="px-4 py-3 bg-[#ffd500] border-2 border-black text-[10px] font-bold tracking-widest uppercase hover:bg-black hover:text-white transition-colors"
+          disabled={q.trim().length < 2 || searching}
+          className="px-4 py-3 bg-[#ffd500] border-2 border-black text-[10px] font-bold tracking-widest uppercase hover:bg-black hover:text-white transition-colors disabled:opacity-50"
         >
-          Search
+          {searching ? "Searching…" : "Search"}
         </button>
       </div>
 
@@ -178,7 +220,8 @@ function SearchModal({ onClose, onChanged }: { onClose: () => void; onChanged: (
             Nobody found 🌙 Try another name
           </p>
         )}
-        {!searched && (
+        {searching && <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-3">Поиск…</p>}
+        {!searched && !searching && (
           <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-6">
             Search by name or login → add to friends
           </p>

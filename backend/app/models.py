@@ -105,7 +105,8 @@ class Activity(Base):
     start_date = Column(DateTime)
     start_date_local = Column(DateTime, nullable=True)
     
-    indoor = Column(Boolean, default=False)
+    indoor = Column(Boolean, default=False)  # legacy compatibility flag
+    is_indoor = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime, default=datetime.utcnow)
     
     user = relationship("User", back_populates="activities")

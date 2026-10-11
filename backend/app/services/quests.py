@@ -48,6 +48,12 @@ QUEST_REGISTRY = [
         "desc": "Подключить сон: 3+ ночи со sleep score",
         "reward": 25.0,
     },
+    {
+        "slug": "trainer_week",
+        "title": "Станок",
+        "desc": "Тренировка на тренажёре от 30 минут в сезон",
+        "reward": 15.0,
+    },
     # ── Сейчас невычислимо: данные не синхронизируются. НЕ имитируем. ──
     {
         "slug": "power_record_20m",
@@ -68,6 +74,36 @@ QUEST_REGISTRY = [
 
 def _quest_key(slug: str) -> str:
     return f"quest:{slug}:lifetime"
+
+
+TRAINER_WEEKLY_REWARD = 15.0
+
+
+def _trainer_season_active(day: date) -> bool:
+    """Сезон станка: с 1 октября по 30 апреля включительно."""
+    return day.month >= 10 or day.month <= 4
+
+
+def _trainer_week_start(day: date) -> date:
+    return day - timedelta(days=day.weekday())
+
+
+def _trainer_week_key(week_start: date) -> str:
+    return f"quest:trainer_week:{week_start.isoformat()}"
+
+
+def _is_qualifying_trainer_activity(activity) -> bool:
+    activity_date = getattr(activity, "start_date_local", None) or getattr(activity, "start_date", None)
+    if activity_date is None:
+        return False
+    day = activity_date.date() if isinstance(activity_date, datetime) else activity_date
+    is_indoor = bool(getattr(activity, "is_indoor", False) or getattr(activity, "indoor", False))
+    return (
+        is_indoor
+        and not bool(getattr(activity, "is_manual", False))
+        and int(getattr(activity, "moving_time", 0) or 0) >= 30 * 60
+        and _trainer_season_active(day)
+    )
 
 
 # ── Условия квестов (чистые функции от контекста) ──
@@ -192,6 +228,38 @@ def grant_quests(db, user, acts, summaries) -> int:
                 title=f"🏆 {q['title']}",
             ))
             granted += 1
+    # Повторяемый недельный бонус за станок: не больше одного XPEvent на неделю.
+    trainer_by_week = {}
+    for activity in acts:
+        if not _is_qualifying_trainer_activity(activity):
+            continue
+        activity_dt = getattr(activity, "start_date_local", None) or activity.start_date
+        activity_day = activity_dt.date() if isinstance(activity_dt, datetime) else activity_dt
+        week_start = _trainer_week_start(activity_day)
+        trainer_by_week.setdefault(week_start, activity)
+
+    for week_start, activity in trainer_by_week.items():
+        key = _trainer_week_key(week_start)
+        exists = db.query(XPEvent).filter(
+            XPEvent.user_id == user.id,
+            XPEvent.event_key == key,
+        ).first()
+        if exists:
+            continue
+        activity_dt = getattr(activity, "start_date_local", None) or activity.start_date
+        db.add(XPEvent(
+            user_id=user.id,
+            week_start=datetime.combine(week_start, datetime.min.time()),
+            date=activity_dt if isinstance(activity_dt, datetime) else datetime.combine(activity_dt, datetime.min.time()),
+            event_type="quest",
+            event_key=key,
+            amount=TRAINER_WEEKLY_REWARD,
+            source_type="quest",
+            source_id=str(activity.id) if getattr(activity, "id", None) is not None else None,
+            title="🏆 Станок",
+        ))
+        granted += 1
+
     return granted
 
 
@@ -207,8 +275,13 @@ def quest_states(db, user) -> list:
     }
     out = []
     for q in QUEST_REGISTRY:
-        key = _quest_key(q["slug"])
-        ev = earned.get(key)
+        if q["slug"] == "trainer_week":
+            today = datetime.utcnow().date()
+            trainer_key = _trainer_week_key(_trainer_week_start(today))
+            ev = earned.get(trainer_key)
+        else:
+            key = _quest_key(q["slug"])
+            ev = earned.get(key)
         if ev:
             status = "earned"
             earned_at = ev.date.strftime("%d.%m.%Y") if ev.date else None

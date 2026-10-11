@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, func
 from ..dependencies import get_current_user
 from ..auth import decrypt_secret, decode_access_token_claims
 from ..database import get_db
@@ -93,6 +93,7 @@ def _parse_activity(act: dict) -> dict | None:
         "xp_earned": xp_earned,
         "start_date": start_date,
         "is_manual": _detect_manual(act),
+        "is_indoor": any(_as_bool(act.get(k)) for k in ("trainer", "is_indoor", "indoor")),
         "average_heartrate": _f("average_heartrate") or _f("avg_hr"),
         "average_watts": _f("average_watts") or _f("icu_average_watts"),
         "normalized_power": _f("normalized_power") or _f("icu_weighted_avg_watts"),
@@ -115,6 +116,14 @@ def _has_real_data(parsed: dict) -> bool:
     if (parsed.get("xp_earned") or 0) > 0:
         return True
     return False
+
+def _as_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value or "").strip().lower() in {"true", "1", "yes", "y", "on"}
+
 
 def _detect_manual(raw: dict) -> bool:
     """Определяет ручную запись по явным полям payload Intervals."""
@@ -782,6 +791,16 @@ async def sync_activities(
             # UPSERT: Intervals досылает TSS/пульс/сон ПОЗЖЕ самой тренировки
             row = existing_rows[act_id]
             changed = False
+            if bool(parsed.get("is_manual")) != bool(row.is_manual):
+                row.is_manual = bool(parsed.get("is_manual"))
+                changed = True
+            is_indoor = bool(parsed.get("is_indoor"))
+            if bool(getattr(row, "is_indoor", False)) != is_indoor:
+                row.is_indoor = is_indoor
+                changed = True
+            if bool(row.indoor) != is_indoor:
+                row.indoor = is_indoor
+                changed = True
             for field, value in (
                 ("training_load", parsed.get("training_load") or 0),
                 ("intensity", parsed.get("intensity") or 0),
@@ -790,9 +809,6 @@ async def sync_activities(
                 ("distance", parsed.get("distance") or 0),
                 ("elevation_gain", parsed.get("elevation_gain") or 0),
             ):
-                if bool(parsed.get("is_manual")) != bool(row.is_manual):
-                    row.is_manual = bool(parsed.get("is_manual"))
-                    changed = True
                 old = getattr(row, field) or 0
                 if value and abs(old - value) > 1e-6:
                     setattr(row, field, value)
@@ -817,6 +833,8 @@ async def sync_activities(
             sleep_secs=sleep_secs,
             start_date=parsed["start_date"],
             is_manual=bool(parsed.get("is_manual", False)),
+            indoor=bool(parsed.get("is_indoor", False)),
+            is_indoor=bool(parsed.get("is_indoor", False)),
         )
         db.add(new_activity)
         existing_rows[act_id] = new_activity
@@ -903,7 +921,8 @@ async def get_user_profile(
     week_seconds = sum(a.moving_time or 0 for a in all_activities if a.start_date and week_start(a.start_date.date()) == this_week)
     week_hours = round(week_seconds / 3600, 1)
     
-    SEASON_START = datetime(2026, 9, 1)
+    season_year = today.year if today.month >= 9 else today.year - 1
+    SEASON_START = datetime(season_year, 9, 1)
     season_acts = [a for a in all_activities if a.start_date and a.start_date >= SEASON_START]
     season_stats = {
         "season_start": SEASON_START.strftime("%d.%m.%Y"),
@@ -1055,6 +1074,194 @@ async def get_user_profile(
         ]
     }
 
+
+
+def _monday_for_day(day: _date) -> _date:
+    return day - timedelta(days=day.weekday())
+
+
+def _week_activity_payload(act: Activity) -> dict:
+    activity_date = act.start_date_local or act.start_date
+    return {
+        "id": act.id,
+        "name": act.name or "Без названия",
+        "sport": act.sport_type or "WORKOUT",
+        "distance_km": round((act.distance or 0) / 1000, 2),
+        "moving_time_min": (act.moving_time or 0) // 60,
+        "xp": round(float(act.xp_earned or 0), 2),
+        "base_xp": act.base_xp or 0,
+        "rate_per_hour": act.rate_per_hour or 0,
+        "intensity_multiplier": act.intensity_multiplier or 1.0,
+        "intensity_category": act.intensity_category or "MEDIUM",
+        "intensity_reason": act.intensity_reason or "",
+        "sleep_multiplier": act.sleep_multiplier or 1.0,
+        "sleep_hours": round(act.sleep_secs / 3600, 1) if act.sleep_secs else None,
+        "streak_multiplier": act.streak_multiplier or 1.0,
+        "streak_reason": act.streak_reason or "",
+        "tss_estimated": bool(act.tss_estimated),
+        "is_long": bool(act.is_long),
+        "is_indoor": bool(getattr(act, "is_indoor", False) or act.indoor),
+        "date": activity_date.strftime("%d.%m.%Y") if activity_date else "Неизвестно",
+    }
+
+
+@router.get("/weekly-summary")
+def get_weekly_summary(
+    week_start: _date | None = Query(default=None),
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Сводка, события и тренировки выбранной недели; по умолчанию текущая неделя."""
+    today = datetime.utcnow().date()
+    current_start = _monday_for_day(today)
+    selected_start = _monday_for_day(week_start or today)
+    if selected_start > current_start:
+        raise HTTPException(status_code=422, detail="Нельзя выбрать будущую неделю")
+    selected_dt = datetime.combine(selected_start, datetime.min.time())
+    next_dt = selected_dt + timedelta(days=7)
+
+    from ..models import WeeklySummary, XPEvent
+    summaries = (
+        db.query(WeeklySummary)
+        .filter(WeeklySummary.user_id == current.id, WeeklySummary.week_start <= datetime.combine(current_start, datetime.min.time()))
+        .order_by(WeeklySummary.week_start.desc())
+        .limit(52)
+        .all()
+    )
+    option_dates = {_monday_for_day(row.week_start.date()) for row in summaries if row.week_start}
+    option_dates.add(current_start)
+    if selected_start not in option_dates:
+        option_dates.add(selected_start)
+    week_options = [
+        {
+            "week_start": start.isoformat(),
+            "label": f"{start.strftime('%d.%m')}–{(start + timedelta(days=6)).strftime('%d.%m.%Y')}",
+        }
+        for start in sorted(option_dates, reverse=True)[:53]
+    ]
+    # Ensure the selected/current week remains selectable even if older than the 52-row window.
+    if selected_start not in { _date.fromisoformat(item["week_start"]) for item in week_options }:
+        week_options.append({
+            "week_start": selected_start.isoformat(),
+            "label": f"{selected_start.strftime('%d.%m')}–{(selected_start + timedelta(days=6)).strftime('%d.%m.%Y')}",
+        })
+
+    summary = (
+        db.query(WeeklySummary)
+        .filter(WeeklySummary.user_id == current.id, WeeklySummary.week_start == selected_dt)
+        .first()
+    )
+    if summary:
+        week = {
+            "week_start": selected_start.isoformat(),
+            "actual_load": round(summary.actual_load or 0, 1),
+            "target_load": round(summary.target_load or 0, 1),
+            "completion_ratio": round((summary.completion_ratio or 0) * 100, 1),
+            "training_days": summary.training_days or 0,
+            "effort_xp": round(summary.effort_xp or 0, 1),
+            "goal_xp": round(summary.goal_xp or 0, 1),
+            "consistency_xp": round(summary.consistency_xp or 0, 1),
+            "quality_xp": round(summary.quality_xp or 0, 1),
+            "recovery_xp": round(summary.recovery_xp or 0, 1),
+            "quest_xp": round(summary.quest_xp or 0, 1),
+            "total_xp": round(summary.total_xp or 0, 1),
+            "league_score": round(summary.league_score or 0, 1),
+            "state": "ready" if summary.finalized else "in_progress",
+            "is_deload": bool(summary.is_deload),
+            "paused": bool(summary.paused),
+            "division": summary.division or (f"Division {current.division_current}" if current.division_current else None),
+            "division_source": summary.division_source,
+        }
+    else:
+        previous = next((row for row in summaries if row.week_start and row.week_start < selected_dt and row.target_load), None)
+        from ..services import xp_v6 as X6
+        week = {
+            "week_start": selected_start.isoformat(),
+            "actual_load": 0, "target_load": round((previous.target_load if previous else X6.starter_target()) or 0, 1),
+            "completion_ratio": 0, "training_days": 0,
+            "effort_xp": 0, "goal_xp": 0, "consistency_xp": 0, "quality_xp": 0,
+            "recovery_xp": 0, "quest_xp": 0, "total_xp": 0, "league_score": 0,
+            "state": "no_data", "is_deload": False, "paused": False,
+            "division": f"Division {current.division_current}" if current.division_current else None,
+            "division_source": "ladder" if current.division_current else "provisional",
+        }
+
+    # Match the existing current-week placement logic, without recalculating a user's division from a historical week.
+    if selected_start == current_start:
+        division, division_source = _user_division(db, current, selected_start, week["actual_load"])
+        week["division"] = division
+        week["division_source"] = division_source
+    else:
+        membership = (
+            db.query(LeagueMembership)
+            .filter(LeagueMembership.user_id == current.id, LeagueMembership.week_start == selected_dt)
+            .first()
+        )
+        if membership is not None:
+            week["division"] = membership.division
+            week["division_source"] = membership.division_source
+
+    event_rows = (
+        db.query(XPEvent)
+        .filter(XPEvent.user_id == current.id, XPEvent.week_start == selected_dt)
+        .order_by(XPEvent.date.asc(), XPEvent.id.asc())
+        .all()
+    )
+    events = [{
+        "id": event.id,
+        "type": event.event_type,
+        "amount": round(event.amount or 0, 1),
+        "title": event.title or event.event_type,
+        "date": event.date.strftime("%d.%m") if event.date else "",
+    } for event in event_rows]
+
+    activities = (
+        db.query(Activity)
+        .filter(Activity.user_id == current.id, Activity.start_date >= selected_dt, Activity.start_date < next_dt)
+        .order_by(Activity.start_date.desc(), Activity.id.desc())
+        .all()
+    )
+    return {
+        "week": week,
+        "week_options": week_options,
+        "events": events,
+        "activities": [_week_activity_payload(act) for act in activities],
+        "is_current_week": selected_start == current_start,
+    }
+
+
+@router.get("/season-weeks")
+def get_season_weeks(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """WeeklySummary timeline for the current September–August season."""
+    from ..models import WeeklySummary
+    today = datetime.utcnow().date()
+    season_year = today.year if today.month >= 9 else today.year - 1
+    season_start = _date(season_year, 9, 1)
+    first_week = _monday_for_day(season_start)
+    current_week = _monday_for_day(today)
+    rows = (
+        db.query(WeeklySummary)
+        .filter(WeeklySummary.user_id == current.id,
+                WeeklySummary.week_start >= datetime.combine(first_week, datetime.min.time()),
+                WeeklySummary.week_start <= datetime.combine(current_week, datetime.min.time()))
+        .order_by(WeeklySummary.week_start.asc())
+        .all()
+    )
+    by_week = {_monday_for_day(row.week_start.date()): row for row in rows if row.week_start}
+    weeks = []
+    cursor = first_week
+    while cursor <= current_week:
+        row = by_week.get(cursor)
+        weeks.append({
+            "week_start": cursor.isoformat(),
+            "label": cursor.strftime("%d.%m"),
+            "total_xp": round(row.total_xp or 0, 1) if row else 0,
+            "actual_load": round(row.actual_load or 0, 1) if row else 0,
+            "target_load": round(row.target_load or 0, 1) if row and row.target_load is not None else 0,
+            "has_summary": row is not None,
+        })
+        cursor += timedelta(days=7)
+    return {"season_start": season_start.isoformat(), "weeks": weeks}
 
 
 @router.delete("/reset")
@@ -1318,8 +1525,10 @@ async def leaderboard(
             .order_by(LeagueWeek.week_start.desc())
             .first()
         )
+        your_rank = next((entry["rank"] for entry in entries if entry["is_you"]), None)
         return {
             "scope": "weekly",
+            "your_rank": your_rank,
             "week": this_ws_d.isoformat(),
             "formed": len(entries) >= X6.MIN_LEAGUE_SIZE,
             "min_size": X6.MIN_LEAGUE_SIZE,
@@ -1327,14 +1536,24 @@ async def leaderboard(
             "entries": entries,
         }
 
+    your_rank = None
+    rank_expr = func.coalesce(User.total_xp, 0.0)
+
     if scope == "global":
         users = (
             db.query(User)
-            .order_by(User.total_xp.desc())
+            .order_by(rank_expr.desc(), User.id.asc())
             .limit(limit)
             .all()
         )
- 
+        if current is not None:
+            xp = float(current.total_xp or 0)
+            before = db.query(User).filter(or_(
+                rank_expr > xp,
+                and_(rank_expr == xp, User.id < current.id),
+            )).count()
+            your_rank = before + 1
+
     else:
         if current is None:
             raise HTTPException(status_code=401, detail="Friends-рейтинг доступен после входа")
@@ -1356,18 +1575,20 @@ async def leaderboard(
         )
         friend_ids = {r[0] for r in friend_ids_rows}
         if not friend_ids:
-            return {"scope": scope, "entries": []}
+            return {"scope": scope, "entries": [], "your_rank": None}
         friend_ids.add(current.id)
-        users = (
+        all_friend_users = (
             db.query(User)
             .filter(User.id.in_(friend_ids))
-            .order_by(User.total_xp.desc())
-            .limit(limit)
+            .order_by(rank_expr.desc(), User.id.asc())
             .all()
         )
-    
+        your_rank = next((idx + 1 for idx, user in enumerate(all_friend_users) if user.id == current.id), None)
+        users = all_friend_users[:limit]
+
     return {
         "scope": scope,
+        "your_rank": your_rank,
         "entries": [
             {
                 "rank": i + 1,
