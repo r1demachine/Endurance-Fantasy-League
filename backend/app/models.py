@@ -34,7 +34,9 @@ class User(Base):
     api_key_encrypted = Column(String(500), nullable=True)  # шифруется Fernet
     
     # Устаревшие поля — оставим для совместимости, но не обязательны
-    email = Column(String, unique=True, index=True, nullable=True)
+    email = Column(String(320), unique=True, index=True, nullable=True)
+    email_verified_at = Column(DateTime, nullable=True)
+    email_verification_required = Column(Boolean, nullable=False, default=False, server_default="false")
     firstname = Column(String, nullable=True)
     lastname = Column(String, nullable=True)
     profile_picture = Column(String, nullable=True)
@@ -266,4 +268,23 @@ class LeagueMembership(Base):
 
     __table_args__ = (
         Index("uq_league_membership", "week_start", "user_id", unique=True),
+    )
+
+class EmailCode(Base):
+    """One-time authentication code; the raw code is never persisted."""
+
+    __tablename__ = "email_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    email = Column(String(320), nullable=False)
+    purpose = Column(String(32), nullable=False)
+    code_hash = Column(String(64), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    attempts = Column(Integer, nullable=False, default=0, server_default="0")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("uq_email_codes_email_purpose", "email", "purpose", unique=True),
+        Index("idx_email_codes_user", "user_id"),
     )

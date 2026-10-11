@@ -92,6 +92,8 @@ npm run dev
 DATABASE_URL=postgresql://user:pass@host:5432/fantasy
 JWT_SECRET=replace-with-at-least-32-random-characters
 ENCRYPTION_KEY=your-fernet-key
+RESEND_API_KEY=re_your_server_side_key
+EMAIL_FROM="Endurance Fantasy League <onboarding@resend.dev>"
 REDIS_URL=redis://localhost:6379/0   # опционально; рекомендуется для общего rate-limit storage
 CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,https://endurance-fantasy-league.vercel.app
 XP_ENGINE=v6
@@ -173,3 +175,35 @@ frontend/src/
 ---
 
 *We don't follow chaos. We set the plan.* ⚡
+
+
+### Почта: подключение Resend и локальная проверка
+
+1. Создай аккаунт на [Resend](https://resend.com/) и выпусти API key в разделе API Keys. Скопируй ключ один раз; не помещай его в исходники, GitHub, Vercel frontend variables или переменные с префиксом `NEXT_PUBLIC_`.
+2. Для production добавь домен отправки в Resend → Domains и заверши проверку DNS-записей. После верификации укажи отправителя с этого домена, например `Endurance Fantasy League <noreply@example.com>`. Для начальной проверки можно использовать `onboarding@resend.dev`, но тестовый отправитель Resend ограничивает получателей адресами, разрешёнными для тестирования.
+3. В локальном файле `backend/.env` задай `RESEND_API_KEY=re_...` и `EMAIL_FROM="Endurance Fantasy League <onboarding@resend.dev>"`. Файл `.env` не коммить. Перезапусти backend после изменения переменных.
+4. В Render → нужный backend service → Environment добавь те же две переменные. Сохрани изменения и дождись успешного redeploy. Секрет нужен только backend; на Vercel эти значения добавлять не нужно.
+5. Проверь регистрацию: открой локально `http://localhost:3000/login`, перейди на регистрацию, введи реальный email, согласись с политикой и отправь форму. Код из письма действует 10 минут. Пять неверных попыток делают код непригодным. Затем в профиле проверь отправку кода для нового email и смену пароля. Для проверки сброса используй ссылку «Забыли пароль?».
+6. При ошибках доставки проверь Render Logs по сообщению о сбое Resend без адреса получателя, API key и содержимого письма; в Resend открой Logs и проверь статус запроса. Приложение не хранит тело писем или открытый код; Resend как провайдер может вести собственные технические журналы отправок.
+
+Автоматическая миграция при запуске добавляет `email_verified_at` и флаг обязательного подтверждения новой регистрации; таблица `email_codes` создаётся через SQLAlchemy metadata.
+
+### Проверить новую ветку на Windows и вернуться на main
+
+Перед переключением сохрани или закоммить свои локальные изменения. В PowerShell из каталога репозитория выполни:
+
+```powershell
+git status
+git stash push -m "local work before email-auth branch"   # только если есть незакоммиченные изменения
+git fetch origin
+git switch --track -c feat/auth-email-reset origin/feat/auth-email-reset
+```
+
+Дальше запусти backend и frontend обычным способом из раздела «Быстрый старт» и проверь изменения. Чтобы вернуться на основную ветку:
+
+```powershell
+git switch main
+git pull --ff-only origin main
+```
+
+Если ветка уже существует локально, вместо команды с `-c` выполни `git switch feat/auth-email-reset`. Если перед переключением использовал `git stash`, верни свои локальные изменения командой `git stash pop` после перехода на нужную ветку и только если это действительно те изменения, которые ты хочешь применить.

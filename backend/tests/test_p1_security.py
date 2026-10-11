@@ -109,6 +109,7 @@ class InputValidationTests(unittest.TestCase):
     def test_username_is_normalized_before_pattern_validation(self):
         data = RegisterIn(
             username="  Bob_42  ",
+            email=" Test@Example.com ",
             password="long-enough",
             display_name="Bob",
             privacy_consent=True,
@@ -119,6 +120,7 @@ class InputValidationTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             RegisterIn(
                 username="bad-name",
+                email="test@example.com",
                 password="long-enough",
                 display_name="Bob",
                 privacy_consent=True,
@@ -128,6 +130,7 @@ class InputValidationTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             RegisterIn(
                 username="valid_user",
+                email="test@example.com",
                 password="x" * 129,
                 display_name="User",
                 privacy_consent=True,

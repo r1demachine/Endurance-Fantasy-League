@@ -52,6 +52,10 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN privacy_consent_version VARCHAR(64)"))
             if "privacy_consent_at" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN privacy_consent_at TIMESTAMP"))
+            if "email_verified_at" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN email_verified_at TIMESTAMP"))
+            if "email_verification_required" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN email_verification_required BOOLEAN NOT NULL DEFAULT FALSE"))
             conn.execute(text("ALTER TABLE users ALTER COLUMN intervals_id DROP NOT NULL"))
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)"))
 
@@ -91,7 +95,7 @@ try:
             if "read" not in ncols:
                 conn.execute(text("ALTER TABLE notifications ADD COLUMN read BOOLEAN DEFAULT FALSE"))
 
-    print("✅ Auto-migration complete (users + activities + weekly_summaries + notifications)")
+    print("✅ Auto-migration complete (users + activities + weekly_summaries + notifications + email auth)")
 except Exception as e:
     print(f"❌ Critical database migration failure: {type(e).__name__}: {e}")
     raise RuntimeError(

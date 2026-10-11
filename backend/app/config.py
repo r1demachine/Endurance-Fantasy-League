@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     # Trust this header only on a deployment where Cloudflare overwrites it (Render).
     TRUST_CF_CONNECTING_IP: bool = False
 
+    # Resend: используется только backend для кодов аутентификации.
+    RESEND_API_KEY: str | None = None
+    EMAIL_FROM: str = "Endurance Fantasy League <onboarding@resend.dev>"
+
     # Intervals.icu — только базовый URL. API-ключи у каждого пользователя свои.
     INTERVALS_API_URL: str = "https://intervals.icu/api/v1"
 

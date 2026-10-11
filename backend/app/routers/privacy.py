@@ -10,6 +10,7 @@ from ..database import get_db
 from ..dependencies import get_current_user
 from ..models import (
     Activity,
+    EmailCode,
     Friendship,
     LeagueMembership,
     Notification,
@@ -113,6 +114,8 @@ def delete_account(
     db.query(WeeklySummary).filter(WeeklySummary.user_id == uid).delete(synchronize_session=False)
     db.query(Wellness).filter(Wellness.user_id == uid).delete(synchronize_session=False)
     db.query(Activity).filter(Activity.user_id == uid).delete(synchronize_session=False)
+
+    db.query(EmailCode).filter(EmailCode.user_id == uid).delete(synchronize_session=False)
 
     # The foreign key is unique and nullable; clear provider credentials before deleting.
     current.api_key_encrypted = None
