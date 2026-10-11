@@ -6,7 +6,6 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from .. import broker
-from ..auth import decode_access_token
 from ..database import get_db
 from ..dependencies import get_current_user
 from ..models import Notification, User
