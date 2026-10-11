@@ -217,15 +217,17 @@ export default function PublicProfilePage() {
             </div>
             <div className="p-5 md:p-6">
               <h1 className="font-display uppercase text-3xl md:text-5xl leading-none mb-3">{u.display_name}</h1>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="px-2 py-1 bg-[#171a38] text-white text-[10px] font-bold tracking-widest uppercase">LVL {u.level}</span>
-                <span className="px-2 py-1 bg-[#ff4b26] text-white text-[10px] font-bold tracking-widest uppercase">
-                  {Math.round(u.total_xp).toLocaleString()} XP
-                </span>
-                <span className="px-2 py-1 border border-black/30 text-[#666] text-[10px] font-bold tracking-widest uppercase">
-                  {u.friends_count} friends
-                </span>
-              </div>
+              {u.can_view_profile_stats && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-2 py-1 bg-[#171a38] text-white text-[10px] font-bold tracking-widest uppercase">LVL {u.level}</span>
+                  <span className="px-2 py-1 bg-[#ff4b26] text-white text-[10px] font-bold tracking-widest uppercase">
+                    {Math.round(u.total_xp).toLocaleString()} XP
+                  </span>
+                  <span className="px-2 py-1 border border-black/30 text-[#666] text-[10px] font-bold tracking-widest uppercase">
+                    {u.friends_count} friends
+                  </span>
+                </div>
+              )}
               <Label className="text-[#666] mt-3">@{u.username}</Label>
 
               {/* ── Кнопки дружбы ── */}
