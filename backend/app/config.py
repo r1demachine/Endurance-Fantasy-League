@@ -10,6 +10,8 @@ class Settings(BaseSettings):
 
     # Redis (опционально: без него уведомления идут через in-memory брокер)
     REDIS_URL: str | None = None
+    # Trust this header only on a deployment where Cloudflare overwrites it (Render).
+    TRUST_CF_CONNECTING_IP: bool = False
 
     # Intervals.icu — только базовый URL. API-ключи у каждого пользователя свои.
     INTERVALS_API_URL: str = "https://intervals.icu/api/v1"
