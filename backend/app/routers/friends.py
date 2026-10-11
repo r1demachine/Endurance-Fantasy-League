@@ -59,7 +59,7 @@ def search_users(q: str = Query(..., min_length=2, max_length=64), current: User
     if len(query) < 2:
         return {"results": []}
     # Treat SQL LIKE wildcards as literals in user input.
-    escaped_query = query.replace("\\\\", "\\\\\\\\").replace("%", "\\\\%").replace("_", "\\\\_")
+    escaped_query = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     like = f"%{escaped_query}%"
     users = (
         db.query(User)
