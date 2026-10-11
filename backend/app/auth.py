@@ -27,7 +27,7 @@ def hash_password(password: str) -> str:
         "sha256", password.encode("utf-8"), salt, PASSWORD_HASH_ITERATIONS
     )
     # Формат хранит алгоритм и число итераций, чтобы параметры можно было повышать.
-    return f"pbkdf2_sha256\${PASSWORD_HASH_ITERATIONS}\${salt.hex()}\${dk.hex()}"
+    return f"pbkdf2_sha256${PASSWORD_HASH_ITERATIONS}${salt.hex()}${dk.hex()}"
 
 
 def _parse_password_hash(stored: str) -> tuple[int, bytes, bytes, bool] | None:
