@@ -1,11 +1,13 @@
 """Intervals.icu API client — только per-user (ключ берётся из аккаунта пользователя)."""
 
 import httpx
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 from ..config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 SPORT_XP_MULTIPLIERS = {
     "RIDE": 3.0,
@@ -69,8 +71,7 @@ async def fetch_activities_for_user(
         if response.status_code == 404:
             raise ValueError(f"Athlete ID '{athlete_id}' не найден в Intervals.icu")
         if response.status_code >= 400:
-            print(f"❌ ОШИБКА API activities: {response.status_code}")
-            print(f"📄 {response.text[:500]}")
+            logger.warning("Intervals activities request failed with HTTP %s", response.status_code)
             return []
 
         data = response.json()
@@ -81,7 +82,7 @@ async def fetch_activities_for_user(
         else:
             activities = []
 
-        print(f"✅ [{athlete_id}] Получено {len(activities)} активностей ({oldest} → {newest})")
+        logger.info("Intervals activities sync returned %s records", len(activities))
         return activities
 
 
@@ -106,7 +107,7 @@ async def fetch_wellness_for_user(
             url, auth=_auth_for(api_key), headers=headers, params=params, timeout=20.0
         )
         if response.status_code >= 400:
-            print(f"⚠️ Wellness for {athlete_id}: HTTP {response.status_code}")
+            logger.warning("Intervals wellness request failed with HTTP %s", response.status_code)
             return []
         data = response.json()
         if isinstance(data, list):
@@ -134,7 +135,7 @@ async def validate_credentials(api_key: str, athlete_id: str) -> dict | None:
                 return response.json()
             return None
         except Exception as e:
-            print(f"⚠️ validate_credentials error: {e}")
+            logger.warning("Intervals credential validation failed (%s)", type(e).__name__)
             return None
 
 
