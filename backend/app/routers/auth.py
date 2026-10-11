@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -7,6 +9,7 @@ from ..models import User
 from ..auth import hash_password, verify_password, create_access_token
 from ..dependencies import get_current_user
 from ..rate_limit import limiter
+from ..config import get_settings
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
@@ -15,6 +18,7 @@ class RegisterIn(BaseModel):
     username: str = Field(..., min_length=3, max_length=32)
     password: str = Field(..., min_length=6)
     display_name: str = Field(..., min_length=2, max_length=50)
+    privacy_consent: bool = Field(False, description="Explicit consent to the data policy")
 
 
 class LoginIn(BaseModel):
@@ -42,13 +46,18 @@ def _user_payload(user: User) -> dict:
 @router.post("/register", response_model=TokenOut)
 @limiter.limit("5/hour")
 def register(request: Request, data: RegisterIn, db: Session = Depends(get_db)):
-    if db.query(User).filter(User.username == data.username).first():
-        raise HTTPException(status_code=400, detail="Этот username уже занят")
+    if not data.privacy_consent:
+        raise HTTPException(status_code=400, detail="Для регистрации необходимо согласиться с политикой обработки данных")
+    normalized_username = data.username.strip().lower()
+    if db.query(User).filter(User.username == normalized_username).first():
+        raise HTTPException(status_code=409, detail="Этот username уже занят")
     
     user = User(
-        username=data.username.strip().lower(),
+        username=normalized_username,
         password_hash=hash_password(data.password),
         display_name=data.display_name.strip(),
+        privacy_consent_version=get_settings().PRIVACY_CONSENT_VERSION,
+        privacy_consent_at=datetime.utcnow(),
         total_xp=0,
         level=1,
     )
