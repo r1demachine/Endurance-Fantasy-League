@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { authApi, setToken } from "@/lib/auth";
@@ -17,6 +18,7 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [privacyConsent, setPrivacyConsent] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +30,7 @@ export default function LoginPage() {
       const payload =
         mode === "login"
           ? { username, password }
-          : { username, password, display_name: displayName || username };
+          : { username, password, display_name: displayName || username, privacy_consent: privacyConsent };
 
       const res = await authApi.post(endpoint, payload);
       setToken(res.data.access_token, res.data.user);
@@ -165,6 +167,31 @@ export default function LoginPage() {
               className="w-full px-4 py-3 bg-white border-2 border-black font-bold focus:outline-none focus:bg-[#ffd500]/20 transition-colors"
             />
           </div>
+
+          {mode === "register" && (
+            <div className="border-2 border-black bg-white p-4 space-y-3">
+              <label className="flex items-start gap-3 text-sm leading-relaxed">
+                <input
+                  type="checkbox"
+                  required
+                  checked={privacyConsent}
+                  onChange={(e) => setPrivacyConsent(e.target.checked)}
+                  className="mt-1 h-4 w-4 shrink-0 accent-[#5866f2]"
+                />
+                <span>
+                  Я согласен, что сервис хранит мой API-ключ Intervals (в зашифрованном виде),
+                  пульс, нагрузку и сон для расчёта очков.{" "}
+                  <Link href="/data-policy" target="_blank" className="font-bold text-[#5866f2] underline">
+                    Что мы храним
+                  </Link>
+                </span>
+              </label>
+              <p className="text-[11px] text-[#666]">
+                API-ключ Intervals предоставляет доступ в пределах разрешений ключа. Его можно отозвать
+                или перегенерировать в настройках Intervals.icu. Сервис хранит ключ в зашифрованном виде.
+              </p>
+            </div>
+          )}
 
           {error && (
             <div className="px-4 py-3 bg-[#ff4b26]/20 border-2 border-[#ff4b26] text-[#ff4b26] text-sm font-bold">
