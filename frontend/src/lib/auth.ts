@@ -30,6 +30,24 @@ export function getCachedAuthUser(): any | null {
   } catch { return null; }
 }
 
+export async function logout() {
+  const token = getToken();
+  try {
+    if (token) {
+      const baseURL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\\/+$/, "");
+      await fetch(`${baseURL}/api/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+    }
+  } catch {
+    // Локальный выход всё равно выполняется, если backend недоступен.
+  } finally {
+    clearAuth();
+  }
+}
+
 export function isAuthenticated(): boolean {
   return !!getToken();
 }
@@ -49,7 +67,7 @@ authApi.interceptors.response.use(
   (res) => res,
   (err) => {
     // Если токен протух — разлогиниваем и редиректим
-    if (err.response?.status === 401 && typeof window !== "undefined") {
+    if (err.response?.status === 401 && !String(err.config?.url || "").includes("/api/auth/logout") && typeof window !== "undefined") {
       const currentPath = window.location.pathname;
       if (currentPath !== "/login" && currentPath !== "/") {
         clearAuth();
