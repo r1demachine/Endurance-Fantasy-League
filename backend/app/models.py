@@ -13,6 +13,7 @@ class User(Base):
     # Auth
     username = Column(String(64), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
+    token_version = Column(Integer, nullable=False, default=0, server_default="0")
     display_name = Column(String(100), nullable=False)  # имя для лидерборда
 
     # Privacy and explicit data-processing consent.
