@@ -6,8 +6,11 @@ import hashlib
 import os
 import secrets
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from cryptography.fernet import Fernet
+from starlette.requests import Request
 
 # These settings must be in place before importing app modules.
 os.environ["DATABASE_URL"] = "sqlite:////tmp/efl-p1-auth-tests.db"
@@ -27,6 +30,7 @@ from app.auth import (
 from app.routers.auth import LoginIn, RegisterIn
 from app.routers.intervals_key import KeyIn
 from app.routers.sync import PauseIn
+from app.rate_limit import get_client_address
 from pydantic import ValidationError
 
 
@@ -57,6 +61,38 @@ class PasswordHashTests(unittest.TestCase):
     def test_malformed_hash_is_rejected(self):
         self.assertFalse(verify_password("password", "not-a-valid-hash"))
         self.assertTrue(password_needs_rehash("not-a-valid-hash"))
+
+
+class RateLimitClientIpTests(unittest.TestCase):
+    @staticmethod
+    def make_request(headers=None, client=("10.0.0.10", 12345)):
+        return Request({
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/test",
+            "raw_path": b"/test",
+            "query_string": b"",
+            "headers": [(k.lower().encode("latin-1"), v.encode("latin-1")) for k, v in (headers or {}).items()],
+            "client": client,
+            "server": ("testserver", 80),
+        })
+
+    def test_trusts_valid_cloudflare_header_only_when_enabled(self):
+        request = self.make_request({"CF-Connecting-IP": "203.0.113.12"})
+        with patch("app.rate_limit.get_settings", return_value=SimpleNamespace(TRUST_CF_CONNECTING_IP=True)):
+            self.assertEqual(get_client_address(request), "203.0.113.12")
+
+    def test_invalid_or_missing_cloudflare_header_falls_back_to_socket_ip(self):
+        request = self.make_request({"CF-Connecting-IP": "not-an-ip"})
+        with patch("app.rate_limit.get_settings", return_value=SimpleNamespace(TRUST_CF_CONNECTING_IP=True)):
+            self.assertEqual(get_client_address(request), "10.0.0.10")
+
+    def test_development_ignores_forwarded_ip_header(self):
+        request = self.make_request({"CF-Connecting-IP": "203.0.113.12"})
+        with patch("app.rate_limit.get_settings", return_value=SimpleNamespace(TRUST_CF_CONNECTING_IP=False)):
+            self.assertEqual(get_client_address(request), "10.0.0.10")
 
 
 class TokenVersionTests(unittest.TestCase):
