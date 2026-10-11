@@ -82,7 +82,10 @@ def register(request: Request, data: RegisterIn, db: Session = Depends(get_db)):
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Этот username уже занят")
+        # The unique index is authoritative under concurrent registration.
+        if db.query(User).filter(User.username == normalized_username).first():
+            raise HTTPException(status_code=409, detail="Этот username уже занят")
+        raise
     db.refresh(user)
     
     return TokenOut(
