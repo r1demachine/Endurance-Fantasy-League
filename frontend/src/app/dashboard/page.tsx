@@ -9,7 +9,7 @@ import { authApi, isAuthenticated } from "@/lib/auth";
 import ActivityCard from "@/components/ActivityCard";
 import { Star, Sticker } from "@/components/DreamBits";
 import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
+  ResponsiveContainer, AreaChart, Area, ComposedChart, Bar, Line, Legend, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts";
 import XpTooltip from "@/components/XpTooltip";
 
@@ -52,7 +52,19 @@ function useIsTouch() {
   return touch;
 }
 
-function WeekBlock({ weekData }: { weekData: any }) {
+function WeekBlock({
+  weekData, weekOptions, selectedWeekStart, onWeekChange, onPreviousWeek, onNextWeek,
+  canGoPrevious, canGoNext,
+}: {
+  weekData: any;
+  weekOptions: { week_start: string; label: string }[];
+  selectedWeekStart: string;
+  onWeekChange: (value: string) => void;
+  onPreviousWeek: () => void;
+  onNextWeek: () => void;
+  canGoPrevious: boolean;
+  canGoNext: boolean;
+}) {
   if (!weekData) return null;
   const pct = Math.min(Math.max(weekData.completion_ratio || 0, 0), 150);
   const isReady = weekData.state === "ready";
@@ -60,30 +72,23 @@ function WeekBlock({ weekData }: { weekData: any }) {
 
   return (
     <div className="border-b-2 border-black bg-white p-4 md:p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-display uppercase text-xl md:text-2xl">Твоя неделя</h3>
-        <div className="flex items-center gap-2">
-          {isInProgress && (
-            <span className="px-2 py-1 bg-[#ffd500] text-[10px] font-bold tracking-widest uppercase">
-              В процессе
-            </span>
-          )}
-          {weekData.is_deload && (
-            <span className="px-2 py-1 bg-[#0ea5e9] text-white text-[10px] font-bold tracking-widest uppercase">
-              Deload 🌊
-            </span>
-          )}
-          {weekData.paused && (
-            <span className="px-2 py-1 bg-[#666] text-white text-[10px] font-bold tracking-widest uppercase">
-              Пауза ⏸
-            </span>
-          )}
+      <div className="flex flex-col gap-3 mb-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h3 className="font-display uppercase text-xl md:text-2xl">Твоя неделя</h3>
+          <div className="flex items-center gap-2">
+            {isInProgress && <span className="px-2 py-1 bg-[#ffd500] text-[10px] font-bold tracking-widest uppercase">В процессе</span>}
+            {weekData.is_deload && <span className="px-2 py-1 bg-[#0ea5e9] text-white text-[10px] font-bold tracking-widest uppercase">Deload</span>}
+            {weekData.paused && <span className="px-2 py-1 bg-[#666] text-white text-[10px] font-bold tracking-widest uppercase">Пауза</span>}
+            {weekData.state === "no_data" && <span className="px-2 py-1 bg-[#666] text-white text-[10px] font-bold tracking-widest uppercase">{weekData.target_load > 0 ? "Стартовая норма" : "Нет данных"}</span>}
+          </div>
         </div>
-        {weekData.state === "no_data" && (
-          <span className="px-2 py-1 bg-[#666] text-white text-[10px] font-bold tracking-widest uppercase">
-            {weekData.target_load > 0 ? "Стартовая норма" : "Нет данных"}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          <button type="button" aria-label="Предыдущая неделя" disabled={!canGoPrevious} onClick={onPreviousWeek} className="w-9 h-9 border-2 border-black font-bold disabled:opacity-30 hover:bg-[#ffd500] transition-colors">←</button>
+          <select value={selectedWeekStart} onChange={(e) => onWeekChange(e.target.value)} aria-label="Выбрать неделю" className="min-w-0 flex-1 max-w-[300px] border-2 border-black bg-white px-3 py-2 text-sm font-bold">
+            {weekOptions.map((option) => <option key={option.week_start} value={option.week_start}>{option.label}</option>)}
+          </select>
+          <button type="button" aria-label="Следующая неделя" disabled={!canGoNext} onClick={onNextWeek} className="w-9 h-9 border-2 border-black font-bold disabled:opacity-30 hover:bg-[#ffd500] transition-colors">→</button>
+        </div>
       </div>
 
       {/* Кольцо цели */}
@@ -148,6 +153,11 @@ function WeekBlock({ weekData }: { weekData: any }) {
         </button>
       </div>
 
+      <div className="flex items-center justify-between gap-3 border-y-2 border-black/10 py-3 mb-4">
+        <span className="text-[10px] font-bold tracking-widest uppercase text-[#666]">Итого XP за неделю</span>
+        <span className="font-display text-2xl text-[#ff4b26]">+{Math.round(Number(weekData.total_xp) || 0)}</span>
+      </div>
+
       {/* Разбивка XP */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {[
@@ -182,35 +192,59 @@ function WeekBlock({ weekData }: { weekData: any }) {
 }
 
 function EventsFeed({ events }: { events: any[] }) {
-  if (!events.length) return null;
   const typeIcons: Record<string, string> = {
-    consistency: "📅",
-    quality_hard: "⚡",
-    quality_long: "🏃",
-    weekly_goal: "🎯",
-    recovery: "😴",
-    quest: "🏆",
-    achievement: "⭐",
+    consistency: "📅", quality_hard: "⚡", quality_long: "🏃",
+    weekly_goal: "🎯", recovery: "😴", quest: "🏆", achievement: "⭐",
   };
   return (
     <div className="border-b-2 border-black bg-white p-4 md:p-6">
-      <h3 className="font-display uppercase text-xl md:text-2xl mb-4">XP-события</h3>
-      <div className="space-y-2">
-        {events.map((e) => (
-          <div
-            key={e.id}
-            className="flex items-center gap-3 p-2 border border-black/10 hover:bg-black/5 transition-colors"
-          >
-            <span className="text-xl shrink-0">{typeIcons[e.type] || "✨"}</span>
-            <div className="flex-1 min-w-0">
-              <p className="font-bold uppercase text-sm truncate">{e.title}</p>
-              <p className="text-[9px] font-bold tracking-widest uppercase text-[#666]">
-                {e.date}
-              </p>
+      <h3 className="font-display uppercase text-xl md:text-2xl mb-4">XP-события недели</h3>
+      {events.length === 0 ? <p className="text-sm text-[#666]">За эту неделю XP-событий нет.</p> : (
+        <div className="space-y-2">
+          {events.map((e) => (
+            <div key={e.id} className="flex items-center gap-3 p-2 border border-black/10 hover:bg-black/5 transition-colors">
+              <span className="text-xl shrink-0">{typeIcons[e.type] || "✨"}</span>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold uppercase text-sm truncate">{e.title}</p>
+                <p className="text-[9px] font-bold tracking-widest uppercase text-[#666]">{e.date}</p>
+              </div>
+              <span className="font-display text-lg text-[#16a34a] shrink-0">+{e.amount}</span>
             </div>
-            <span className="font-display text-lg text-[#16a34a] shrink-0">+{e.amount}</span>
-          </div>
-        ))}
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SeasonWeeksChart({ weeks }: { weeks: any[] }) {
+  return (
+    <div className="border-b-2 border-black">
+      <div className="grid md:grid-cols-[200px_1fr]">
+        <div className="hidden md:flex flex-col justify-between p-5 border-r-2 border-black bg-[#ffd500]">
+          <div><p className="font-display uppercase text-xl md:text-2xl tracking-tight leading-none">Сезон по неделям</p><div className="h-0.5 bg-black mt-3 mb-4" /><Label className="text-[#111]/70 block">XP и нагрузка TSS</Label></div>
+          <span className="font-display text-4xl mt-auto">↗</span>
+        </div>
+        <div className="p-4 md:p-6 bg-white">
+          <div className="md:hidden mb-4"><SectionTitle tone="yellow">Сезон по неделям</SectionTitle></div>
+          {weeks.length === 0 ? <p className="text-sm text-[#666]">Пока нет недельных сводок за сезон.</p> : (
+            <div className="h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={weeks} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#00000015" />
+                  <XAxis dataKey="label" tick={{ fill: "#666", fontSize: 10 }} axisLine={{ stroke: "#000" }} tickLine={false} />
+                  <YAxis yAxisId="xp" tick={{ fill: "#666", fontSize: 10 }} axisLine={false} tickLine={false} width={40} />
+                  <YAxis yAxisId="load" orientation="right" tick={{ fill: "#666", fontSize: 10 }} axisLine={false} tickLine={false} width={40} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar yAxisId="xp" dataKey="total_xp" name="Итого XP" fill="#ff4b26" radius={[2, 2, 0, 0]} />
+                  <Line yAxisId="load" type="monotone" dataKey="actual_load" name="Факт TSS" stroke="#5866f2" strokeWidth={2.5} dot={{ r: 3 }} />
+                  <Line yAxisId="load" type="monotone" dataKey="target_load" name="Цель TSS" stroke="#16a34a" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -257,6 +291,13 @@ export default function Dashboard() {
   const [userData, setUserData] = useState<any>(null);
   const [weekData, setWeekData] = useState<any>(null);
   const [events, setEvents] = useState<any[]>([]);
+  const [weekOptions, setWeekOptions] = useState<{ week_start: string; label: string }[]>([]);
+  const [selectedWeekStart, setSelectedWeekStart] = useState("");
+  const [weekActivities, setWeekActivities] = useState<any[]>([]);
+  const [weekLoading, setWeekLoading] = useState(true);
+  const [seasonWeeks, setSeasonWeeks] = useState<any[]>([]);
+  const [globalYourRank, setGlobalYourRank] = useState<number | null>(null);
+  const [friendsYourRank, setFriendsYourRank] = useState<number | null>(null);
   const [quests, setQuests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [leaderboardTab, setLeaderboardTab] = useState<"global" | "friends" | "weekly">("weekly");
@@ -335,13 +376,40 @@ export default function Dashboard() {
     }
     const unsub = subscribeUser((u) => {
       setUserData(u);
-      setWeekData(u?.week || null);
-      setEvents(u?.recent_events || []);
       setQuests(u?.quests || []);
     });
     refreshUser();
     setLoading(false);
     return unsub;
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setWeekLoading(true);
+    authApi.get("/api/weekly-summary", {
+      params: selectedWeekStart ? { week_start: selectedWeekStart } : {},
+      signal: controller.signal,
+    }).then((response) => {
+      const result = response.data;
+      setWeekData(result.week || null);
+      setEvents(result.events || []);
+      setWeekActivities(result.activities || []);
+      setWeekOptions(result.week_options || []);
+      if (!selectedWeekStart && result.week?.week_start) setSelectedWeekStart(result.week.week_start);
+    }).catch((error) => {
+      if (error.name !== "CanceledError" && error.name !== "AbortError") setWeekActivities([]);
+    }).finally(() => {
+      if (!controller.signal.aborted) setWeekLoading(false);
+    });
+    return () => controller.abort();
+  }, [selectedWeekStart]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    authApi.get("/api/season-weeks", { signal: controller.signal })
+      .then((response) => setSeasonWeeks(response.data.weeks || []))
+      .catch(() => {});
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -360,13 +428,15 @@ export default function Dashboard() {
   useEffect(() => {
     (async () => {
       try {
-        const g = await authApi.get("/api/leaderboard", { params: { scope: "global" } });
+        const g = await authApi.get("/api/leaderboard", { params: { scope: "global", limit: 10 } });
         setGlobalBoard(g.data.entries || []);
+        setGlobalYourRank(typeof g.data.your_rank === "number" ? g.data.your_rank : null);
       } catch {}
       if (isAuthenticated()) {
         try {
-          const f = await authApi.get("/api/leaderboard", { params: { scope: "friends" } });
+          const f = await authApi.get("/api/leaderboard", { params: { scope: "friends", limit: 10 } });
           setFriendsBoard(f.data.entries || []);
+          setFriendsYourRank(typeof f.data.your_rank === "number" ? f.data.your_rank : null);
         } catch {}
       }
       // Weekly League — публичный, как global
@@ -412,6 +482,12 @@ export default function Dashboard() {
 
   const xpProgress = isEmpty ? 0 : (data.user.total_xp % 100);
 
+  const navigateWeek = (direction: "previous" | "next") => {
+    const index = weekOptions.findIndex((option) => option.week_start === (selectedWeekStart || weekData?.week_start));
+    const target = weekOptions[index + (direction === "previous" ? 1 : -1)];
+    if (target) setSelectedWeekStart(target.week_start);
+  };
+
   const handleInvite = async () => {
     try {
       await navigator.clipboard.writeText(window.location.origin);
@@ -423,7 +499,11 @@ export default function Dashboard() {
   };
 
   const rows = leaderboardTab === "global" ? globalBoard : friendsBoard;
+  const yourRank = leaderboardTab === "global" ? globalYourRank : friendsYourRank;
   const weeklyEntries = weeklyBoard?.entries || [];
+  const weekOptionIndex = weekOptions.findIndex((option) => option.week_start === (selectedWeekStart || weekData?.week_start));
+  const canGoPrevious = weekOptionIndex >= 0 && weekOptionIndex < weekOptions.length - 1;
+  const canGoNext = weekOptionIndex > 0;
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] px-2 sm:px-4 md:px-6 pb-2 sm:pb-4 md:pb-6 text-[#111] relative overflow-hidden flex flex-col">
@@ -541,7 +621,17 @@ export default function Dashboard() {
         {/* ── Твоя неделя + события (v6) — ВНУТРИ основной рамки ── */}
         {isAuthed && !isEmpty && (
           <>
-            <WeekBlock weekData={weekData} />
+            <WeekBlock
+              weekData={weekData}
+              weekOptions={weekOptions}
+              selectedWeekStart={selectedWeekStart || weekData?.week_start || ""}
+              onWeekChange={setSelectedWeekStart}
+              onPreviousWeek={() => navigateWeek("previous")}
+              onNextWeek={() => navigateWeek("next")}
+              canGoPrevious={canGoPrevious}
+              canGoNext={canGoNext}
+            />
+            <SeasonWeeksChart weeks={seasonWeeks} />
             <EventsFeed events={events} />
             <QuestsBoard quests={quests} />
           </>
@@ -638,7 +728,8 @@ export default function Dashboard() {
                     ))}
                   </div>
                 ) : (
-                  rows.map((player, idx) => (
+                  <>
+                  {rows.slice(0, 10).map((player, idx) => (
                     <div
                       key={player.id}
                       className={`flex justify-between items-center px-4 py-3 ${
@@ -663,7 +754,17 @@ export default function Dashboard() {
                         {Math.round(player.total_xp).toLocaleString()}
                       </span>
                     </div>
-                  ))
+                  ))}
+                  {yourRank !== null && yourRank > 10 && (
+                    <>
+                      <div className="border-t border-black/20 px-4 py-2 text-center font-display text-xl text-[#999]">…</div>
+                      <div className="flex justify-between items-center px-4 py-3 border-t-2 border-black bg-[#ffd500]/20">
+                        <span className="font-bold uppercase tracking-wide text-sm">Ты — место {yourRank}</span>
+                        <span className="font-display text-[#ff4b26]">{yourRank}</span>
+                      </div>
+                    </>
+                  )}
+                  </>
                 )}
               </div>
 
@@ -780,15 +881,18 @@ export default function Dashboard() {
               <div className="md:hidden mb-4">
                 <SectionTitle tone="orange">Workouts</SectionTitle>
               </div>
-              {data.recent_activities.length === 0 ? (
+              <p className="text-[10px] font-bold tracking-widest uppercase text-[#666] mb-3">
+                {selectedWeekStart ? `Неделя с ${selectedWeekStart}` : "Выбранная неделя"}
+              </p>
+              {weekLoading ? <p className="text-sm text-[#666]">Загружаем тренировки недели…</p> : weekActivities.length === 0 ? (
                 <p className="text-sm text-[#666]">
-                  Пока пусто. Синхронизируй тренировки в{" "}
+                  За выбранную неделю тренировок нет. Синхронизируй данные в{" "}
                   <Link href="/profile" className="text-[#5866f2] font-bold underline">профиле</Link>.
                 </p>
               ) : (
                 <div className="space-y-0">
-                  {data.recent_activities.map((act: any, idx: number) => (
-                    <div key={idx} className={idx > 0 ? "border-t-2 border-black" : ""}>
+                  {weekActivities.map((act: any, idx: number) => (
+                    <div key={act.id ?? idx} className={idx > 0 ? "border-t-2 border-black" : ""}>
                       <ActivityCard act={act} />
                     </div>
                   ))}
