@@ -75,7 +75,7 @@ export default function PublicProfilePage() {
         setLoading(false);
       }
     })();
-  }, [username]);
+  }, [username, router]);
 
   const flash = (text: string) => {
     setMsg(text);
