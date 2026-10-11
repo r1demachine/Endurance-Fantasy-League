@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from .database import get_db
 from .models import User
-from .auth import decode_access_token
+from .auth import decode_access_token_claims
 from .config import get_settings
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -19,15 +19,18 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Требуется авторизация (Bearer token)",
         )
-    user_id = decode_access_token(creds.credentials)
-    if user_id is None:
+    claims = decode_access_token_claims(creds.credentials)
+    if claims is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Невалидный или просроченный токен",
         )
+    user_id, token_version = claims
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Пользователь не найден")
+    if token_version != int(user.token_version or 0):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Сессия отозвана; войдите снова")
     return user
 
 
