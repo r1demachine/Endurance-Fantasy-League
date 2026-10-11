@@ -7,7 +7,9 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+
+from ..config import get_settings
 
 QUEST_REGISTRY = [
     {
@@ -101,15 +103,19 @@ def _cond_first_50km_ride_week(ctx):
 
 
 def _cond_record_duration(ctx):
-    acts = sorted([a for a in ctx["acts"] if a.start_date],
+    # История до даты запуска нужна как база личного рекорда, но не может сама
+    # выдать награду. Засчитываем только новый рекорд, установленный после cutoff.
+    acts = sorted([a for a in ctx["all_acts"] if a.start_date],
                   key=lambda a: (a.start_date, a.id))
+    activation_date = ctx["activation_date"]
     prev_max = 0
     seen = 0
     for a in acts:
         if getattr(a, "is_manual", False):
             continue
         dur = a.moving_time or 0
-        if seen >= 3 and prev_max > 0 and dur >= prev_max * 1.1:
+        is_after_cutoff = a.start_date.date() >= activation_date
+        if is_after_cutoff and seen >= 3 and prev_max > 0 and dur >= prev_max * 1.1:
             return True
         prev_max = max(prev_max, dur)
         seen += 1
@@ -131,15 +137,35 @@ CONDS = {
 
 
 def grant_quests(db, user, acts, summaries) -> int:
-    """Одноразовые ачивки поверх XPEvent. Идемпотентно: ключ уже есть → skip."""
+    """Одноразовые ачивки только по достижениям с даты активации и позже."""
     from ..models import XPEvent, Wellness
 
+    activation_date: date = get_settings().XP_QUESTS_ACTIVATION_DATE
+    # Недельные условия берём только из полных недель, начавшихся не раньше cutoff.
+    eligible_summaries = [
+        s for s in summaries
+        if s.week_start and s.week_start.date() >= activation_date
+    ]
+    eligible_acts = [
+        a for a in acts
+        if a.start_date and a.start_date.date() >= activation_date
+    ]
     sleep_score_count = (
         db.query(Wellness)
-        .filter(Wellness.user_id == user.id, Wellness.sleep_score > 0)
+        .filter(
+            Wellness.user_id == user.id,
+            Wellness.date >= activation_date.isoformat(),
+            Wellness.sleep_score > 0,
+        )
         .count()
     )
-    ctx = {"weeks": summaries, "acts": acts, "sleep_score_count": sleep_score_count}
+    ctx = {
+        "weeks": eligible_summaries,
+        "acts": eligible_acts,
+        "all_acts": acts,
+        "activation_date": activation_date,
+        "sleep_score_count": sleep_score_count,
+    }
     today = datetime.utcnow().date()
     granted = 0
     for q in QUEST_REGISTRY:
