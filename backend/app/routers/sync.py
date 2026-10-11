@@ -760,19 +760,11 @@ async def sync_activities(
     db.commit()
 
 
-    # ── Удаляем тренировки, исчезнувшие из Intervals (только полный синк) ──
+    # Не удаляем активности только потому, что их нет в текущем ответе Intervals.
+    # API-синхронизация использует ограниченное окно истории (обычно 90 дней), поэтому
+    # старые активности закономерно отсутствуют в payload. Удаление выполняется явными
+    # пользовательскими действиями (disconnect/account deletion), не этим sync.
     deleted_count = 0
-    if not oldest and not newest and seen_ids:
-        missing = [aid for aid in existing_rows if aid not in seen_ids]
-        if len(missing) <= max(1, len(existing_rows) // 2):
-            for aid in missing:
-                db.delete(existing_rows[aid])
-                deleted_count += 1
-        else:
-            print(
-                f"⚠️ Prune пропущен: {len(missing)} из {len(existing_rows)} отсутствуют "
-                f"в ответе — похоже на обрезанное окно, не рискуем удалять"
-            )
     db.commit()
 
     total_before = float(current.total_xp or 0)
