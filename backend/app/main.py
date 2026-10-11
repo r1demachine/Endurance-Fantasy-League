@@ -80,8 +80,8 @@ try:
                 conn.execute(text("ALTER TABLE activities ADD COLUMN is_manual BOOLEAN DEFAULT FALSE"))
             if "is_indoor" not in acols:
                 conn.execute(text("ALTER TABLE activities ADD COLUMN is_indoor BOOLEAN NOT NULL DEFAULT FALSE"))
-            if "indoor" in acols:
-                conn.execute(text("UPDATE activities SET is_indoor = indoor WHERE indoor = TRUE"))
+                if "indoor" in acols:
+                    conn.execute(text("UPDATE activities SET is_indoor = indoor WHERE indoor = TRUE"))
 
         # ── weekly_summaries (v6 + PR8) ──
         if "weekly_summaries" in tables:

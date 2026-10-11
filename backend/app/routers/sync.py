@@ -1186,6 +1186,21 @@ def get_weekly_summary(
             "division_source": "ladder" if current.division_current else "provisional",
         }
 
+    # Match the existing current-week placement logic, without recalculating a user's division from a historical week.
+    if selected_start == current_start:
+        division, division_source = _user_division(db, current, selected_start, week["actual_load"])
+        week["division"] = division
+        week["division_source"] = division_source
+    else:
+        membership = (
+            db.query(LeagueMembership)
+            .filter(LeagueMembership.user_id == current.id, LeagueMembership.week_start == selected_dt)
+            .first()
+        )
+        if membership is not None:
+            week["division"] = membership.division
+            week["division_source"] = membership.division_source
+
     event_rows = (
         db.query(XPEvent)
         .filter(XPEvent.user_id == current.id, XPEvent.week_start == selected_dt)
