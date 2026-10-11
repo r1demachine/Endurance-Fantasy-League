@@ -4,8 +4,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { clearAuth } from "@/lib/auth";
-import { authApi, isAuthenticated } from "@/lib/auth";
+import { logout, authApi, isAuthenticated } from "@/lib/auth";
 
 import { getCachedUser, subscribeUser, refreshUser, clearUserCache } from "@/lib/apiCache";
 import type { ReactNode } from "react";
@@ -81,8 +80,8 @@ export default function Profile() {
     
   };
 
-  const handleLogout = () => {
-    clearAuth();
+  const handleLogout = async () => {
+    await logout();
     clearUserCache();
     router.push("/");
   };
