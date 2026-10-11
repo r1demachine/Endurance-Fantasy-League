@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
@@ -13,6 +14,8 @@ from ..services.intervals import calculate_xp
 from ..config import get_settings
 from datetime import datetime, timedelta
 from typing import Optional
+
+from ..rate_limit import limiter
 
 router = APIRouter(prefix="/api", tags=["Sync"])
 settings = get_settings()
@@ -567,7 +570,9 @@ def _close_league_week(db: Session, week_start_d: _date) -> None:
     db.commit()
 
 @router.post("/sync")
+@limiter.limit("3/minute")
 async def sync_activities(
+    request: Request,
     oldest: str | None = None,
     newest: str | None = None,
     current: User = Depends(get_current_user),
@@ -1316,16 +1321,20 @@ async def leaderboard(
     }
 
 
+class PauseIn(BaseModel):
+    weeks: int = Field(default=0, ge=0, le=8)
+
+
 @router.post("/pause")
+@limiter.limit("10/hour")
 async def set_pause(
-    payload: dict,
+    request: Request,
+    payload: PauseIn,
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Пауза (болезнь/отпуск): недели окна не ждут цели и не входят в базу нормы."""
-    weeks = int(payload.get("weeks") or 0)
-    if weeks < 0 or weeks > 8:
-        raise HTTPException(status_code=400, detail="weeks должно быть 0..8")
+    weeks = payload.weeks
     if weeks == 0:
         current.pause_set_at = None
         current.paused_until = None
