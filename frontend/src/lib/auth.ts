@@ -34,7 +34,7 @@ export async function logout() {
   const token = getToken();
   try {
     if (token) {
-      const baseURL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\\/+$/, "");
+      const baseURL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
       await fetch(`${baseURL}/api/auth/logout`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
