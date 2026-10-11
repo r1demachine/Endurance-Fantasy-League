@@ -28,7 +28,7 @@ def _normalize_email(value):
 
 class RegisterIn(BaseModel):
     username: str = Field(..., min_length=3, max_length=32, pattern=r"^[a-z0-9_]{3,32}$")
-    email: EmailStr
+    email: EmailStr = Field(..., max_length=320)
     password: str = Field(..., min_length=6, max_length=128)
     display_name: str = Field(..., min_length=2, max_length=50)
     privacy_consent: bool = Field(False, description="Explicit consent to the data policy")
@@ -60,7 +60,7 @@ class LoginIn(BaseModel):
 
 
 class EmailIn(BaseModel):
-    email: EmailStr
+    email: EmailStr = Field(..., max_length=320)
 
     @field_validator("email", mode="before")
     @classmethod
