@@ -26,6 +26,8 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR(64)"))
             if "password_hash" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)"))
+            if "token_version" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0"))
             if "display_name" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN display_name VARCHAR(100)"))
             if "api_key_encrypted" not in cols:

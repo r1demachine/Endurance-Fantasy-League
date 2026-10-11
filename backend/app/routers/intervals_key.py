@@ -1,6 +1,5 @@
-import httpx
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -8,14 +7,20 @@ from ..models import User, Activity, Wellness, WeeklySummary, XPEvent, LeagueMem
 from ..dependencies import get_current_user
 from ..auth import encrypt_secret, decrypt_secret
 from ..config import get_settings
+from ..rate_limit import limiter
 
 router = APIRouter(prefix="/api/intervals", tags=["Intervals"])
 settings = get_settings()
 
 
 class KeyIn(BaseModel):
-    api_key: str = Field(..., min_length=5)
-    athlete_id: str = Field(..., min_length=2)
+    api_key: str = Field(..., min_length=5, max_length=512)
+    athlete_id: str = Field(..., min_length=2, max_length=32, pattern=r"^i?\d+$")
+
+    @field_validator("athlete_id", mode="before")
+    @classmethod
+    def normalize_athlete_id(cls, value):
+        return value.strip().lower() if isinstance(value, str) else value
 
 
 class KeyStatus(BaseModel):
@@ -39,7 +44,9 @@ def key_status(current: User = Depends(get_current_user)):
 
 
 @router.post("/connect")
+@limiter.limit("5/hour")
 async def connect_key(
+    request: Request,
     data: KeyIn,
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
