@@ -676,7 +676,7 @@ async def sync_activities(
         db.commit()
     except Exception as e:
         db.rollback()
-        print(f"⚠️ Wellness skip: {type(e).__name__}: {e}")
+        print(f"⚠️ Wellness sync skipped ({type(e).__name__})")
     
     # ── Нет новых тренировок: сон всё равно обновился → пересчитываем ──
     if not activities_data:
