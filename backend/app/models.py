@@ -15,6 +15,18 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     display_name = Column(String(100), nullable=False)  # имя для лидерборда
 
+    # Privacy and explicit data-processing consent.
+    profile_visibility = Column(
+        String(20), nullable=False, default="authenticated",
+        server_default="authenticated",
+    )  # authenticated | friends | private
+    activity_visibility = Column(
+        String(20), nullable=False, default="friends",
+        server_default="friends",
+    )  # friends | private
+    privacy_consent_version = Column(String(64), nullable=True)
+    privacy_consent_at = Column(DateTime, nullable=True)
+
     
     # Intervals.icu привязка (опциональна до первого sync)
     intervals_id = Column(String, unique=True, index=True, nullable=True)

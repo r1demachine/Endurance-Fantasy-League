@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 import { Star, Sticker, DreamBubble } from "@/components/DreamBits";
 import ConnectSources from "@/components/ConnectSources";
 import SocialHub from "@/components/SocialHub";
+import AccountPrivacy from "@/components/AccountPrivacy";
 
 
 type Tone = "default" | "yellow" | "orange" | "indigo" | "red";
@@ -230,6 +231,13 @@ export default function Profile() {
 
         
 
+        {/* Приватность, согласие и управление данными */}
+        <div className="border-b-2 border-black">
+          <div className="p-5 md:p-6">
+            <AccountPrivacy />
+          </div>
+        </div>
+
         {/* Опасная зона */}
         <div className="grid md:grid-cols-[200px_1fr]">
           <div className="hidden md:flex items-center justify-center border-r-2 border-black bg-[#ff4b26] p-5">
@@ -239,14 +247,14 @@ export default function Profile() {
             <SectionTitle tone="red">Danger zone</SectionTitle>
             <div className="p-5 md:p-6">
               <p className="text-sm text-[#666] mb-4 max-w-lg">
-                Полностью удаляет все синхронизированные тренировки и сбрасывает прогресс до 1 уровня. Это действие нельзя отменить.
+                Удаляет импортированные тренировки, wellness, недельные сводки и XP, затем сбрасывает уровень и лигу. Аккаунт, настройки приватности и ключ Intervals остаются. Чтобы удалить также ключ и аккаунт, используй отдельные действия ниже/в разделе Privacy & data.
               </p>
               <div className="flex flex-wrap gap-3">
                 <button
                   onClick={handleReset}
                   disabled={resetting || !userData}
                   className="w-full md:w-auto px-6 py-3 border-2 border-[#ff4b26] text-[#ff4b26] text-[11px] font-bold tracking-widest uppercase hover:bg-[#ff4b26] hover:text-white transition-colors"                >
-                  {resetting ? "Clearing..." : "Clear all data"}
+                  {resetting ? "Clearing..." : "Clear training data"}
                 </button>
                 <button
                   onClick={handleLogout}

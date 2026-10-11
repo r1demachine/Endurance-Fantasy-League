@@ -8,7 +8,7 @@ from slowapi.errors import RateLimitExceeded
 from .database import engine, Base
 from .config import get_settings
 from .rate_limit import limiter
-from .routers import sync, auth, intervals_key, friends, notifications, admin
+from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy
 
 Base.metadata.create_all(bind=engine)
 
@@ -42,6 +42,14 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN pause_set_at TIMESTAMP"))
             if "paused_until" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN paused_until TIMESTAMP"))
+            if "profile_visibility" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN profile_visibility VARCHAR(20) NOT NULL DEFAULT 'authenticated'"))
+            if "activity_visibility" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN activity_visibility VARCHAR(20) NOT NULL DEFAULT 'friends'"))
+            if "privacy_consent_version" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN privacy_consent_version VARCHAR(64)"))
+            if "privacy_consent_at" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN privacy_consent_at TIMESTAMP"))
             conn.execute(text("ALTER TABLE users ALTER COLUMN intervals_id DROP NOT NULL"))
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)"))
 
@@ -121,6 +129,7 @@ app.include_router(intervals_key.router)
 app.include_router(friends.router)
 app.include_router(notifications.router)
 app.include_router(admin.router)
+app.include_router(privacy.router)
 
 @app.on_event("startup")
 async def _init_broker():

@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,https://endurance-fantasy-league.vercel.app"
     # Квесты учитывают достижения начиная с этого понедельника, без ретроактивной выдачи.
     XP_QUESTS_ACTIVATION_DATE: date = date(2026, 10, 12)
+    # Increment when the data-processing consent text changes materially.
+    PRIVACY_CONSENT_VERSION: str = "2026-10-11-v1"
 
     model_config = SettingsConfigDict(
         env_file=".env",

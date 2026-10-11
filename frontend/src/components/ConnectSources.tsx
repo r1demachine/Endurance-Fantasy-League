@@ -35,6 +35,7 @@ export default function ConnectSources({
   const [athleteInput, setAthleteInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
 
   const isOpen = expanded === "intervals";
 
@@ -79,6 +80,30 @@ export default function ConnectSources({
       onMessage({ type: "error", text: `❌ ${typeof detail === "string" ? detail : err.message}` });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    const confirmed = window.confirm(
+      "Отвязка удалит API-ключ, импортированные тренировки, данные сна/пульса, XP-события и недельные сводки. Аккаунт и друзья останутся. Продолжить?"
+    );
+    if (!confirmed) return;
+
+    setDisconnecting(true);
+    try {
+      const res = await authApi.delete("/api/intervals/disconnect");
+      setExpanded(null);
+      setApiKey("");
+      onMessage({
+        type: "success",
+        text: res.data.message || "Intervals отвязан, импортированные данные удалены.",
+      });
+      await refreshUser(true);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      onMessage({ type: "error", text: typeof detail === "string" ? detail : "Не удалось отвязать Intervals." });
+    } finally {
+      setDisconnecting(false);
     }
   };
 
@@ -205,6 +230,14 @@ export default function ConnectSources({
                         className="flex-1 min-w-[120px] px-4 py-2 bg-white border-2 border-black text-[10px] font-bold tracking-widest uppercase hover:bg-[#ffd500] transition-colors"
                       >
                         Update key 🔑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDisconnect}
+                        disabled={disconnecting || syncing}
+                        className="w-full px-4 py-2 border-2 border-[#ff4b26] text-[#ff4b26] text-[10px] font-bold tracking-widest uppercase hover:bg-[#ff4b26] hover:text-white transition-colors disabled:opacity-50"
+                      >
+                        {disconnecting ? "Removing..." : "Unlink Intervals + delete imported data"}
                       </button>
                     </div>
                   </div>
