@@ -761,10 +761,8 @@ async def sync_activities(
         existing_rows[act_id] = new_activity
         synced_count += 1
         dist_km = parsed["distance"] / 1000 if parsed["distance"] else 0
-        print(
-            f"✅ {parsed['name']} | {parsed['sport_type']} | "
-            f"{dist_km:.1f}km | {parsed['moving_time'] // 60} мин"
-        )
+        # Do not write private workout names, distances, durations or health data to logs.
+        print("✅ Activity synchronized")
     db.commit()
 
 
@@ -1114,7 +1112,7 @@ async def public_profile(
         }
 
         # Heart-rate history is sensitive: visible only to the owner or an accepted friend.
-        if is_owner or is_friend:
+        if is_owner or (is_friend and activity_visibility == "friends"):
             month_ago = datetime.utcnow() - timedelta(days=30)
             hr_points = [
                 {"date": a.start_date.strftime("%d.%m"), "hr": round(a.average_heartrate, 1)}
