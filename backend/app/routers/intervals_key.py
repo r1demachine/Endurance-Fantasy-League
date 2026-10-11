@@ -114,6 +114,8 @@ def disconnect_key(
 
     current.intervals_id = None
     current.api_key_encrypted = None
+    current.firstname = None
+    current.lastname = None
     current.legacy_xp_offset = 0.0
     current.xp_migrated_at = None
     current.total_xp = 0.0
