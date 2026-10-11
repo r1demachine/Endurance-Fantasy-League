@@ -1,6 +1,6 @@
 """Друзья: поиск по нику/имени, заявки, принятие, список."""
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
@@ -8,6 +8,7 @@ from ..database import get_db
 from ..dependencies import get_current_user
 from ..models import Friendship, FriendshipStatus, User
 from ..services.notifications import notify_user
+from ..rate_limit import limiter
 
 router = APIRouter(prefix="/api/friends", tags=["Friends"])
 
@@ -53,15 +54,17 @@ def _relation(db: Session, me_id: int, other_id: int) -> tuple:
 
 
 @router.get("/search")
-def search_users(q: str, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def search_users(q: str = Query(..., min_length=2, max_length=64), current: User = Depends(get_current_user), db: Session = Depends(get_db)):
     query = q.strip()
     if len(query) < 2:
         return {"results": []}
-    like = f"%{query}%"
+    # Treat SQL LIKE wildcards as literals in user input.
+    escaped_query = query.replace("\\\\", "\\\\\\\\").replace("%", "\\\\%").replace("_", "\\\\_")
+    like = f"%{escaped_query}%"
     users = (
         db.query(User)
         .filter(User.id != current.id)
-        .filter(or_(User.username.ilike(like), User.display_name.ilike(like)))
+        .filter(or_(User.username.ilike(like, escape="\\\\"), User.display_name.ilike(like, escape="\\\\")))
         .order_by(User.total_xp.desc())
         .limit(10)
         .all()
@@ -74,7 +77,8 @@ def search_users(q: str, current: User = Depends(get_current_user), db: Session 
 
 
 @router.post("/add")
-async def add_friend(data: AddIn, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("10/hour")
+async def add_friend(request: Request, data: AddIn, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
     target = db.query(User).filter(User.username == data.username.strip().lower()).first()
     if not target:
         raise HTTPException(status_code=404, detail="Athlete not found")
