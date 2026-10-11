@@ -29,7 +29,10 @@ jobs:
       - name: Install backup tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes postgresql-client age awscli
+          sudo apt-get install --yes postgresql-client age
+          aws --version
+          age --version
+          pg_dump --version
 
       - name: Validate backup configuration
         shell: bash
@@ -53,14 +56,14 @@ jobs:
           stamp="$(date -u +%Y%m%dT%H%M%SZ)"
           archive="endurance-fantasy-postgres-${stamp}.sql.gz.age"
 
-          pg_dump "$BACKUP_DATABASE_URL" --no-owner --no-privileges --format=plain             | gzip -9 > "$workdir/database.sql.gz"
+          pg_dump "$BACKUP_DATABASE_URL" --no-owner --no-privileges --format=plain \
+            | gzip -9 > "$workdir/database.sql.gz"
 
           test -s "$workdir/database.sql.gz"
-          age --recipient "$BACKUP_AGE_RECIPIENT"             --output "$workdir/$archive" "$workdir/database.sql.gz"
+          age --recipient "$BACKUP_AGE_RECIPIENT" \
+            --output "$workdir/$archive" "$workdir/database.sql.gz"
           test -s "$workdir/$archive"
 
-          # Store encrypted dumps only in a private S3-compatible bucket.
-          # Never upload database dumps as GitHub Actions artifacts in this public repo.
           aws s3 cp "$workdir/$archive" \
             "s3://$BACKUP_S3_BUCKET/endurance-fantasy-league/$archive" \
             --endpoint-url "$BACKUP_S3_ENDPOINT" \
