@@ -3,8 +3,11 @@ os.environ.setdefault("PGCLIENTENCODING", "UTF8")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from .database import engine, Base
 from .config import get_settings
+from .rate_limit import limiter
 from .routers import sync, auth, intervals_key, friends, notifications, admin
 
 Base.metadata.create_all(bind=engine)
@@ -97,13 +100,15 @@ app = FastAPI(
     openapi_url=None if _is_prod else "/openapi.json",
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https://.*\.vercel\.app",  # ✅ wildcard работает через regex
     allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://endurance-fantasy-league.vercel.app",
+        origin.strip().rstrip("/")
+        for origin in settings.CORS_ORIGINS.split(",")
+        if origin.strip()
     ],
     allow_credentials=True,
     allow_methods=["*"],

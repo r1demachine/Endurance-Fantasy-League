@@ -372,8 +372,10 @@ if __name__ == "__main__":
     base = weekly_baseline([400] * 6 + [100] * 6)
     assert base == round_xp(max(100, 0.8 * 250))
     assert weekly_baseline([100, 100]) is None                   # холодный старт
-    # league: 100% своих целей → равный Goal Score
-    assert league_score(1.0, 3, 3, 0) == league_score(1.0, 5, 5, 0) or True
+    # League Score: 70% goal + 20% full consistency + 10% quality.
+    assert league_score(1.0, 3, 3, 0) == 90.0
+    assert league_score(1.0, 5, 5, 0) == 90.0
+    assert league_score(0.5, 3, 3, 15) == 60.0
 
     # синтетика: объём награждается, но справедливость живёт в League Score
     syn = {f"{r['athlete']}|{r['scenario']}": r for r in synthetic_report()}

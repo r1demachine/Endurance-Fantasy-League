@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -6,6 +6,7 @@ from ..database import get_db
 from ..models import User
 from ..auth import hash_password, verify_password, create_access_token
 from ..dependencies import get_current_user
+from ..rate_limit import limiter
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
@@ -39,7 +40,8 @@ def _user_payload(user: User) -> dict:
 
 
 @router.post("/register", response_model=TokenOut)
-def register(data: RegisterIn, db: Session = Depends(get_db)):
+@limiter.limit("5/hour")
+def register(request: Request, data: RegisterIn, db: Session = Depends(get_db)):
     if db.query(User).filter(User.username == data.username).first():
         raise HTTPException(status_code=400, detail="Этот username уже занят")
     
@@ -61,7 +63,8 @@ def register(data: RegisterIn, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenOut)
-def login(data: LoginIn, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def login(request: Request, data: LoginIn, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == data.username.strip().lower()).first()
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Неверный username или пароль")

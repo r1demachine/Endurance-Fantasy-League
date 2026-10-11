@@ -1,3 +1,4 @@
+from datetime import date
 from functools import lru_cache
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -26,6 +27,10 @@ class Settings(BaseSettings):
     XP_ENGINE: str = "v6"
     # Дата активации v6 (ISO). Пусто = неделя миграции каждого юзера.
     XP_V6_ACTIVATION_DATE: str = ""
+    # Разрешённые браузерные origins, разделённые запятыми; не используем wildcard.
+    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,https://endurance-fantasy-league.vercel.app"
+    # Квесты учитывают достижения начиная с этого понедельника, без ретроактивной выдачи.
+    XP_QUESTS_ACTIVATION_DATE: date = date(2026, 10, 12)
 
     model_config = SettingsConfigDict(
         env_file=".env",

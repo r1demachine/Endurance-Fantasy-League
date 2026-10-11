@@ -29,7 +29,7 @@
 
 - 🔐 **Личный кабинет** — регистрация/вход (PBKDF2 + JWT 7 дней), у каждого атлета свой ключ Intervals.icu (шифрование Fernet)
 - 🔄 **Синхронизация** — тренировки и сон из Intervals.icu (агрегатор Strava/Garmin/Wahoo); сон «доливается» на старые тренировки при повторном синке, XP пересчитывается по всей истории
-- 🧮 **Честная XP-формула** — `base × sleep × intensity × streak`; Activity Card объясняет каждое слагаемое
+- 🧮 **XP v6** — аддитивная система нагрузки, регулярности, качества, недельной цели, восстановления и квестов
 - 🏆 **Рейтинги** — Global открыт без логина (дашборд-витрина), Friends — только для друзей
 - 👥 **Друзья и социальные фичи** — поиск атлетов, заявки с взаимным автопринятием, живые уведомления (SSE + брокер Redis/in-memory), публичные профили `/u/{username}` со статистикой, графиком XP и пагинацией тренировок (20 + «Load more»)
 - 🌸 **Сезоны** — 10 цветков с цветом и номером сезона; демо-ротация 3 сек, боевой режим — смена раз в месяц
@@ -87,12 +87,17 @@ npm run dev
 
 ### Переменные окружения
 
-`backend/.env`:
+`backend/.env` (ключевые настройки):
 ```
 DATABASE_URL=postgresql://user:pass@host:5432/fantasy
-SECRET_KEY=change-me
-REDIS_URL=redis://localhost:6379/0   # опционально
+JWT_SECRET=replace-with-at-least-32-random-characters
+ENCRYPTION_KEY=your-fernet-key
+REDIS_URL=redis://localhost:6379/0   # опционально; рекомендуется для общего rate-limit storage
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,https://endurance-fantasy-league.vercel.app
+XP_ENGINE=v6
+XP_QUESTS_ACTIVATION_DATE=2026-10-12
 ```
+Регистрация ограничена 5 попытками в час на IP, вход — 5 попытками в минуту на IP. Без `REDIS_URL` лимиты хранятся в памяти отдельного процесса; при нескольких backend workers используй Redis. `XP_QUESTS_ACTIVATION_DATE` задаёт границу начисления новых квестов и должна быть согласована между окружениями.
 
 `frontend/.env.local`:
 ```
