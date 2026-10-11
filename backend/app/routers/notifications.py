@@ -50,15 +50,9 @@ def mark_all_read(current: User = Depends(get_current_user), db: Session = Depen
 
 
 @router.get("/stream")
-async def stream(token: str):
-    """SSE-поток живых уведомлений (токен в query, т.к. EventSource без заголовков)."""
-    user_id = decode_access_token(token)
-    if user_id is None:
-        return StreamingResponse(
-            iter(['data: {"error": "unauthorized"}\n\n']),
-            media_type="text/event-stream",
-        )
-
+async def stream(current: User = Depends(get_current_user)):
+    """SSE-поток живых уведомлений. JWT принимается только в Authorization header."""
+    user_id = current.id
     queue = broker.subscribe(user_id)
 
     async def gen():
@@ -76,5 +70,5 @@ async def stream(token: str):
     return StreamingResponse(
         gen(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
     )
