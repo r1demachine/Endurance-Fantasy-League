@@ -944,6 +944,7 @@ async def get_user_profile(
             "has_intervals_key": bool(user.api_key_encrypted),
             "intervals_id": user.intervals_id,
             "xp_version": get_settings().XP_ENGINE,
+            "privacy_consent_current": bool(user.privacy_consent_version == get_settings().PRIVACY_CONSENT_VERSION and user.privacy_consent_at),
         },
         "stats": {
             "day_streak": day_streak,
