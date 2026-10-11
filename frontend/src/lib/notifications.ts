@@ -75,6 +75,7 @@ async function consumeNotificationStream(base: string, token: string, signal: Ab
       });
 
       if (response.status === 401 || response.status === 403) {
+        stopNotificationStream();
         await loadNotifications();
         return;
       }
@@ -107,7 +108,10 @@ async function consumeNotificationStream(base: string, token: string, signal: Ab
           if (data) {
             try {
               const payload = JSON.parse(data);
-              if (payload?.error === "unauthorized") return;
+              if (payload?.error === "unauthorized") {
+                stopNotificationStream();
+                return;
+              }
             } catch {
               // Ignore malformed SSE payloads; the next event can still be valid.
             }
