@@ -574,6 +574,14 @@ async def sync_activities(
     db: Session = Depends(get_db),
 ):
     """Синхронизирует тренировки ТЕКУЩЕГО пользователя его ключом Intervals."""
+    if (
+        current.privacy_consent_version != settings.PRIVACY_CONSENT_VERSION
+        or current.privacy_consent_at is None
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Перед синхронизацией необходимо принять актуальную политику обработки данных",
+        )
     from ..auth import decrypt_secret
     from ..services.intervals import fetch_activities_for_user, fetch_wellness_for_user
     
