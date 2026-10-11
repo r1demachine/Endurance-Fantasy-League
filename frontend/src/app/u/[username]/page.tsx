@@ -44,6 +44,8 @@ export default function PublicProfilePage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [forbidden, setForbidden] = useState(false);
+  const [activityRestricted, setActivityRestricted] = useState(false);
 
   const [relation, setRelation] = useState<string | null>(null);
   const [friendshipId, setFriendshipId] = useState<number | null>(null);
@@ -58,11 +60,17 @@ export default function PublicProfilePage() {
         setProfile(p.data);
         setRelation(p.data.user.relation ?? null);
         setFriendshipId(p.data.user.friendship_id ?? null);
-        const a = await authApi.get(`/api/users/${username}/activities`, { params: { offset: 0, limit: 20 } });
-        setActivities(a.data.activities);
-        setTotal(a.data.total);
+        if (p.data.user.can_view_activities) {
+          const a = await authApi.get(`/api/users/${username}/activities`, { params: { offset: 0, limit: 20 } });
+          setActivities(a.data.activities);
+          setTotal(a.data.total);
+        } else {
+          setActivityRestricted(true);
+        }
       } catch (e: any) {
         if (e?.response?.status === 404) setNotFound(true);
+        else if (e?.response?.status === 403) setForbidden(true);
+        else if (e?.response?.status === 401) router.push("/login");
       } finally {
         setLoading(false);
       }
@@ -131,6 +139,20 @@ export default function PublicProfilePage() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] flex items-center justify-center">
         <p className="font-display uppercase text-2xl text-white animate-pulse">Loading athlete...</p>
+      </div>
+    );
+  }
+
+  if (forbidden) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] flex items-center justify-center p-4">
+        <div className="bg-[#f4f4f0] border-2 border-black p-8 text-center max-w-md">
+          <p className="font-display uppercase text-3xl mb-2">Private profile</p>
+          <Label className="text-[#666] mb-4 block">Этот профиль скрыт настройками владельца.</Label>
+          <Link href="/profile" className="inline-block px-5 py-2 bg-[#ff4b26] text-white text-xs font-bold tracking-widest uppercase hover:bg-[#5866f2] transition-colors">
+            ← Мой профиль
+          </Link>
+        </div>
       </div>
     );
   }
@@ -330,7 +352,9 @@ export default function PublicProfilePage() {
           <SectionTitle tone="indigo">Workouts</SectionTitle>
           <div className="p-4 md:p-6">
             <Label className="text-[#666] mb-3 block">Last workouts · {total} total</Label>
-            {activities.length === 0 ? (
+            {activityRestricted ? (
+              <p className="text-sm text-[#666]">Подробности тренировок доступны только владельцу и принятым друзьям согласно настройкам приватности.</p>
+            ) : activities.length === 0 ? (
               <p className="text-sm text-[#666]">No workouts yet.</p>
             ) : (
               <div className="space-y-0">
