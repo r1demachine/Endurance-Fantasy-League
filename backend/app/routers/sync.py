@@ -644,6 +644,7 @@ async def sync_activities(
     progress = {"active": True, "status": "running", "months_done": 0, "months_total": len(month_ranges), "current_month": None}
     _sync_progress[current.id] = progress
     activities_data = []
+    wellness_data = []
     try:
         for chunk_start, chunk_end in month_ranges:
             if progress["months_done"]:
@@ -652,6 +653,13 @@ async def sync_activities(
             activities_data.extend(await fetch_activities_for_user(
                 api_key=api_key, athlete_id=athlete_id, oldest=chunk_start.isoformat(), newest=chunk_end.isoformat()
             ))
+            try:
+                wellness_data.extend(await fetch_wellness_for_user(
+                    api_key=api_key, athlete_id=athlete_id,
+                    oldest=chunk_start.isoformat(), newest=chunk_end.isoformat()
+                ))
+            except Exception as exc:
+                print(f"Wellness sync skipped ({type(exc).__name__})")
             progress["months_done"] += 1
     except PermissionError as e:
         progress["status"], progress["active"] = "error", False
@@ -669,12 +677,7 @@ async def sync_activities(
     sleep_by_date: dict = {}
     wellness_upserted = 0
     try:
-        wellness_records = []
-        for chunk_start, chunk_end in month_ranges:
-            wellness_records.extend(await fetch_wellness_for_user(
-                api_key=api_key, athlete_id=athlete_id,
-                oldest=chunk_start.isoformat(), newest=chunk_end.isoformat()
-            ))
+        wellness_records = wellness_data
         for row in wellness_records:
             if not isinstance(row, dict):
                 continue
