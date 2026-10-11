@@ -17,7 +17,7 @@ settings = get_settings()
 
 class KeyIn(BaseModel):
     api_key: str = Field(..., min_length=5, max_length=512)
-    athlete_id: str = Field(..., min_length=2, max_length=32, pattern=r"^i?\\d+$")
+    athlete_id: str = Field(..., min_length=2, max_length=32, pattern=r"^i?\d+$")
 
     @field_validator("athlete_id", mode="before")
     @classmethod
