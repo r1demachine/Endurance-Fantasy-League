@@ -1,3 +1,5 @@
+"use client";
+
 import { authApi, getToken, isAuthenticated } from "@/lib/auth";
 
 export interface Notif {
@@ -10,8 +12,7 @@ export interface Notif {
 
 let items: Notif[] = [];
 let unread = 0;
-
-let es: EventSource | null = null;
+let streamController: AbortController | null = null;
 let streamToken: string | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -37,37 +38,130 @@ export async function loadNotifications() {
 
 export async function markAllRead() {
   unread = 0;
-  emit(); // квадратик гаснет сразу
+  emit();
   try { await authApi.post("/api/notifications/read"); } catch {}
   loadNotifications();
 }
 
-/** SSE-поток. Перезапускается, если сменился юзер (токен). */
+function waitForRetry(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
+
+async function consumeNotificationStream(base: string, token: string, signal: AbortSignal) {
+  let retryMs = 1000;
+
+  while (!signal.aborted && getToken() === token) {
+    try {
+      const response = await fetch(`${base}/api/notifications/stream`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "text/event-stream",
+        },
+        cache: "no-store",
+        signal,
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        await loadNotifications();
+        return;
+      }
+      if (!response.ok || !response.body) {
+        throw new Error(`Notification stream failed: HTTP ${response.status}`);
+      }
+
+      retryMs = 1000;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (!signal.aborted && getToken() === token) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        while (true) {
+          const match = buffer.match(/\r?\n\r?\n/);
+          if (!match || match.index === undefined) break;
+
+          const block = buffer.slice(0, match.index);
+          buffer = buffer.slice(match.index + match[0].length);
+          const data = block
+            .split(/\r?\n/)
+            .filter((line) => line.startsWith("data:"))
+            .map((line) => line.slice(5).trim())
+            .join("\n");
+
+          if (data) {
+            try {
+              const payload = JSON.parse(data);
+              if (payload?.error === "unauthorized") return;
+            } catch {
+              // Ignore malformed SSE payloads; the next event can still be valid.
+            }
+            await loadNotifications();
+          }
+        }
+      }
+
+      if (signal.aborted || getToken() !== token) return;
+      throw new Error("Notification stream closed");
+    } catch {
+      if (signal.aborted || getToken() !== token) return;
+    }
+
+    await waitForRetry(retryMs, signal);
+    retryMs = Math.min(retryMs * 2, 15000);
+  }
+}
+
+/** Authenticated SSE; the JWT is sent in a header and never placed in the URL. */
 export function startNotificationStream() {
   const token = getToken();
   if (!isAuthenticated() || !token) {
     stopNotificationStream();
     return;
   }
-  if (es && streamToken === token) return; // уже течёт для этого юзера
+  if (streamController && streamToken === token) return;
 
-  // сменился юзер — убиваем старый стрим с чужим токеном
-  if (es) { es.close(); es = null; }
+  stopNotificationStream();
   streamToken = token;
+  const controller = new AbortController();
+  streamController = controller;
 
-  const base = authApi.defaults.baseURL || "http://localhost:8000";
-  es = new EventSource(`${base}/api/notifications/stream?token=${token}`);
-  es.onmessage = () => loadNotifications();
+  const base = (authApi.defaults.baseURL || "http://localhost:8000").replace(/\/+$/, "");
+  void consumeNotificationStream(base, token, controller.signal).finally(() => {
+    if (streamController === controller) {
+      streamController = null;
+      streamToken = null;
+    }
+  });
 
-  // страховка: поллинг раз в 15 сек, если SSE отвалится
-  if (pollTimer) clearInterval(pollTimer);
+  // Polling is a fallback if the streaming connection is unavailable.
   pollTimer = setInterval(loadNotifications, 15000);
-
   loadNotifications();
 }
 
 export function stopNotificationStream() {
-  if (es) { es.close(); es = null; }
+  if (streamController) {
+    streamController.abort();
+    streamController = null;
+  }
   streamToken = null;
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
 }
