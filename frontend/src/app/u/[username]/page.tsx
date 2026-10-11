@@ -295,23 +295,29 @@ export default function PublicProfilePage() {
         {/* ── Season Stats ── */}
         <SectionTitle>Season Stats</SectionTitle>
         <div className="p-4 md:p-6">
-          <Label className="text-[#666] mb-4 block">Since {stats.season_start}</Label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 w-full">
-            {[
-              { label: "Distance", value: stats.total_km, unit: "km" },
-              { label: "Time", value: stats.total_hours, unit: "h" },
-              { label: "Climb", value: stats.total_elevation, unit: "m" },
-              { label: "Workouts", value: stats.total_workouts, unit: "" },
-              { label: "XP", value: Math.round(stats.total_xp), unit: "" },
-            ].map((s) => (
-              <div key={s.label} className="p-3 md:p-4 text-center">
-                <p className="font-display text-xl md:text-3xl">
-                  {s.value}<span className="text-xs text-[#666] ml-0.5">{s.unit}</span>
-                </p>
-                <Label className="text-[#666] mt-1">{s.label}</Label>
+          {u.can_view_profile_stats ? (
+            <>
+              <Label className="text-[#666] mb-4 block">Since {stats.season_start}</Label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 w-full">
+                {[
+                  { label: "Distance", value: stats.total_km, unit: "km" },
+                  { label: "Time", value: stats.total_hours, unit: "h" },
+                  { label: "Climb", value: stats.total_elevation, unit: "m" },
+                  { label: "Workouts", value: stats.total_workouts, unit: "" },
+                  { label: "XP", value: Math.round(stats.total_xp), unit: "" },
+                ].map((s) => (
+                  <div key={s.label} className="p-3 md:p-4 text-center">
+                    <p className="font-display text-xl md:text-3xl">
+                      {s.value}<span className="text-xs text-[#666] ml-0.5">{s.unit}</span>
+                    </p>
+                    <Label className="text-[#666] mt-1">{s.label}</Label>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          ) : (
+            <p className="text-sm text-[#666]">Сводная статистика доступна только владельцу и друзьям. Отправь заявку в друзья, чтобы запросить доступ.</p>
+          )}
         </div>
 
         {/* ── XP Dynamics (как на дашборде) ── */}
