@@ -1007,11 +1007,14 @@ async def reset_all_data(
     except Exception:
         pass
     
-    from ..models import WeeklySummary, XPEvent
+    from ..models import WeeklySummary, XPEvent, LeagueMembership
     db.query(XPEvent).filter(XPEvent.user_id == current.id).delete(synchronize_session=False)
     db.query(WeeklySummary).filter(WeeklySummary.user_id == current.id).delete(synchronize_session=False)
+    db.query(LeagueMembership).filter(LeagueMembership.user_id == current.id).delete(synchronize_session=False)
     current.legacy_xp_offset = 0.0
     current.xp_migrated_at = None
+    current.division_current = None
+    current.division_placed_at = None
     current.total_xp = 0.0
     current.level = 1
     db.commit()
