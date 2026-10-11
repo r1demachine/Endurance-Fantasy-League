@@ -4,7 +4,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 from ..dependencies import get_current_user
-from ..auth import decrypt_secret, decode_access_token
+from ..auth import decrypt_secret, decode_access_token_claims
 from ..database import get_db
 from ..models import User, Activity, Wellness, Friendship, FriendshipStatus, WeeklySummary, XPEvent, LeagueWeek, LeagueMembership
 from collections import defaultdict
@@ -1211,9 +1211,12 @@ async def leaderboard(
     """Рейтинг: global — все (публично), friends — только принятые друзья (авторизация)."""
     current: Optional[User] = None
     if credentials is not None:
-        uid = decode_access_token(credentials.credentials)
-        if uid is not None:
-            current = db.get(User, uid)
+        claims = decode_access_token_claims(credentials.credentials)
+        if claims is not None:
+            uid, token_version = claims
+            candidate = db.get(User, uid)
+            if candidate is not None and int(candidate.token_version or 0) == token_version:
+                current = candidate
 
     # ── Weekly League (текущая неделя, live-борд по дивизионам) ──
     if scope == "weekly":
