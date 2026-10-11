@@ -32,6 +32,7 @@ class User(Base):
     # Intervals.icu привязка (опциональна до первого sync)
     intervals_id = Column(String, unique=True, index=True, nullable=True)
     api_key_encrypted = Column(String(500), nullable=True)  # шифруется Fernet
+    last_full_sync_at = Column(DateTime, nullable=True)  # полный импорт: не чаще раза в час
     
     # Устаревшие поля — оставим для совместимости, но не обязательны
     email = Column(String, unique=True, index=True, nullable=True)

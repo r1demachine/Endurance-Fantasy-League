@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { authApi } from "@/lib/auth";
 import { refreshUser } from "@/lib/apiCache";
@@ -36,6 +36,8 @@ export default function ConnectSources({
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [sinceDate, setSinceDate] = useState(`${new Date().getFullYear()}-01-01`);
+  const [syncProgress, setSyncProgress] = useState<{ months_done: number; months_total: number; current_month?: string | null } | null>(null);
 
   const isOpen = expanded === "intervals";
 
@@ -109,20 +111,33 @@ export default function ConnectSources({
 
   const handleSync = async () => {
     setSyncing(true);
+    setSyncProgress({ months_done: 0, months_total: 0 });
     try {
-      const res = await authApi.post("/api/sync");
-      onMessage({
-        type: "success",
-        text: `✅ Sync done: ${res.data.synced_count} new · ${res.data.updated_count ?? 0} updated · +${Math.round(res.data.new_xp)} XP`,
-      });
+      const res = await authApi.post("/api/sync", null, { params: { since: sinceDate } });
+      setSyncProgress({ months_done: res.data.months_done ?? 0, months_total: res.data.months_total ?? 0 });
+      onMessage({ type: "success", text: `Синхронизация завершена: новых ${res.data.synced_count}, обновлено ${res.data.updated_count ?? 0}, +${Math.round(res.data.new_xp)} XP` });
       await refreshUser(true);
     } catch (err: any) {
       const detail = err.response?.data?.detail;
-      onMessage({ type: "error", text: `❌ ${typeof detail === "string" ? detail : "Sync error"}` });
+      onMessage({ type: "error", text: typeof detail === "string" ? detail : "Ошибка синхронизации" });
     } finally {
       setSyncing(false);
     }
   };
+
+  useEffect(() => {
+    if (!syncing) return;
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const res = await authApi.get("/api/sync/progress");
+        if (!stopped) setSyncProgress({ months_done: res.data.months_done ?? 0, months_total: res.data.months_total ?? 0, current_month: res.data.current_month ?? null });
+      } catch {}
+    };
+    void poll();
+    const timer = window.setInterval(() => { void poll(); }, 1000);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, [syncing]);
 
   return (
     <div className="border-2 border-black bg-white">
@@ -216,14 +231,32 @@ export default function ConnectSources({
                       <p className="font-bold uppercase break-words">athlete: {athleteId || "—"}</p>
                     </div>
                     <div className="flex flex-wrap gap-2 min-w-0 w-full">
-                      <button
-                        type="button"
-                        onClick={handleSync}
-                        disabled={syncing}
-                        className="flex-1 min-w-[120px] px-4 py-2 bg-[#ff4b26] text-white text-[10px] font-bold tracking-widest uppercase hover:bg-black transition-colors disabled:opacity-50"
-                      >
-                        {syncing ? "Syncing..." : "Sync data ⚡"}
-                      </button>
+                      <div className="w-full grid sm:grid-cols-[minmax(0,1fr)_auto] gap-2 items-end">
+                        <label className="block text-[10px] font-bold tracking-widest uppercase">
+                          Дата начала импорта
+                          <input type="date" value={sinceDate} min={`${new Date().getFullYear() - 1}-01-01`}
+                            max={new Date().toISOString().slice(0, 10)} onChange={(e) => setSinceDate(e.target.value)}
+                            disabled={syncing} className="mt-1 block w-full border-2 border-black bg-white px-3 py-2 text-sm font-mono" />
+                        </label>
+                        <button type="button" onClick={handleSync} disabled={syncing || !sinceDate}
+                          className="px-4 py-2 bg-[#ff4b26] text-white text-[10px] font-bold tracking-widest uppercase hover:bg-black transition-colors disabled:opacity-50">
+                          {syncing ? "Импорт..." : "Синхронизировать"}
+                        </button>
+                      </div>
+                      {syncProgress && (
+                        <div className="w-full border-2 border-black/20 bg-white px-3 py-2 text-xs">
+                          <div className="flex justify-between gap-3 font-bold">
+                            <span>{syncing ? "Загрузка истории" : "Последний импорт"}</span>
+                            <span>{syncProgress.months_done} из {syncProgress.months_total} месяцев</span>
+                          </div>
+                          <div className="mt-2 h-2 bg-black/10 overflow-hidden">
+                            <div className="h-full bg-[#5866f2] transition-all"
+                              style={{ width: `${syncProgress.months_total ? (syncProgress.months_done / syncProgress.months_total) * 100 : 0}%` }} />
+                          </div>
+                          {syncing && syncProgress.current_month && <p className="mt-1 text-[#666]">Текущий месяц: {syncProgress.current_month}</p>}
+                          <p className="mt-1 text-[#666]">Полный импорт доступен не чаще одного раза в час.</p>
+                        </div>
+                      )}
                       <button
                         type="button"
                         onClick={openForm}
