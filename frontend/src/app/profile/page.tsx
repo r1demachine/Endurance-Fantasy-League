@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 import { Star, Sticker, DreamBubble } from "@/components/DreamBits";
 import ConnectSources from "@/components/ConnectSources";
 import SocialHub from "@/components/SocialHub";
+import AccountPrivacy from "@/components/AccountPrivacy";
 
 
 type Tone = "default" | "yellow" | "orange" | "indigo" | "red";
@@ -229,6 +230,13 @@ export default function Profile() {
         </div>
 
         
+
+        {/* Приватность, согласие и управление данными */}
+        <div className="border-b-2 border-black">
+          <div className="p-5 md:p-6">
+            <AccountPrivacy />
+          </div>
+        </div>
 
         {/* Опасная зона */}
         <div className="grid md:grid-cols-[200px_1fr]">
