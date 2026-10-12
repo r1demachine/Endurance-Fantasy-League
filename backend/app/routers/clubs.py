@@ -192,7 +192,7 @@ def _club_brief(c: Club, db: Session, me: User) -> dict:
     return {
         "id": c.id,
         "name": c.name,
-        "invite_code": c.invite_code if mem else None,
+        "invite_code": c.invite_code if (mem or c.owner_id == me.id) else None,
         "instant_join": bool(c.instant_join),
         "owner_id": c.owner_id,
         "is_owner": c.owner_id == me.id,
@@ -309,6 +309,8 @@ def _rankings(db: Session, club_id: int, me: User) -> dict:
 
 def _club_members(db: Session, club_id: int, me: User) -> list[dict]:
     members = db.query(ClubMember).filter(ClubMember.club_id == club_id).order_by(ClubMember.joined_at.asc()).all()
+    club = db.get(Club, club_id)
+    viewer_is_owner = bool(club and club.owner_id == me.id)
     friends = _friend_ids(db, me.id)
     result = []
     for member in members:
@@ -317,11 +319,8 @@ def _club_members(db: Session, club_id: int, me: User) -> list[dict]:
             brief = _member_brief(user, member.role, me, friends)
             result.append({
                 **brief,
-                # Owners can manage members by stable ID without exposing profile details.
-                "can_be_removed": me.id != user.id and me.id == next(
-                    (club.owner_id for club in db.query(Club).filter(Club.id == club_id).limit(1).all()),
-                    None,
-                ),
+                # Use the stable member ID for owner actions while still respecting profile visibility.
+                "can_be_removed": viewer_is_owner and me.id != user.id,
             })
     return result
 
@@ -515,7 +514,10 @@ async def request_join(
 
     if club.instant_join:
         _check_user_capacity_and_add_member(db, club, current.id, as_owner=False)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            _handle_integrity_error(db, "Не удалось вступить: состав клуба изменился. Обнови страницу.")
         await notify_user(db, club.owner_id, "club_join", f"{current.display_name} вступил(а) в клуб «{club.name}»")
         return {"message": f"Ты вступил(а) в клуб «{club.name}»", "joined": True}
 
@@ -700,6 +702,8 @@ def _transfer_owner_locked(db: Session, club: Club, current: User, new_owner_id:
     member = _is_member(db, club.id, new_owner_id)
     if not new_owner or not member:
         raise HTTPException(status_code=400, detail="Передать клуб можно только текущему участнику.")
+    if _owned_club_count(db, new_owner_id) >= MAX_OWNED_CLUBS:
+        raise HTTPException(status_code=409, detail=f"Новый владелец уже владеет {MAX_OWNED_CLUBS} клубами.")
     old_member = _is_member(db, club.id, current.id)
     if not old_member:
         db.add(ClubMember(club_id=club.id, user_id=current.id, role=ClubMemberRole.MEMBER.value))
@@ -726,7 +730,10 @@ async def transfer_owner(
     if club.owner_id != current.id:
         raise HTTPException(status_code=403, detail="Только владелец может передать клуб.")
     new_owner = _transfer_owner_locked(db, club, current, data.user_id)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        _handle_integrity_error(db, "Передача невозможна: новый владелец уже имеет клуб с таким названием.")
     await notify_user(db, new_owner.id, "club_owner_transferred", f"Теперь ты владелец клуба «{club.name}»")
     return {"message": "Владелец клуба изменён", "club": _club_brief(club, db, current)}
 
@@ -784,7 +791,10 @@ async def leave_club(
         old_membership = _is_member(db, club.id, current.id)
         if old_membership:
             db.delete(old_membership)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            _handle_integrity_error(db, "Передача невозможна: новый владелец уже имеет клуб с таким названием.")
         await notify_user(db, new_owner.id, "club_owner_transferred", f"Ты стал владельцем клуба «{club.name}»; предыдущий владелец вышел из клуба.")
         return {"message": "Клуб передан новому владельцу, ты вышел из клуба."}
     db.delete(member)
