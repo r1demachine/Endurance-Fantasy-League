@@ -40,6 +40,8 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN max_hr INTEGER"))
             if "resting_hr" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN resting_hr INTEGER"))
+            if "timezone_name" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN timezone_name VARCHAR(64) NOT NULL DEFAULT 'UTC'"))
             if "legacy_xp_offset" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN legacy_xp_offset FLOAT DEFAULT 0"))
             if "xp_migrated_at" not in cols:
@@ -101,6 +103,9 @@ try:
                 conn.execute(text("ALTER TABLE activities ADD COLUMN is_manual BOOLEAN DEFAULT FALSE"))
             if "source" not in acols:
                 conn.execute(text("ALTER TABLE activities ADD COLUMN source VARCHAR(32) NOT NULL DEFAULT 'INTERVALS'"))
+            if "start_date_local" not in acols:
+                conn.execute(text("ALTER TABLE activities ADD COLUMN start_date_local TIMESTAMP"))
+            conn.execute(text("UPDATE activities AS a SET start_date_local = (a.start_date AT TIME ZONE 'UTC') AT TIME ZONE COALESCE(u.timezone_name, 'UTC') FROM users AS u WHERE a.user_id = u.id AND a.start_date_local IS NULL AND a.start_date IS NOT NULL"))
             if "hard_secs" not in acols:
                 conn.execute(text("ALTER TABLE activities ADD COLUMN hard_secs INTEGER NOT NULL DEFAULT 0"))
             if "is_indoor" not in acols:

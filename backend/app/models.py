@@ -43,6 +43,7 @@ class User(Base):
     lthr = Column(Integer, nullable=True)  # пользовательский лактатный порог ЧСС
     max_hr = Column(Integer, nullable=True)  # максимальный пульс пользователя
     resting_hr = Column(Integer, nullable=True)  # пульс в покое для HRSS/TRIMP
+    timezone_name = Column(String(64), nullable=False, default="UTC", server_default="UTC")  # IANA timezone
     
     # Устаревшие поля — оставим для совместимости, но не обязательны
     email = Column(String, unique=True, index=True, nullable=True)
@@ -90,6 +91,22 @@ class TelegramLinkAttempt(Base):
 
     __table_args__ = (
         Index("idx_telegram_link_attempt_chat_time", "chat_id", "attempted_at"),
+    )
+
+
+class HeartRateSettingsHistory(Base):
+    """Immutable snapshots of validated heart-rate settings changes."""
+    __tablename__ = "heart_rate_settings_history"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    changed_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    lthr = Column(Integer, nullable=True)
+    max_hr = Column(Integer, nullable=True)
+    resting_hr = Column(Integer, nullable=True)
+
+    __table_args__ = (
+        Index("idx_hr_settings_history_user_date", "user_id", "changed_at"),
     )
 
 
