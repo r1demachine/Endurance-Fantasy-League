@@ -146,14 +146,14 @@ def _local_name(tag: str) -> str:
     return str(tag).split("}")[-1].split(":")[-1]
 
 
-def _tag_text(node: ET.Element, wanted: str) -> str | None:
+def _tag_text(node: Any, wanted: str) -> str | None:
     for item in node.iter():
         if _local_name(item.tag) == wanted and item.text:
             return item.text.strip()
     return None
 
 
-def _direct_child_text(node: ET.Element, wanted: str) -> str | None:
+def _direct_child_text(node: Any, wanted: str) -> str | None:
     for item in list(node):
         if _local_name(item.tag) == wanted and item.text:
             return item.text.strip()

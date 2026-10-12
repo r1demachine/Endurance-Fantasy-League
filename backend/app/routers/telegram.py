@@ -344,7 +344,7 @@ async def _handle_document(db: Session, chat_id: str, document: dict) -> None:
     file_name = document.get("file_name") or "activity.fit"
     extension = Path(file_name).suffix.lower()
     from ..routers.upload import (
-        ALLOWED_EXTENSIONS, MAX_FILE_BYTES, PARSE_TIMEOUT_SECONDS,
+        ALLOWED_EXTENSIONS, MAX_FILE_BYTES,
         InvalidActivityFile, UnsupportedActivityFile, _parse_activity_file_bounded,
     )
 
@@ -372,15 +372,14 @@ async def _handle_document(db: Session, chat_id: str, document: dict) -> None:
         return
 
     try:
-        parsed = await asyncio.wait_for(
-            _parse_activity_file_bounded(
-                content,
-                extension,
-                user.lthr,
-                user.max_hr,
-                user.resting_hr,
-                user.timezone_name,
-            )
+        parsed = await _parse_activity_file_bounded(
+            content,
+            extension,
+            user.lthr,
+            user.max_hr,
+            user.resting_hr,
+            user.timezone_name,
+        )
     except TimeoutError:
         await send_message(chat_id, "Разбор файла занял слишком много времени.")
         return
