@@ -186,13 +186,22 @@ try:
             WHERE d.id = r.id AND r.pair_rank > 1
         """))
         conn.execute(text("""
-            UPDATE duels
+            UPDATE duels AS d
             SET is_no_activity_draw = TRUE
-            WHERE status = 'finished'
-              AND winner_id IS NULL
-              AND COALESCE(challenger_xp, 0) = 0
-              AND COALESCE(opponent_xp, 0) = 0
+            WHERE d.status = 'finished'
+              AND d.winner_id IS NULL
+              AND COALESCE(d.challenger_xp, 0) = 0
+              AND COALESCE(d.opponent_xp, 0) = 0
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM activities AS a
+                  WHERE a.user_id IN (d.challenger_id, d.opponent_id)
+                    AND COALESCE(a.start_date_local, a.start_date) >= d.week_start
+                    AND COALESCE(a.start_date_local, a.start_date) < d.week_start + INTERVAL '7 days'
+              )
         """))
+        conn.execute(text("ALTER TABLE duels ALTER COLUMN pair_low_id SET NOT NULL"))
+        conn.execute(text("ALTER TABLE duels ALTER COLUMN pair_high_id SET NOT NULL"))
         conn.execute(text("""
             CREATE UNIQUE INDEX IF NOT EXISTS uq_duel_pair_week_active
             ON duels(pair_low_id, pair_high_id, week_start)
