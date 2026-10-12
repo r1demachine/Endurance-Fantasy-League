@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { logout, authApi, isAuthenticated } from "@/lib/auth";
@@ -14,6 +14,8 @@ import SocialHub from "@/components/SocialHub";
 import AccountPrivacy from "@/components/AccountPrivacy";
 import ActivityUpload from "@/components/ActivityUpload";
 import HeartRateSettings from "@/components/HeartRateSettings";
+import { ConfirmDialog } from "@/components/Modal";
+import { getApiErrorMessage } from "@/components/dialog-utils";
 
 
 type Tone = "default" | "yellow" | "orange" | "indigo" | "red";
@@ -46,6 +48,8 @@ export default function Profile() {
   const router = useRouter();
   const [syncing, setSyncing] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetError, setResetError] = useState("");
   const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const [friendsCount, setFriendsCount] = useState<number>(0);
 
@@ -61,25 +65,27 @@ export default function Profile() {
     if (!isAuthenticated()) return;
     authApi.get("/api/friends")
       .then((r) => setFriendsCount(r.data.friends?.length ?? 0))
-      .catch(() => {});
+      .catch((error) => setMessage({ type: "error", text: getApiErrorMessage(error, "Не удалось загрузить список друзей.") }));
   }, []);
 
 
 
   const handleReset = async () => {
-    if (!confirm("Удалить все тренировки и обнулить XP? Это действие нельзя отменить.")) return;
     setResetting(true);
+    setResetError("");
     setMessage(null);
     try {
-      await authApi.delete(`/api/reset`);;
-      clearUserCache(); // сбрасываем и кэш, иначе вернётся старый XP
-      setMessage({ type: "success", text: "🗑 Data cleared." });
-    } catch {
-      setMessage({ type: "error", text: "❌ Reset error." });
+      await authApi.delete("/api/reset");
+      clearUserCache();
+      setMessage({ type: "success", text: "Тренировки удалены, XP и уровень сброшены." });
+      setResetDialogOpen(false);
+    } catch (error: unknown) {
+      const text = getApiErrorMessage(error, "Не удалось сбросить тренировочные данные.");
+      setResetError(text);
+      setMessage({ type: "error", text });
     } finally {
       setResetting(false);
     }
-    
   };
 
   const handleLogout = async () => {
@@ -270,7 +276,7 @@ export default function Profile() {
               </p>
               <div className="flex flex-wrap gap-3">
                 <button
-                  onClick={handleReset}
+                  onClick={() => { setResetError(""); setResetDialogOpen(true); }}
                   disabled={resetting || !userData}
                   className="w-full md:w-auto px-6 py-3 border-2 border-[#ff4b26] text-[#ff4b26] text-[11px] font-bold tracking-widest uppercase hover:bg-[#ff4b26] hover:text-white transition-colors"                >
                   {resetting ? "Clearing..." : "Clear training data"}
@@ -286,6 +292,20 @@ export default function Profile() {
           </div>
         </div>
       </div>
+      <AnimatePresence>
+        {resetDialogOpen && (
+          <ConfirmDialog
+            title="Удалить все тренировки?"
+            text="Будут удалены импортированные тренировки, wellness и недельные сводки; XP, уровень и лига будут сброшены. Аккаунт и ключ Intervals останутся."
+            confirmLabel="Удалить тренировки"
+            danger
+            busy={resetting}
+            error={resetError}
+            onClose={() => setResetDialogOpen(false)}
+            onConfirm={handleReset}
+          />
+        )}
+      </AnimatePresence>
     </main>
   );
 }
