@@ -1,7 +1,7 @@
 """Tests for uploaded activity parsing, calculated HR load and preview-token integrity."""
 import os
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from cryptography.fernet import Fernet
 from pydantic import ValidationError
 
@@ -16,6 +16,7 @@ from app.routers.upload import (
     UnsupportedActivityFile,
     _decode_preview,
     _encode_preview,
+    _finalise_file_metrics,
     _parse_activity_file,
 )
 
@@ -69,6 +70,28 @@ class ActivityFileParsingTests(unittest.TestCase):
         gpx = b'<!DOCTYPE gpx [<!ENTITY x "x">]><gpx></gpx>'
         with self.assertRaises(InvalidActivityFile):
             _parse_activity_file(gpx, ".gpx", None, None)
+
+    def test_auto_calibrates_max_hr_and_lthr_from_recorded_samples(self):
+        start = datetime(2026, 10, 1, 10, 0, 0, tzinfo=timezone.utc)
+        samples = [
+            {"time": start.replace(second=0) + timedelta(seconds=seconds), "hr": 180, "ele": None}
+            for seconds in range(0, 3601, 10)
+        ]
+        parsed = _finalise_file_metrics(
+            start=start,
+            moving_time=3600,
+            elapsed_time=3600,
+            distance=10000,
+            elevation_gain=0,
+            average_hr=180,
+            maximum_hr=180,
+            sport_type="RIDE",
+            samples=samples,
+            lthr=165,
+            user_max_hr=175,
+        )
+        self.assertEqual(parsed["auto_zone_updates"]["max_hr"], 180)
+        self.assertEqual(parsed["auto_zone_updates"]["lthr"], 180)
 
 
 class HeartRateSettingsTests(unittest.TestCase):
