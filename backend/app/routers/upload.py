@@ -457,7 +457,6 @@ def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
         return _finalise_file_metrics(
             start=activity_start,
             start_local=local_start,
-            user_timezone=user_timezone,
             moving_time=_number(session.get("total_timer_time")),
             elapsed_time=_number(session.get("total_elapsed_time")),
             distance=distance,
@@ -570,7 +569,7 @@ def _parse_tcx(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
     fallback_distance = sum(lap_distances) if lap_distances else _track_distance(samples)
     fallback_elapsed = sum(lap_times) if lap_times else None
     return _finalise_file_metrics(
-        start=start, start_local=None, user_timezone=user_timezone,
+        start=start, start_local=None,
         moving_time=fallback_elapsed, elapsed_time=fallback_elapsed,
         distance=fallback_distance, elevation_gain=total_ascent,
         average_hr=None, maximum_hr=None, sport_type=sport,
