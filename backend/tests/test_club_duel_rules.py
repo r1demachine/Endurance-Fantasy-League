@@ -1,5 +1,7 @@
 """Unit tests for club name/invite rules and duel pair normalization."""
+import ast
 import os
+from pathlib import Path
 import unittest
 
 from cryptography.fernet import Fernet
@@ -70,6 +72,14 @@ class DuelRulesTests(unittest.TestCase):
         self.assertEqual(_normalized_pair(2, 9), (2, 9))
         self.assertEqual(_normalized_pair(9, 2), (2, 9))
         self.assertEqual(_normalized_pair(4, 4), (4, 4))
+
+    def test_application_startup_module_has_valid_python_syntax_and_single_migration(self):
+        main_path = Path(__file__).resolve().parents[1] / "app" / "main.py"
+        source = main_path.read_text(encoding="utf-8")
+        ast.parse(source, filename=str(main_path))
+        self.assertEqual(source.count("settings = get_settings()"), 1)
+        self.assertEqual(source.count('@app.get("/health")'), 1)
+        self.assertEqual(source.count("CREATE TABLE IF NOT EXISTS club_join_attempts"), 1)
 
     def test_database_metadata_has_required_unique_indexes(self):
         club_index = next(i for i in Club.__table__.indexes if i.name == "uq_club_owner_name_lower")
