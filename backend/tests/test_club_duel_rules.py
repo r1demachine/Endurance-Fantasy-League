@@ -53,7 +53,7 @@ class ClubValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             normalize_invite_code("ABC123")
         with self.assertRaises(ValueError):
-            normalize_invite_code("ABCDEFGHIJKL")
+            normalize_invite_code("ABCDEFGH0123")
 
     def test_join_endpoint_schema_retains_malformed_input_for_attempt_audit(self):
         # Shape checks run inside the handler so failed guesses are recorded.
