@@ -85,12 +85,15 @@ class UpdateClubIn(BaseModel):
 
 
 class JoinCodeIn(BaseModel):
-    code: str = Field(..., min_length=INVITE_CODE_LENGTH, max_length=INVITE_CODE_LENGTH)
+    # Keep malformed user input long enough to record unsuccessful attempts in the audit table.
+    code: str = Field(..., min_length=1, max_length=128)
 
     @field_validator("code", mode="before")
     @classmethod
     def clean_code(cls, value):
-        return normalize_invite_code(value)
+        if isinstance(value, str):
+            return value.strip().upper()
+        return value
 
 
 class ClubIdIn(BaseModel):
@@ -388,9 +391,13 @@ async def join_by_code(
 ):
     _lock_user(db, current.id)
     if _recent_failed_code_attempts(db, current.id) >= FAILED_CODE_LIMIT:
+        db.rollback()
+        raise HTTPException(status_code=429, detail="Слишком много неверных кодов. Попробуй через 15 минут.")
+
+    if not re.fullmatch(r"[A-Z2-7]{12}", data.code):
         _record_join_attempt(db, current.id, data.code, False)
         db.commit()
-        raise HTTPException(status_code=429, detail="Слишком много неверных кодов. Попробуй через 15 минут.")
+        raise HTTPException(status_code=404, detail="Клуб с таким кодом не найден")
 
     club = (
         db.query(Club)
