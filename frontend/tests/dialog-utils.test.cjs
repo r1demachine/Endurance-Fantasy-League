@@ -82,6 +82,13 @@ test("pause timestamps without a zone are treated as UTC and formatted", () => {
   assert.notEqual(utils.formatPauseDate("2026-10-12T00:00:00Z"), "дата не указана");
 });
 
+test("backdrop click closes only when the backdrop was clicked and closing is enabled", () => {
+  assert.equal(utils.shouldCloseFromBackdrop(true, true, false), true);
+  assert.equal(utils.shouldCloseFromBackdrop(false, true, false), false);
+  assert.equal(utils.shouldCloseFromBackdrop(true, false, false), false);
+  assert.equal(utils.shouldCloseFromBackdrop(true, true, true), false);
+});
+
 test("Escape closes an idle dialog, but not a busy dialog", () => {
   let closed = 0;
   const event = { key: "Escape", preventDefault() { this.prevented = true; } };
