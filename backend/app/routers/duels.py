@@ -1,7 +1,6 @@
 """Дуэли 1 на 1: недельный челлендж между друзьями."""
-from __future__ import annotations
-
 from datetime import date, datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
@@ -41,7 +40,7 @@ class RespondIn(BaseModel):
     accept: bool
 
 
-def _monday_dt(d: date | None = None) -> datetime:
+def _monday_dt(d: Optional[date] = None) -> datetime:
     day = d or date.today()
     ws = X6.week_start(day)
     return datetime.combine(ws, datetime.min.time())
@@ -62,7 +61,7 @@ def _are_friends(db: Session, a: int, b: int) -> bool:
     )
 
 
-def _pair_active(db: Session, a: int, b: int, week_start: datetime) -> Duel | None:
+def _pair_active(db: Session, a: int, b: int, week_start: datetime) -> Optional[Duel]:
     return (
         db.query(Duel)
         .filter(
