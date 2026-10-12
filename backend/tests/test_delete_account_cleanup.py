@@ -13,13 +13,15 @@ class CleanupSocialTests(unittest.TestCase):
         db = MagicMock()
         uid = 10
         other_member = SimpleNamespace(user_id=20, role=ClubMemberRole.MEMBER.value, joined_at=datetime.utcnow())
-        club = SimpleNamespace(id=1, owner_id=uid)
+        club = SimpleNamespace(id=1, owner_id=uid, name="North Shore")
 
         duel_q = MagicMock()
         db.query.return_value = duel_q
         duel_q.filter.return_value = duel_q
         duel_q.delete.return_value = 1
         duel_q.update.return_value = 1
+        duel_q.count.return_value = 0
+        duel_q.first.return_value = None
         duel_q.order_by.return_value = duel_q
         duel_q.all.side_effect = [
             [club],

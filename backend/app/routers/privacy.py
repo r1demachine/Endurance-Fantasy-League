@@ -3,7 +3,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from ..auth import verify_password
@@ -13,6 +13,7 @@ from ..dependencies import get_current_user
 from ..models import (
     Activity,
     Club,
+    ClubJoinAttempt,
     ClubJoinRequest,
     ClubMember,
     ClubMemberRole,
@@ -114,6 +115,10 @@ def _cleanup_social_for_user(db: Session, uid: int) -> None:
     db.query(ClubJoinRequest).filter(ClubJoinRequest.user_id == uid).delete(
         synchronize_session=False
     )
+    # Attempt audit rows reference users without ON DELETE CASCADE.
+    db.query(ClubJoinAttempt).filter(ClubJoinAttempt.user_id == uid).delete(
+        synchronize_session=False
+    )
 
     owned_clubs = db.query(Club).filter(Club.owner_id == uid).all()
     for club in owned_clubs:
@@ -123,11 +128,24 @@ def _cleanup_social_for_user(db: Session, uid: int) -> None:
             .order_by(ClubMember.joined_at.asc(), ClubMember.id.asc())
             .all()
         )
-        if others:
-            successor = others[0]
+        successor = None
+        for member in others:
+            owned_count = db.query(Club).filter(Club.owner_id == member.user_id).count()
+            same_name = db.query(Club.id).filter(
+                Club.owner_id == member.user_id,
+                func.lower(Club.name) == club.name.lower(),
+            ).first()
+            # Account removal must not transfer ownership beyond the three-club
+            # limit or violate the case-insensitive owner/name unique index.
+            if owned_count < 3 and same_name is None:
+                successor = member
+                break
+
+        if successor:
             club.owner_id = successor.user_id
             successor.role = ClubMemberRole.OWNER.value
         else:
+            # No eligible successor: close this club rather than violate owner constraints.
             db.query(ClubJoinRequest).filter(ClubJoinRequest.club_id == club.id).delete(
                 synchronize_session=False
             )

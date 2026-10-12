@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, BigInteger, String, Float, DateTime, Date, ForeignKey, Index, Boolean, Enum as SAEnum
+from sqlalchemy import Column, Integer, BigInteger, String, Float, DateTime, Date, ForeignKey, Index, Boolean, Enum as SAEnum, text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -359,6 +359,9 @@ class Duel(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     responded_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
+    pair_low_id = Column(Integer, nullable=False, index=True)
+    pair_high_id = Column(Integer, nullable=False, index=True)
+    is_no_activity_draw = Column(Boolean, nullable=False, default=False, server_default="false")
 
     challenger = relationship("User", foreign_keys=[challenger_id])
     opponent = relationship("User", foreign_keys=[opponent_id])
@@ -367,6 +370,15 @@ class Duel(Base):
     __table_args__ = (
         Index("idx_duel_pair_week", "challenger_id", "opponent_id", "week_start"),
         Index("idx_duel_status_week", "status", "week_start"),
+        Index(
+            "uq_duel_pair_week_active",
+            "pair_low_id",
+            "pair_high_id",
+            "week_start",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'active')"),
+            sqlite_where=text("status IN ('pending', 'active')"),
+        ),
     )
 
 
@@ -374,13 +386,18 @@ class Club(Base):
     __tablename__ = "clubs"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(64), nullable=False, index=True)
-    invite_code = Column(String(16), unique=True, nullable=False, index=True)
+    name = Column(String(40), nullable=False, index=True)
+    invite_code = Column(String(12), unique=True, nullable=False, index=True)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    instant_join = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     owner = relationship("User", foreign_keys=[owner_id])
     members = relationship("ClubMember", back_populates="club", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("uq_club_owner_name_lower", "owner_id", text("lower(name)"), unique=True),
+    )
 
 
 class ClubMemberRole(str, enum.Enum):
@@ -402,6 +419,21 @@ class ClubMember(Base):
 
     __table_args__ = (
         Index("uq_club_member", "club_id", "user_id", unique=True),
+    )
+
+
+class ClubJoinAttempt(Base):
+    """Аудит попыток вступления по invite-коду без хранения самого кода."""
+    __tablename__ = "club_join_attempts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    code_digest = Column(String(64), nullable=False)
+    succeeded = Column(Boolean, nullable=False, default=False, server_default="false")
+    attempted_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index("idx_club_join_attempt_user_time", "user_id", "attempted_at"),
     )
 
 
