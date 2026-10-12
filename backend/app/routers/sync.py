@@ -826,7 +826,7 @@ def _persist_sync_payload(
                 "synced_count": 0,
                 "updated_count": 0,
                 "wellness_upserted": wellness_upserted,
-                "months_done": months_total, "months_total": len(month_ranges),
+                "months_done": months_total, "months_total": months_total,
                 "new_xp": 0,
             }
     
@@ -960,7 +960,7 @@ def _persist_sync_payload(
             "updated_count": updated_count,
             "deleted_count": deleted_count,
             "wellness_upserted": wellness_upserted,
-            "months_done": len(month_ranges), "months_total": len(month_ranges),
+            "months_done": months_total, "months_total": months_total,
             "skipped_empty": skipped_empty,
             "new_xp": new_xp,
             "user": {
