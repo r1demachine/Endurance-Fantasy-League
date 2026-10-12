@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AnimatePresence } from "framer-motion";
 import { authApi } from "@/lib/auth";
 import Link from "next/link";
@@ -513,7 +513,7 @@ function ClubsPanel() {
     setDetailVersion((version) => version + 1);
   };
 
-  const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setCreateBusy(true);
     setError("");
@@ -534,7 +534,7 @@ function ClubsPanel() {
     }
   };
 
-  const handleJoinCode = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleJoinCode = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setJoinBusy(true);
     setError("");
@@ -555,7 +555,7 @@ function ClubsPanel() {
     }
   };
 
-  const search = async (event: React.FormEvent<HTMLFormElement>) => {
+  const search = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (searchText.trim().length < 2) {
       setSearchError("Для поиска введи минимум 2 символа.");
@@ -580,7 +580,10 @@ function ClubsPanel() {
     try {
       const response = await authApi.post("/api/clubs/request", { club_id: clubId });
       setMessage(typeof response.data.message === "string" ? response.data.message : "Заявка отправлена.");
-      await search({ preventDefault() {} } as React.FormEvent<HTMLFormElement>);
+      if (searchText.trim().length >= 2) {
+        const refreshed = await authApi.get("/api/clubs/search", { params: { q: searchText.trim() } });
+        setSearchResults(Array.isArray(refreshed.data.results) ? refreshed.data.results : []);
+      }
       await loadMine();
     } catch (actionError: unknown) {
       setError(getApiErrorMessage(actionError, "Не удалось отправить заявку."));
@@ -611,7 +614,7 @@ function ClubsPanel() {
     }
   };
 
-  const saveClubSettings = async (event: React.FormEvent<HTMLFormElement>) => {
+  const saveClubSettings = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!detail) return;
     setBusy("settings");
@@ -911,7 +914,7 @@ function ClubsPanel() {
                   <p className="mt-3 text-sm text-[#666]">Пока нет данных рейтинга.</p>
                 ) : (
                   <div className="mt-3 space-y-2">
-                    {rankingRows.map((row, index) => (
+                    {rankingRows.map((row) => (
                       <div key={row.id} className="grid grid-cols-[2rem_1fr_auto] items-center gap-3 border-t border-black/10 py-2">
                         <span className="font-display text-lg text-[#666]">{row.rank ?? "—"}</span>
                         <div className="min-w-0">
