@@ -1,32 +1,46 @@
-"""Telegram-бот: webhook, привязка /link, загрузка тренировок, /stop."""
+"""Telegram bot webhook, private account linking, uploads, and notifications."""
 import asyncio
+import base64
+import hashlib
 import hmac
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..database import get_db
 from ..dependencies import get_current_user
-from ..models import Activity, User
+from ..models import TelegramLinkAttempt, TelegramWebhookUpdate, User
 from ..rate_limit import limiter
-from ..services.telegram import bot_configured, download_telegram_file, send_message
+from ..services.telegram import (
+    TelegramFileTooLarge,
+    bot_configured,
+    download_telegram_file,
+    send_message,
+)
+from ..services.activity_upload import create_activity_from_upload
 
 router = APIRouter(prefix="/api/telegram", tags=["Telegram"])
 
 LINK_TTL_MINUTES = 15
+LINK_RATE_LIMIT = 5
+LINK_WINDOW_MINUTES = 15
+UPDATE_TTL_DAYS = 2
 UPLOAD_SOURCE = "UPLOAD_TELEGRAM"
 HELP_TEXT = (
     "Fantasy League бот\n\n"
     "/link КОД — привязать аккаунт (код из профиля на сайте)\n"
+    "/notify on — явно включить уведомления\n"
+    "/notify off — отключить уведомления\n"
     "/stop — отвязать и отключить уведомления\n"
     "/status — статус привязки\n\n"
-    "Пришли .fit / .gpx / .tcx — загрузим тренировку (лимиты как на сайте)."
+    "Пришли .fit / .gpx / .tcx — загрузим тренировку (лимит 5 МБ)."
 )
 
 
@@ -41,6 +55,44 @@ def _unlink_user(user: User) -> None:
     user.telegram_link_expires = None
 
 
+def _hash_link_code(code: str) -> str:
+    return hashlib.sha256(code.strip().upper().encode("utf-8")).hexdigest()
+
+
+def _new_link_code() -> str:
+    # 10 random bytes -> 16 base32 characters, no padding; only SHA-256 is persisted.
+    return base64.b32encode(secrets.token_bytes(10)).decode("ascii").rstrip("=")
+
+
+def _latest_completed_week_start(today: date | None = None) -> date:
+    today = today or date.today()
+    current_week_start = today - timedelta(days=today.weekday())
+    return current_week_start - timedelta(days=7)
+
+
+def _record_failed_link_attempt(db: Session, chat_id: str) -> int:
+    now = datetime.utcnow()
+    cutoff = now - timedelta(minutes=LINK_WINDOW_MINUTES)
+    db.query(TelegramLinkAttempt).filter(
+        TelegramLinkAttempt.attempted_at < now - timedelta(days=1)
+    ).delete(synchronize_session=False)
+    count = db.query(TelegramLinkAttempt).filter(
+        TelegramLinkAttempt.chat_id == chat_id,
+        TelegramLinkAttempt.attempted_at >= cutoff,
+    ).count()
+    db.add(TelegramLinkAttempt(chat_id=chat_id, attempted_at=now))
+    db.commit()
+    return count + 1
+
+
+def _failed_link_attempts(db: Session, chat_id: str) -> int:
+    cutoff = datetime.utcnow() - timedelta(minutes=LINK_WINDOW_MINUTES)
+    return db.query(TelegramLinkAttempt).filter(
+        TelegramLinkAttempt.chat_id == chat_id,
+        TelegramLinkAttempt.attempted_at >= cutoff,
+    ).count()
+
+
 @router.post("/link-code")
 @limiter.limit("10/hour")
 def create_link_code(
@@ -48,11 +100,11 @@ def create_link_code(
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Одноразовый код для /link в боте. Живёт 15 минут."""
+    """Generate a one-time base32 linking code; persist only its hash for 15 minutes."""
     if not bot_configured():
         raise HTTPException(status_code=503, detail="Telegram-бот не настроен на сервере")
-    code = secrets.token_hex(3).upper()
-    current.telegram_link_code = code
+    code = _new_link_code()
+    current.telegram_link_code = _hash_link_code(code)
     current.telegram_link_expires = datetime.utcnow() + timedelta(minutes=LINK_TTL_MINUTES)
     db.commit()
     settings = get_settings()
@@ -62,7 +114,7 @@ def create_link_code(
         "bot_username": settings.TELEGRAM_BOT_USERNAME,
         "linked": bool(current.telegram_chat_id),
         "notify": bool(current.telegram_notify),
-        "instructions": f"Открой бота и отправь: /link {code}",
+        "instructions": f"Открой бота и отправь: /link {code}. Затем включи уведомления командой /notify on.",
     }
 
 
@@ -90,6 +142,7 @@ def set_notify(
 ):
     if not current.telegram_chat_id:
         raise HTTPException(status_code=400, detail="Сначала привяжи Telegram через /link")
+    # This endpoint is an explicit user action and therefore serves as consent.
     current.telegram_notify = bool(data.enabled)
     db.commit()
     return {"notify": current.telegram_notify}
@@ -112,8 +165,25 @@ def _check_secret(header_value: Optional[str]) -> None:
     expected = get_settings().TELEGRAM_WEBHOOK_SECRET or ""
     if not expected or not header_value:
         raise HTTPException(status_code=403, detail="Forbidden")
-    if not hmac.compare_digest(header_value, expected):
+    if not hmac.compare_digest(header_value.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(status_code=403, detail="Forbidden")
+
+
+def _mark_update_processed(db: Session, update_id: Any) -> bool:
+    if isinstance(update_id, bool) or not isinstance(update_id, int) or update_id < 0:
+        raise HTTPException(status_code=400, detail="Invalid or missing update_id")
+    now = datetime.utcnow()
+    cutoff = now - timedelta(days=UPDATE_TTL_DAYS)
+    db.query(TelegramWebhookUpdate).filter(
+        TelegramWebhookUpdate.processed_at < cutoff
+    ).delete(synchronize_session=False)
+    db.add(TelegramWebhookUpdate(update_id=update_id, processed_at=now))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return False
+    return True
 
 
 @router.post("/webhook")
@@ -122,59 +192,63 @@ async def telegram_webhook(
     db: Session = Depends(get_db),
     x_telegram_bot_api_secret_token: Optional[str] = Header(default=None),
 ):
-    """Единственная точка входа бота. Без long polling."""
     if not bot_configured():
         raise HTTPException(status_code=503, detail="Bot not configured")
     _check_secret(x_telegram_bot_api_secret_token)
-
     try:
         update: dict[str, Any] = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON") from exc
+    if not isinstance(update, dict):
+        raise HTTPException(status_code=400, detail="Invalid update")
+    if not _mark_update_processed(db, update.get("update_id")):
+        return {"ok": True, "duplicate": True}
 
-    message = update.get("message") or update.get("edited_message")
-    if not message:
+    # Do not process edited_message; it is a separate update from Telegram.
+    message = update.get("message")
+    if not isinstance(message, dict):
         return {"ok": True}
-
     chat = message.get("chat") or {}
     chat_id = str(chat.get("id") or "")
+    chat_type = str(chat.get("type") or "")
     if not chat_id:
         return {"ok": True}
 
     text = (message.get("text") or "").strip()
     document = message.get("document")
-
     if text.startswith("/"):
-        await _handle_command(db, chat_id, text)
+        await _handle_command(db, chat_id, text, chat_type)
         return {"ok": True}
-
     if document:
         await _handle_document(db, chat_id, document)
         return {"ok": True}
-
     if text:
         await send_message(chat_id, HELP_TEXT)
     return {"ok": True}
 
 
-async def _handle_command(db: Session, chat_id: str, text: str) -> None:
+async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str = "private") -> None:
     parts = text.split()
-    cmd = parts[0].split("@")[0].lower()
+    command = parts[0].split("@")[0].lower()
 
-    if cmd in ("/start", "/help"):
+    if command in ("/start", "/help"):
         await send_message(chat_id, HELP_TEXT)
         return
 
-    if cmd == "/status":
+    if command == "/status":
         user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
         if not user:
-            await send_message(chat_id, "Аккаунт не привязан. Получи код в профиле на сайте и отправь /link КОД")
+            await send_message(chat_id, "Аккаунт не привязан. Получи код в профиле на сайте и отправь /link КОД.")
             return
-        flag = "вкл" if user.telegram_notify else "выкл"
-        await send_message(chat_id, f"Привязан: @{user.username}\nУведомления: {flag}\n/stop — отвязать")
+        enabled = "вкл" if user.telegram_notify else "выкл"
+        await send_message(
+            chat_id,
+            f"Привязан: @{user.username}\nУведомления: {enabled}\n"
+            "/notify on — включить · /notify off — выключить\n/stop — отвязать",
+        )
         return
 
-    if cmd == "/stop":
+    if command == "/stop":
         user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
         if user:
             _unlink_user(user)
@@ -182,35 +256,72 @@ async def _handle_command(db: Session, chat_id: str, text: str) -> None:
         await send_message(chat_id, "Привязка удалена, уведомления выключены. Чтобы снова связать — новый /link КОД из профиля.")
         return
 
-    if cmd == "/link":
+    if command == "/notify":
+        user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+        if not user:
+            await send_message(chat_id, "Сначала привяжи аккаунт: /link КОД из профиля на сайте.")
+            return
+        if len(parts) < 2 or parts[1].lower() not in {"on", "off"}:
+            await send_message(chat_id, "Используй /notify on или /notify off.")
+            return
+        user.telegram_notify = parts[1].lower() == "on"
+        db.commit()
+        await send_message(chat_id, "Уведомления включены." if user.telegram_notify else "Уведомления отключены.")
+        return
+
+    if command == "/link":
+        if chat_type != "private":
+            await send_message(chat_id, "Для безопасности /link можно использовать только в личном чате с ботом.")
+            return
+        if _failed_link_attempts(db, chat_id) >= LINK_RATE_LIMIT:
+            await send_message(chat_id, "Слишком много неверных кодов. Попробуй через 15 минут.")
+            return
         if len(parts) < 2:
             await send_message(chat_id, "Формат: /link КОД\nКод берётся в профиле на сайте (раздел Telegram).")
             return
+
         code = parts[1].strip().upper()
-        user = (
-            db.query(User)
-            .filter(
-                User.telegram_link_code == code,
-                User.telegram_link_expires.isnot(None),
-                User.telegram_link_expires > datetime.utcnow(),
-            )
-            .first()
-        )
+        now = datetime.utcnow()
+        user = db.query(User).filter(
+            User.telegram_link_code == _hash_link_code(code),
+            User.telegram_link_expires.isnot(None),
+            User.telegram_link_expires > now,
+        ).first()
         if not user:
+            _record_failed_link_attempt(db, chat_id)
             await send_message(chat_id, "Код неверный или истёк. Сгенерируй новый в профиле на сайте.")
             return
-        other = db.query(User).filter(User.telegram_chat_id == chat_id, User.id != user.id).first()
-        if other:
-            _unlink_user(other)
+
+        other_owner = db.query(User).filter(
+            User.telegram_chat_id == chat_id,
+            User.id != user.id,
+        ).first()
+        if other_owner:
+            await send_message(
+                chat_id,
+                "Этот Telegram уже привязан к другому аккаунту. Выполни /stop, затем повтори /link с новым кодом.",
+            )
+            return
+
+        old_chat_id = user.telegram_chat_id if user.telegram_chat_id and user.telegram_chat_id != chat_id else None
         user.telegram_chat_id = chat_id
-        user.telegram_notify = True
+        user.telegram_notify = False  # consent must be given separately
         user.telegram_link_code = None
         user.telegram_link_expires = None
+        last_completed = _latest_completed_week_start()
+        if user.telegram_last_notified_week is None or user.telegram_last_notified_week < last_completed:
+            user.telegram_last_notified_week = last_completed
         db.commit()
+
+        if old_chat_id:
+            await send_message(
+                str(old_chat_id),
+                "Аккаунт Fantasy League перепривязан к другому Telegram. Уведомления на этом чате отключены.",
+            )
         await send_message(
             chat_id,
             f"Готово! Привязан аккаунт @{user.username}.\n"
-            "Уведомления включены (итоги недели, дуэли).\n"
+            "Уведомления пока выключены — включи их командой /notify on.\n"
             "Можно присылать .fit / .gpx / .tcx.\n"
             "/stop — отвязать.",
         )
@@ -226,45 +337,31 @@ async def _handle_document(db: Session, chat_id: str, document: dict) -> None:
         return
 
     settings = get_settings()
-    if (
-        user.privacy_consent_version != settings.PRIVACY_CONSENT_VERSION
-        or user.privacy_consent_at is None
-    ):
+    if user.privacy_consent_version != settings.PRIVACY_CONSENT_VERSION or user.privacy_consent_at is None:
         await send_message(chat_id, "Нужно принять актуальную политику данных на сайте, затем загрузи файл снова.")
         return
 
     file_name = document.get("file_name") or "activity.fit"
     extension = Path(file_name).suffix.lower()
-    from ..routers.upload import (
-        ALLOWED_EXTENSIONS,
-        MAX_FILE_BYTES,
-        PARSE_TIMEOUT_SECONDS,
-        InvalidActivityFile,
-        UnsupportedActivityFile,
-        _find_intervals_duplicate,
-        _parse_activity_file,
-    )
+    from ..routers.upload import ALLOWED_EXTENSIONS, MAX_FILE_BYTES, PARSE_TIMEOUT_SECONDS
+    from ..routers.upload import InvalidActivityFile, UnsupportedActivityFile, _parse_activity_file
 
     if extension not in ALLOWED_EXTENSIONS:
         await send_message(chat_id, "Поддерживаются только .fit, .gpx и .tcx.")
         return
-
-    file_size = int(document.get("file_size") or 0)
-    if file_size > MAX_FILE_BYTES:
-        await send_message(chat_id, "Размер файла превышает 5 МБ.")
-        return
-
     file_id = document.get("file_id")
     if not file_id:
         await send_message(chat_id, "Не удалось получить файл.")
         return
 
     try:
-        content, _path = await download_telegram_file(file_id)
+        content, _path = await download_telegram_file(file_id, max_bytes=MAX_FILE_BYTES)
+    except TelegramFileTooLarge:
+        await send_message(chat_id, "Размер файла превышает 5 МБ.")
+        return
     except Exception:
         await send_message(chat_id, "Не удалось скачать файл из Telegram.")
         return
-
     if not content:
         await send_message(chat_id, "Файл пустой.")
         return
@@ -275,108 +372,49 @@ async def _handle_document(db: Session, chat_id: str, document: dict) -> None:
     try:
         parsed = await asyncio.wait_for(
             asyncio.to_thread(
-                _parse_activity_file, content, extension, user.lthr, user.max_hr, user.resting_hr
+                _parse_activity_file,
+                content,
+                extension,
+                user.lthr,
+                user.max_hr,
+                user.resting_hr,
             ),
             timeout=PARSE_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
         await send_message(chat_id, "Разбор файла занял слишком много времени.")
         return
-    except UnsupportedActivityFile as exc:
-        await send_message(chat_id, str(exc) or "Формат файла не поддерживается.")
-        return
-    except InvalidActivityFile as exc:
-        await send_message(chat_id, str(exc) or "Файл повреждён или неполный.")
+    except (UnsupportedActivityFile, InvalidActivityFile) as exc:
+        await send_message(chat_id, str(exc) or "Файл повреждён или формат не поддерживается.")
         return
     except Exception:
         await send_message(chat_id, "Не удалось прочитать тренировку из файла.")
         return
 
-    try:
-        start_date = datetime.fromisoformat(str(parsed["start_date"]))
-        if start_date.tzinfo is not None:
-            start_date = start_date.astimezone(timezone.utc).replace(tzinfo=None)
-        moving_time = int(parsed["moving_time"])
-        elapsed_time = int(parsed.get("elapsed_time") or moving_time)
-        distance = max(0.0, float(parsed.get("distance") or 0.0))
-        elevation = max(0.0, float(parsed.get("elevation_gain") or 0.0))
-        training_load = max(0.0, float(parsed["training_load"]))
-        intensity = min(1.5, max(0.3, float(parsed["intensity"])))
-        hard_secs = max(0, int(parsed.get("hard_secs") or 0))
-    except (TypeError, ValueError, KeyError, OverflowError):
-        await send_message(chat_id, "Данные тренировки повреждены.")
+    before_xp = float(user.total_xp or 0)
+    file_sha256 = hashlib.sha256(content).hexdigest()
+    status, activity, reason = create_activity_from_upload(
+        db,
+        user,
+        parsed,
+        file_sha256,
+        source=UPLOAD_SOURCE,
+    )
+    if status == "duplicate":
+        await send_message(chat_id, reason or "Эта тренировка уже есть, повторно не сохранена.")
         return
-
-    if moving_time <= 0 or moving_time > 7 * 24 * 3600:
-        await send_message(chat_id, "Некорректная длительность тренировки.")
-        return
-
-    nonce = secrets.token_hex(16)
-    activity_id = f"{UPLOAD_SOURCE}:{nonce}"
-    if db.query(Activity).filter(
-        Activity.user_id == user.id, Activity.intervals_activity_id == activity_id
-    ).first():
-        await send_message(chat_id, "Эта тренировка уже была сохранена.")
-        return
-
-    duplicate = _find_intervals_duplicate(db, user.id, start_date, moving_time)
-    if duplicate:
-        when = duplicate.start_date.strftime("%d.%m.%Y %H:%M") if duplicate.start_date else "—"
-        mins = round((duplicate.moving_time or 0) / 60)
-        await send_message(
-            chat_id,
-            f"Похожая тренировка уже есть в базе ({when}, ~{mins} мин). Дубликат не сохранён.",
-        )
+    if status == "rejected" or activity is None:
+        await send_message(chat_id, f"Не принято: {reason or 'не удалось сохранить тренировку.'}")
         return
 
     from ..services.xp import round_xp
-    from .sync import _recalculate_user_xp, _recalculate_user_xp_v6
-
-    before_xp = float(user.total_xp or 0)
-    average_hr = parsed.get("average_heartrate")
-    maximum_hr = parsed.get("max_heartrate")
-    activity = Activity(
-        user_id=user.id,
-        intervals_activity_id=activity_id,
-        source=UPLOAD_SOURCE,
-        name=None,
-        sport_type=str(parsed.get("sport_type") or "RIDE"),
-        distance=distance,
-        moving_time=moving_time,
-        elapsed_time=elapsed_time,
-        elevation_gain=elevation,
-        average_speed=(distance / moving_time) if distance and moving_time else None,
-        average_heartrate=float(average_hr) if average_hr is not None else None,
-        max_heartrate=float(maximum_hr) if maximum_hr is not None else None,
-        training_load=training_load,
-        intensity=intensity,
-        hard_secs=hard_secs,
-        is_manual=False,
-        start_date=start_date,
-        start_date_local=start_date,
-        indoor=False,
-        is_indoor=False,
-    )
-    db.add(activity)
-    try:
-        db.flush()
-        if get_settings().XP_ENGINE == "v6":
-            _recalculate_user_xp_v6(db, user)
-        else:
-            _recalculate_user_xp(db, user)
-        db.commit()
-    except Exception:
-        db.rollback()
-        await send_message(chat_id, "Ошибка сохранения. Попробуй позже.")
-        return
-
-    db.refresh(activity)
     db.refresh(user)
     gained = round_xp(float(user.total_xp or 0) - before_xp)
-    mins = round(moving_time / 60)
+    minutes = round((activity.moving_time or 0) / 60)
+    started = activity.start_date.strftime("%d.%m.%Y %H:%M") if activity.start_date else "дата неизвестна"
     await send_message(
         chat_id,
-        f"Тренировка сохранена.\n"
-        f"{mins} мин · нагрузка {round(training_load, 1)}\n"
-        f"+{gained} XP · всего {round_xp(user.total_xp or 0)} XP · LVL {user.level}",
+        f"Сохранено: {activity.name or 'Тренировка'} · {started} · {minutes} мин\n"
+        f"Нагрузка {round(float(activity.training_load or 0), 1)} · +{gained} XP · "
+        f"всего {round_xp(user.total_xp or 0)} XP · LVL {user.level}",
     )
