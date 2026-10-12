@@ -218,6 +218,19 @@ app.include_router(upload.router)
 app.include_router(duels.router)
 app.include_router(clubs.router)
 
+# Дуэли закрываются в тот же момент, что и лиги (wrap без правки огромного sync.py)
+_orig_close_league_week = sync._close_league_week
+
+def _close_league_week_with_duels(db, week_start_d):
+    _orig_close_league_week(db, week_start_d)
+    try:
+        from .routers.duels import finalize_duels_for_week
+        finalize_duels_for_week(db, week_start_d)
+    except Exception as _duel_err:  # noqa: BLE001
+        print(f"⚠️ finalize_duels_for_week failed: {_duel_err}")
+
+sync._close_league_week = _close_league_week_with_duels
+
 @app.on_event("startup")
 async def _init_broker():
     from .broker import init_broker
