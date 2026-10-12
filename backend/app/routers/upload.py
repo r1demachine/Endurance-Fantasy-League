@@ -227,7 +227,7 @@ def _finalise_file_metrics(
     raw_times = [_parse_iso_datetime(sample.get("time")) for sample in samples]
     raw_times = [value for value in raw_times if value is not None]
     if start is None and raw_times:
-        start = min(raw_times)
+        start = min(raw_times, key=lambda value: _sample_time_utc_naive(value, zone))
     if start is None:
         raise InvalidActivityFile("В файле не найдено время начала тренировки.")
 
@@ -469,7 +469,6 @@ def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
             lthr=lthr,
             user_max_hr=user_max_hr,
             resting_hr=resting_hr,
-            user_timezone=user_timezone,
         )
     except (InvalidActivityFile, UnsupportedActivityFile):
         raise
