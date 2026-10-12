@@ -69,7 +69,7 @@ export function formatPauseDate(value: string | null, locale = "ru-RU"): string 
   }).format(date);
 }
 
-type FocusableElement = { focus: () => void };
+type FocusableElement = HTMLElement;
 interface DialogLike {
   querySelectorAll: (selector: string) => ArrayLike<FocusableElement>;
   contains: (element: Node | null) => boolean;
