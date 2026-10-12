@@ -3,13 +3,20 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from ..auth import verify_password
 from ..config import get_settings
 from ..database import get_db
 from ..dependencies import get_current_user
 from ..models import (
     Activity,
+    Club,
+    ClubJoinRequest,
+    ClubMember,
+    ClubMemberRole,
+    Duel,
     Friendship,
     LeagueMembership,
     Notification,
@@ -33,6 +40,7 @@ class ConsentInput(BaseModel):
 
 class DeleteAccountInput(BaseModel):
     confirmation: Literal["DELETE"]
+    password: str = Field(..., min_length=1, max_length=128)
 
 
 def _consent_is_current(user: User) -> bool:
@@ -94,6 +102,45 @@ def accept_current_data_policy(
     }
 
 
+def _cleanup_social_for_user(db: Session, uid: int) -> None:
+    """Дуэли, клубы и заявки до удаления User (FK без cascade)."""
+    db.query(Duel).filter(
+        or_(Duel.challenger_id == uid, Duel.opponent_id == uid)
+    ).delete(synchronize_session=False)
+    db.query(Duel).filter(Duel.winner_id == uid).update(
+        {Duel.winner_id: None}, synchronize_session=False
+    )
+
+    db.query(ClubJoinRequest).filter(ClubJoinRequest.user_id == uid).delete(
+        synchronize_session=False
+    )
+
+    owned_clubs = db.query(Club).filter(Club.owner_id == uid).all()
+    for club in owned_clubs:
+        others = (
+            db.query(ClubMember)
+            .filter(ClubMember.club_id == club.id, ClubMember.user_id != uid)
+            .order_by(ClubMember.joined_at.asc(), ClubMember.id.asc())
+            .all()
+        )
+        if others:
+            successor = others[0]
+            club.owner_id = successor.user_id
+            successor.role = ClubMemberRole.OWNER.value
+        else:
+            db.query(ClubJoinRequest).filter(ClubJoinRequest.club_id == club.id).delete(
+                synchronize_session=False
+            )
+            db.query(ClubMember).filter(ClubMember.club_id == club.id).delete(
+                synchronize_session=False
+            )
+            db.delete(club)
+
+    db.query(ClubMember).filter(ClubMember.user_id == uid).delete(
+        synchronize_session=False
+    )
+
+
 @router.delete("/account")
 def delete_account(
     data: DeleteAccountInput,
@@ -101,22 +148,35 @@ def delete_account(
     db: Session = Depends(get_db),
 ):
     """Permanently delete this user's personal and derived records."""
+    if not verify_password(data.password, current.password_hash):
+        raise HTTPException(status_code=403, detail="Неверный пароль")
+
     uid = current.id
+    try:
+        _cleanup_social_for_user(db, uid)
 
-    # Delete all rows with explicit user FKs first. LeagueWeek is shared and is kept.
-    db.query(Friendship).filter(
-        (Friendship.from_user_id == uid) | (Friendship.to_user_id == uid)
-    ).delete(synchronize_session=False)
-    db.query(Notification).filter(Notification.user_id == uid).delete(synchronize_session=False)
-    db.query(LeagueMembership).filter(LeagueMembership.user_id == uid).delete(synchronize_session=False)
-    db.query(XPEvent).filter(XPEvent.user_id == uid).delete(synchronize_session=False)
-    db.query(WeeklySummary).filter(WeeklySummary.user_id == uid).delete(synchronize_session=False)
-    db.query(Wellness).filter(Wellness.user_id == uid).delete(synchronize_session=False)
-    db.query(Activity).filter(Activity.user_id == uid).delete(synchronize_session=False)
+        db.query(Friendship).filter(
+            (Friendship.from_user_id == uid) | (Friendship.to_user_id == uid)
+        ).delete(synchronize_session=False)
+        db.query(Notification).filter(Notification.user_id == uid).delete(
+            synchronize_session=False
+        )
+        db.query(LeagueMembership).filter(LeagueMembership.user_id == uid).delete(
+            synchronize_session=False
+        )
+        db.query(XPEvent).filter(XPEvent.user_id == uid).delete(synchronize_session=False)
+        db.query(WeeklySummary).filter(WeeklySummary.user_id == uid).delete(
+            synchronize_session=False
+        )
+        db.query(Wellness).filter(Wellness.user_id == uid).delete(synchronize_session=False)
+        db.query(Activity).filter(Activity.user_id == uid).delete(synchronize_session=False)
 
-    # The foreign key is unique and nullable; clear provider credentials before deleting.
-    current.api_key_encrypted = None
-    current.intervals_id = None
-    db.delete(current)
-    db.commit()
+        current.api_key_encrypted = None
+        current.intervals_id = None
+        db.delete(current)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
     return {"deleted": True, "message": "Аккаунт и связанные данные удалены"}
