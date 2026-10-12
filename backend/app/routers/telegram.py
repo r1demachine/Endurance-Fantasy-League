@@ -343,8 +343,10 @@ async def _handle_document(db: Session, chat_id: str, document: dict) -> None:
 
     file_name = document.get("file_name") or "activity.fit"
     extension = Path(file_name).suffix.lower()
-    from ..routers.upload import ALLOWED_EXTENSIONS, MAX_FILE_BYTES, PARSE_TIMEOUT_SECONDS
-    from ..routers.upload import InvalidActivityFile, UnsupportedActivityFile, _parse_activity_file
+    from ..routers.upload import (
+        ALLOWED_EXTENSIONS, MAX_FILE_BYTES, PARSE_TIMEOUT_SECONDS,
+        InvalidActivityFile, UnsupportedActivityFile, _parse_activity_file_bounded,
+    )
 
     if extension not in ALLOWED_EXTENSIONS:
         await send_message(chat_id, "Поддерживаются только .fit, .gpx и .tcx.")
@@ -371,17 +373,15 @@ async def _handle_document(db: Session, chat_id: str, document: dict) -> None:
 
     try:
         parsed = await asyncio.wait_for(
-            asyncio.to_thread(
-                _parse_activity_file,
+            _parse_activity_file_bounded(
                 content,
                 extension,
                 user.lthr,
                 user.max_hr,
                 user.resting_hr,
-            ),
-            timeout=PARSE_TIMEOUT_SECONDS,
-        )
-    except asyncio.TimeoutError:
+                user.timezone_name,
+            )
+    except TimeoutError:
         await send_message(chat_id, "Разбор файла занял слишком много времени.")
         return
     except (UnsupportedActivityFile, InvalidActivityFile) as exc:

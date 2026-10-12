@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { authApi } from "@/lib/auth";
 
-type HeartRateSettings = { lthr: number | null; max_hr: number | null; resting_hr: number | null };
+type HeartRateSettings = { lthr: number | null; max_hr: number | null; resting_hr: number | null; timezone_name: string };
 
 export default function HeartRateSettings() {
   const [lthr, setLthr] = useState("");
   const [maxHr, setMaxHr] = useState("");
   const [restingHr, setRestingHr] = useState("");
+  const [timezoneName, setTimezoneName] = useState("UTC");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -20,8 +21,8 @@ export default function HeartRateSettings() {
         if (cancelled) return;
         setLthr(response.data.lthr == null ? "" : String(response.data.lthr));
         setMaxHr(response.data.max_hr == null ? "" : String(response.data.max_hr));
-      setRestingHr(response.data.resting_hr == null ? "" : String(response.data.resting_hr));
         setRestingHr(response.data.resting_hr == null ? "" : String(response.data.resting_hr));
+        setTimezoneName(response.data.timezone_name || "UTC");
       })
       .catch(() => {
         if (!cancelled) setMessage({ type: "error", text: "Не удалось загрузить настройки пульса." });
@@ -61,9 +62,12 @@ export default function HeartRateSettings() {
         lthr: nextLthr,
         max_hr: nextMaxHr,
         resting_hr: nextRestingHr,
+        timezone_name: timezoneName.trim(),
       });
       setLthr(response.data.lthr == null ? "" : String(response.data.lthr));
       setMaxHr(response.data.max_hr == null ? "" : String(response.data.max_hr));
+      setRestingHr(response.data.resting_hr == null ? "" : String(response.data.resting_hr));
+      setTimezoneName(response.data.timezone_name || "UTC");
       setMessage({ type: "success", text: "Настройки пульса сохранены." });
     } catch (caught) {
       const detail = (caught as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
@@ -80,7 +84,7 @@ export default function HeartRateSettings() {
         <p className="mt-1 text-xs text-[#666]">Нужны для расчёта HRSS / hrTSS и времени в зоне Z4+ при загрузке тренировок.</p>
       </div>
       <form onSubmit={save} className="space-y-4 p-4 md:p-5">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <label className="block text-xs font-bold uppercase tracking-wide">
             LTHR, уд/мин
             <input type="number" min={80} max={220} step={1} value={lthr}
@@ -104,6 +108,14 @@ export default function HeartRateSettings() {
               placeholder="Например, 50"
               className="mt-2 block w-full border-2 border-black bg-white px-3 py-3 text-base font-normal" />
             <span className="mt-1 block text-[10px] font-normal normal-case tracking-normal text-[#666]">Утренний пульс в покое, диапазон 30–100. Нужен для HRSS.</span>
+          </label>
+          <label className="block text-xs font-bold uppercase tracking-wide">
+            Часовой пояс
+            <input type="text" value={timezoneName}
+              onChange={(event) => setTimezoneName(event.target.value)} disabled={loading || saving}
+              placeholder="Europe/Stockholm" autoComplete="off"
+              className="mt-2 block w-full border-2 border-black bg-white px-3 py-3 text-base font-normal" />
+            <span className="mt-1 block text-[10px] font-normal normal-case tracking-normal text-[#666]">Название IANA, например Europe/Stockholm или Asia/Krasnoyarsk.</span>
           </label>
         </div>
         <div className="flex flex-wrap items-center gap-3">
