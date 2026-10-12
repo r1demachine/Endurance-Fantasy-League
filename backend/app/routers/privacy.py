@@ -13,6 +13,7 @@ from ..dependencies import get_current_user
 from ..models import (
     Activity,
     Club,
+    ClubJoinAttempt,
     ClubJoinRequest,
     ClubMember,
     ClubMemberRole,
@@ -112,6 +113,10 @@ def _cleanup_social_for_user(db: Session, uid: int) -> None:
     )
 
     db.query(ClubJoinRequest).filter(ClubJoinRequest.user_id == uid).delete(
+        synchronize_session=False
+    )
+    # Attempt audit rows reference users without ON DELETE CASCADE.
+    db.query(ClubJoinAttempt).filter(ClubJoinAttempt.user_id == uid).delete(
         synchronize_session=False
     )
 
