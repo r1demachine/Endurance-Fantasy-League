@@ -74,7 +74,7 @@ class ActivityFileParsingTests(unittest.TestCase):
     def test_auto_calibrates_max_hr_and_lthr_from_recorded_samples(self):
         start = datetime(2026, 10, 1, 10, 0, 0, tzinfo=timezone.utc)
         samples = [
-            {"time": start.replace(second=0) + timedelta(seconds=seconds), "hr": 180, "ele": None}
+            {"time": start + timedelta(seconds=seconds), "hr": 180 if seconds == 3600 else 175, "ele": None}
             for seconds in range(0, 3601, 10)
         ]
         parsed = _finalise_file_metrics(
@@ -83,7 +83,7 @@ class ActivityFileParsingTests(unittest.TestCase):
             elapsed_time=3600,
             distance=10000,
             elevation_gain=0,
-            average_hr=180,
+            average_hr=175,
             maximum_hr=180,
             sport_type="RIDE",
             samples=samples,
@@ -91,7 +91,7 @@ class ActivityFileParsingTests(unittest.TestCase):
             user_max_hr=175,
         )
         self.assertEqual(parsed["auto_zone_updates"]["max_hr"], 180)
-        self.assertEqual(parsed["auto_zone_updates"]["lthr"], 180)
+        self.assertEqual(parsed["auto_zone_updates"]["lthr"], 175)
 
 
 class HeartRateSettingsTests(unittest.TestCase):
