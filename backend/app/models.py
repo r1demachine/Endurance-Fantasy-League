@@ -33,6 +33,9 @@ class User(Base):
     intervals_id = Column(String, unique=True, index=True, nullable=True)
     api_key_encrypted = Column(String(500), nullable=True)  # шифруется Fernet
     last_full_sync_at = Column(DateTime, nullable=True)  # полный импорт: не чаще раза в час
+    lthr = Column(Integer, nullable=True)  # пользовательский лактатный порог ЧСС
+    max_hr = Column(Integer, nullable=True)  # максимальный пульс пользователя
+    resting_hr = Column(Integer, nullable=True)  # пульс в покое для HRSS/TRIMP
     
     # Устаревшие поля — оставим для совместимости, но не обязательны
     email = Column(String, unique=True, index=True, nullable=True)
@@ -68,6 +71,7 @@ class Activity(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     intervals_activity_id = Column(String, index=True, nullable=False)
+    source = Column(String(32), nullable=False, default="INTERVALS", server_default="INTERVALS")
 
     sleep_multiplier = Column(Float, default=1.0)
     sleep_secs = Column(Integer, nullable=True)
@@ -83,6 +87,7 @@ class Activity(Base):
     max_speed = Column(Float, nullable=True)
     average_heartrate = Column(Float, nullable=True)
     max_heartrate = Column(Float, nullable=True)
+    hard_secs = Column(Integer, nullable=False, default=0, server_default="0")
     average_watts = Column(Float, nullable=True)
     normalized_power = Column(Float, nullable=True)
     

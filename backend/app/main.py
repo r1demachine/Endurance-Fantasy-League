@@ -8,7 +8,7 @@ from slowapi.errors import RateLimitExceeded
 from .database import engine, Base
 from .config import get_settings
 from .rate_limit import limiter
-from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy
+from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy, upload
 
 Base.metadata.create_all(bind=engine)
 
@@ -34,6 +34,12 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN api_key_encrypted VARCHAR(500)"))
             if "last_full_sync_at" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN last_full_sync_at TIMESTAMP"))
+            if "lthr" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN lthr INTEGER"))
+            if "max_hr" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN max_hr INTEGER"))
+            if "resting_hr" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN resting_hr INTEGER"))
             if "legacy_xp_offset" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN legacy_xp_offset FLOAT DEFAULT 0"))
             if "xp_migrated_at" not in cols:
@@ -78,6 +84,10 @@ try:
                 conn.execute(text("ALTER TABLE activities ADD COLUMN is_long BOOLEAN DEFAULT FALSE"))
             if "is_manual" not in acols:
                 conn.execute(text("ALTER TABLE activities ADD COLUMN is_manual BOOLEAN DEFAULT FALSE"))
+            if "source" not in acols:
+                conn.execute(text("ALTER TABLE activities ADD COLUMN source VARCHAR(32) NOT NULL DEFAULT 'INTERVALS'"))
+            if "hard_secs" not in acols:
+                conn.execute(text("ALTER TABLE activities ADD COLUMN hard_secs INTEGER NOT NULL DEFAULT 0"))
             if "is_indoor" not in acols:
                 conn.execute(text("ALTER TABLE activities ADD COLUMN is_indoor BOOLEAN NOT NULL DEFAULT FALSE"))
                 if "indoor" in acols:
@@ -138,6 +148,7 @@ app.include_router(friends.router)
 app.include_router(notifications.router)
 app.include_router(admin.router)
 app.include_router(privacy.router)
+app.include_router(upload.router)
 
 @app.on_event("startup")
 async def _init_broker():

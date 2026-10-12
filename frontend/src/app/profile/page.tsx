@@ -12,6 +12,8 @@ import { Star, Sticker, DreamBubble } from "@/components/DreamBits";
 import ConnectSources from "@/components/ConnectSources";
 import SocialHub from "@/components/SocialHub";
 import AccountPrivacy from "@/components/AccountPrivacy";
+import ActivityUpload from "@/components/ActivityUpload";
+import HeartRateSettings from "@/components/HeartRateSettings";
 
 
 type Tone = "default" | "yellow" | "orange" | "indigo" | "red";
@@ -229,6 +231,24 @@ export default function Profile() {
         </div>
 
         
+
+        {/* Загрузка тренировок и пульсовые пороги */}
+        <div className="border-b-2 border-black">
+          <div className="grid md:grid-cols-[200px_1fr]">
+            <div className="hidden md:flex flex-col justify-between border-r-2 border-black bg-[#171a38] p-5 text-white">
+              <div>
+                <p className="font-display text-xl uppercase tracking-tight">Training data</p>
+                <div className="mt-3 mb-4 h-0.5 bg-white/30"></div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-white/70">FIT · GPX · TCX</p>
+              </div>
+              <span className="mt-auto font-display text-4xl">↓</span>
+            </div>
+            <div className="space-y-5 p-4 md:p-6">
+              <HeartRateSettings />
+              <ActivityUpload />
+            </div>
+          </div>
+        </div>
 
         {/* Приватность, согласие и управление данными */}
         <div className="border-b-2 border-black">
