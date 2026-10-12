@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { authApi } from "@/lib/auth";
+import { getApiErrorMessage } from "@/components/dialog-utils";
 
 type Person = { id: number; username: string; display_name: string; level?: number };
 type Duel = {
@@ -14,6 +15,7 @@ type Duel = {
   my_xp: number | null;
   other_xp: number | null;
   is_draw?: boolean;
+  is_no_activity_draw?: boolean;
   i_won?: boolean | null;
 };
 
@@ -24,17 +26,32 @@ export default function DuelsPage() {
   const [challengeUser, setChallengeUser] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [friendsError, setFriendsError] = useState("");
 
   const load = useCallback(async () => {
-    try {
-      const [d, f] = await Promise.all([authApi.get("/api/duels"), authApi.get("/api/friends")]);
-      setItems(d.data.items || []);
-      setFriends(f.data.friends || []);
-    } catch {
-      setItems([]);
-    } finally {
-      setLoading(false);
+    setLoadError("");
+    const [duelResult, friendsResult] = await Promise.allSettled([
+      authApi.get("/api/duels"),
+      authApi.get("/api/friends"),
+    ]);
+
+    if (duelResult.status === "fulfilled") {
+      setItems(Array.isArray(duelResult.value.data.items) ? duelResult.value.data.items : []);
+      setLoadError("");
+    } else {
+      setLoadError(getApiErrorMessage(duelResult.reason, "Не удалось загрузить список дуэлей."));
     }
+
+    if (friendsResult.status === "fulfilled") {
+      setFriends(Array.isArray(friendsResult.value.data.friends) ? friendsResult.value.data.friends : []);
+      setFriendsError("");
+    } else {
+      // A friends endpoint failure must not discard the successfully loaded duel list.
+      setFriendsError(getApiErrorMessage(friendsResult.reason, "Не удалось загрузить друзей. Можно ввести логин вручную."));
+      setFriends([]);
+    }
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -42,36 +59,49 @@ export default function DuelsPage() {
   }, [load]);
 
   const challenge = async (username?: string) => {
-    const u = (username || challengeUser).trim().toLowerCase();
-    if (!u) return;
-    setBusy(true);
     setMsg("");
+    setLoadError("");
+    const u = (username ?? challengeUser).trim().replace(/^@+/, "").toLowerCase();
+    if (!u) {
+      setMsg("Введи логин друга без символа @.");
+      return;
+    }
+    setBusy(true);
     try {
-      const r = await authApi.post("/api/duels/challenge", { username: u });
-      setMsg(r.data.message || "Вызов отправлен");
+      const response = await authApi.post("/api/duels/challenge", { username: u });
+      setMsg(typeof response.data.message === "string" ? response.data.message : "Вызов отправлен.");
       setChallengeUser("");
       await load();
-    } catch (err: any) {
-      setMsg(err.response?.data?.detail || "Ошибка вызова");
+    } catch (error: unknown) {
+      setMsg(getApiErrorMessage(error, "Не удалось отправить вызов."));
     } finally {
       setBusy(false);
     }
   };
 
   const respond = async (duelId: number, accept: boolean) => {
+    setMsg("");
+    setLoadError("");
     setBusy(true);
     try {
-      await authApi.post("/api/duels/respond", { duel_id: duelId, accept });
+      const response = await authApi.post("/api/duels/respond", { duel_id: duelId, accept });
+      setMsg(typeof response.data.message === "string" ? response.data.message : "");
       await load();
-    } catch (err: any) {
-      setMsg(err.response?.data?.detail || "Ошибка");
+    } catch (error: unknown) {
+      setMsg(getApiErrorMessage(error, "Не удалось обработать ответ на дуэль."));
+      await load();
     } finally {
       setBusy(false);
     }
   };
 
-  const statusLabel = (s: string) =>
-    ({ pending: "Ожидает ответа", active: "Идёт", finished: "Завершена", declined: "Отклонена" } as any)[s] || s;
+  const statusLabels: Record<string, string> = {
+    pending: "Ожидает ответа",
+    active: "Идёт",
+    finished: "Завершена",
+    declined: "Отклонена",
+  };
+  const statusLabel = (status: string) => statusLabels[status] ?? status;
 
   return (
     <main className="min-h-screen bg-[#f4f4f0] text-[#111] pb-24 md:pb-8">
@@ -91,6 +121,7 @@ export default function DuelsPage() {
             <input value={challengeUser} onChange={(e) => setChallengeUser(e.target.value)} placeholder="@username друга" className="flex-1 min-w-[160px] px-3 py-3 border-2 border-black bg-white font-bold text-sm" />
             <button type="button" disabled={busy || challengeUser.trim().length < 3} onClick={() => challenge()} className="px-4 py-3 bg-[#ff4b26] text-white border-2 border-black text-[10px] font-bold tracking-widest uppercase hover:bg-black disabled:opacity-50">Вызвать</button>
           </div>
+          {friendsError && <p role="alert" className="mb-3 text-sm font-bold text-[#a62910]">{friendsError}</p>}
           {friends.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {friends.slice(0, 12).map((f) => (
@@ -98,12 +129,17 @@ export default function DuelsPage() {
               ))}
             </div>
           )}
-          {msg && <p className="mt-3 text-sm font-bold text-[#5866f2]">{msg}</p>}
+          {msg && <p role="status" className="mt-3 text-sm font-bold text-[#5866f2]">{msg}</p>}
         </section>
 
         <section className="border-b-2 border-black p-4 md:p-6">
           <h2 className="font-display uppercase text-xl mb-4">Твои дуэли</h2>
-          {loading ? <p className="text-sm text-[#666]">Загрузка…</p> : items.length === 0 ? (
+          {loading ? <p className="text-sm text-[#666]">Загрузка…</p> : loadError ? (
+            <div role="alert" className="border-2 border-[#ff4b26] bg-[#ff4b26]/10 p-3 text-sm font-bold text-[#a62910]">
+              <p>{loadError}</p>
+              <button type="button" onClick={() => { setLoading(true); void load(); }} className="mt-2 underline">Повторить загрузку</button>
+            </div>
+          ) : items.length === 0 ? (
             <p className="text-sm text-[#666]">Пока нет дуэлей — вызови друга выше.</p>
           ) : (
             <div className="space-y-3">
@@ -118,7 +154,7 @@ export default function DuelsPage() {
                     <p className="mt-2 font-display text-2xl">{d.my_xp ?? 0} <span className="text-base text-[#666]">:</span> {d.other_xp ?? 0} <span className="text-sm text-[#666]">XP</span></p>
                   )}
                   {d.status === "finished" && (
-                    <p className="mt-1 text-[10px] font-bold tracking-widest uppercase text-[#666]">{d.is_draw ? "Ничья" : d.i_won ? "Победа 🏆" : "Поражение"}</p>
+                    <p className="mt-1 text-[10px] font-bold tracking-widest uppercase text-[#666]">{d.is_no_activity_draw ? "Ничья 0:0 — за неделю не было тренировок" : d.is_draw ? "Ничья" : d.i_won ? "Победа 🏆" : "Поражение"}</p>
                   )}
                   {d.status === "pending" && d.my_role === "opponent" && (
                     <div className="flex gap-2 mt-3">
