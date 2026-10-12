@@ -10,6 +10,8 @@ os.environ.setdefault("JWT_SECRET", "unit-test-jwt-secret-value-longer-than-32-c
 os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
 os.environ.setdefault("REDIS_URL", "")
 
+from app.services.xp_v6 import UPLOAD_TSS_FACTOR, resolve_training_load
+
 from app.routers.upload import (
     HeartRateSettingsUpdate,
     InvalidActivityFile,
@@ -18,6 +20,7 @@ from app.routers.upload import (
     _encode_preview,
     _finalise_file_metrics,
     _parse_activity_file,
+    _decode_xml_utf8,
 )
 
 
@@ -89,6 +92,107 @@ class ActivityFileParsingTests(unittest.TestCase):
         self.assertLess(parsed["training_load"], 70)
         self.assertEqual(parsed["load_method"], "hrss")
 
+    def test_local_start_time_uses_user_timezone_when_file_timestamp_is_utc(self):
+        from zoneinfo import ZoneInfo
+
+        start = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(minutes=3)
+        samples = [
+            {"time": start + timedelta(seconds=seconds), "hr": 150, "ele": None}
+            for seconds in range(0, 61, 10)
+        ]
+        parsed = _finalise_file_metrics(
+            start=start,
+            moving_time=60,
+            elapsed_time=60,
+            distance=500,
+            elevation_gain=0,
+            average_hr=150,
+            maximum_hr=160,
+            sport_type="RIDE",
+            samples=samples,
+            lthr=160,
+            user_max_hr=190,
+            resting_hr=50,
+            user_timezone="Asia/Krasnoyarsk",
+        )
+        self.assertEqual(parsed["start_date"], start.replace(tzinfo=None).isoformat())
+        expected_local = start.astimezone(ZoneInfo("Asia/Krasnoyarsk")).replace(tzinfo=None)
+        self.assertEqual(parsed["start_date_local"], expected_local.isoformat())
+
+    def test_nonzero_file_offset_is_preserved_as_local_wall_time(self):
+        offset = timezone(timedelta(hours=2))
+        start = datetime.now(timezone.utc).astimezone(offset).replace(microsecond=0) - timedelta(minutes=3)
+        samples = [
+            {"time": start + timedelta(seconds=seconds), "hr": 150, "ele": None}
+            for seconds in range(0, 61, 10)
+        ]
+        parsed = _finalise_file_metrics(
+            start=start,
+            moving_time=60,
+            elapsed_time=60,
+            distance=500,
+            elevation_gain=0,
+            average_hr=150,
+            maximum_hr=160,
+            sport_type="RIDE",
+            samples=samples,
+            lthr=160,
+            user_max_hr=190,
+            resting_hr=50,
+            user_timezone="UTC",
+        )
+        self.assertEqual(parsed["start_date_local"], start.replace(tzinfo=None).isoformat())
+        self.assertEqual(parsed["start_date"], start.astimezone(timezone.utc).replace(tzinfo=None).isoformat())
+
+    def test_rejects_future_and_older_than_thirty_days(self):
+        for start in (
+            datetime.now(timezone.utc) + timedelta(days=1),
+            datetime.now(timezone.utc) - timedelta(days=31),
+        ):
+            samples = [
+                {"time": start + timedelta(seconds=seconds), "hr": 150, "ele": None}
+                for seconds in range(0, 61, 10)
+            ]
+            with self.subTest(start=start), self.assertRaises(InvalidActivityFile):
+                _finalise_file_metrics(
+                    start=start, moving_time=60, elapsed_time=60, distance=100,
+                    elevation_gain=0, average_hr=150, maximum_hr=160,
+                    sport_type="RIDE", samples=samples, lthr=160,
+                    user_max_hr=190, resting_hr=50,
+                )
+
+    def test_requires_heart_rate_stream_covering_half_duration(self):
+        start = datetime.now(timezone.utc) - timedelta(hours=1)
+        samples = [
+            {"time": start + timedelta(seconds=seconds), "hr": 150, "ele": None}
+            for seconds in (0, 10, 100, 200)
+        ]
+        with self.assertRaisesRegex(InvalidActivityFile, "не менее 50%"):
+            _finalise_file_metrics(
+                start=start, moving_time=200, elapsed_time=200, distance=100,
+                elevation_gain=0, average_hr=150, maximum_hr=160,
+                sport_type="RIDE", samples=samples, lthr=160,
+                user_max_hr=190, resting_hr=50,
+            )
+
+    def test_duration_cannot_exceed_sample_span_by_more_than_twenty_percent(self):
+        start = datetime.now(timezone.utc) - timedelta(hours=1)
+        samples = [
+            {"time": start + timedelta(seconds=seconds), "hr": 150, "ele": None}
+            for seconds in range(0, 61, 10)
+        ]
+        with self.assertRaisesRegex(InvalidActivityFile, "более чем на 20%"):
+            _finalise_file_metrics(
+                start=start, moving_time=100, elapsed_time=100, distance=100,
+                elevation_gain=0, average_hr=150, maximum_hr=160,
+                sport_type="RIDE", samples=samples, lthr=160,
+                user_max_hr=190, resting_hr=50,
+            )
+
+    def test_xml_rejects_non_utf8_declaration(self):
+        with self.assertRaisesRegex(InvalidActivityFile, "UTF-8"):
+            _decode_xml_utf8(b'<?xml version="1.0" encoding="ISO-8859-1"?><gpx></gpx>')
+
     def test_extension_must_match_content(self):
         with self.assertRaises(UnsupportedActivityFile):
             _parse_activity_file(b"<TrainingCenterDatabase></TrainingCenterDatabase>", ".gpx", None, None)
@@ -152,6 +256,19 @@ class HeartRateSettingsTests(unittest.TestCase):
             HeartRateSettingsUpdate(max_hr=241)
         with self.assertRaises(ValidationError):
             HeartRateSettingsUpdate(resting_hr=101)
+
+    def test_uploaded_training_load_uses_the_configured_attenuation(self):
+        load, source = resolve_training_load({
+            "training_load": 100,
+            "moving_time": 3600,
+            "intensity": 0.8,
+            "sport_type": "RIDE",
+            "is_manual": False,
+            "source": "UPLOAD_TELEGRAM",
+        })
+        self.assertAlmostEqual(UPLOAD_TSS_FACTOR, 0.8)
+        self.assertAlmostEqual(load, 80.0)
+        self.assertEqual(source, "estimated")
 
     def test_preview_token_is_signed_and_expiring(self):
         payload = {
