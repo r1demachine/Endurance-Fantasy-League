@@ -1,0 +1,98 @@
+"""Tests for uploaded activity parsing, calculated HR load and preview-token integrity."""
+import os
+import unittest
+from datetime import datetime, timezone
+from cryptography.fernet import Fernet
+from pydantic import ValidationError
+
+os.environ.setdefault("DATABASE_URL", "sqlite:////tmp/efl-upload-tests.db")
+os.environ.setdefault("JWT_SECRET", "unit-test-jwt-secret-value-longer-than-32-characters")
+os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+os.environ.setdefault("REDIS_URL", "")
+
+from app.routers.upload import (
+    HeartRateSettingsUpdate,
+    InvalidActivityFile,
+    UnsupportedActivityFile,
+    _decode_preview,
+    _encode_preview,
+    _parse_activity_file,
+)
+
+
+class ActivityFileParsingTests(unittest.TestCase):
+    def test_tcx_extracts_duration_distance_hr_and_hard_time(self):
+        tcx = b"""<?xml version="1.0"?>
+        <TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2">
+          <Activities><Activity Sport="Biking"><Id>2026-10-01T10:00:00Z</Id><Lap StartTime="2026-10-01T10:00:00Z">
+            <TotalTimeSeconds>20</TotalTimeSeconds><DistanceMeters>200</DistanceMeters>
+            <Track><Trackpoint><Time>2026-10-01T10:00:00Z</Time><AltitudeMeters>100</AltitudeMeters><HeartRateBpm><Value>170</Value></HeartRateBpm></Trackpoint>
+            <Trackpoint><Time>2026-10-01T10:00:10Z</Time><AltitudeMeters>102</AltitudeMeters><HeartRateBpm><Value>175</Value></HeartRateBpm></Trackpoint>
+            <Trackpoint><Time>2026-10-01T10:00:20Z</Time><AltitudeMeters>101</AltitudeMeters><HeartRateBpm><Value>180</Value></HeartRateBpm></Trackpoint></Track>
+          </Lap></Activity></Activities>
+        </TrainingCenterDatabase>"""
+        parsed = _parse_activity_file(tcx, ".tcx", 165, 195)
+        self.assertEqual(parsed["sport_type"], "RIDE")
+        self.assertEqual(parsed["moving_time"], 20)
+        self.assertEqual(parsed["distance"], 200)
+        self.assertEqual(parsed["elevation_gain"], 2)
+        self.assertEqual(parsed["hard_secs"], 20)
+        self.assertGreater(parsed["training_load"], 0)
+        self.assertEqual(parsed["start_date"], "2026-10-01T10:00:00")
+
+    def test_extension_must_match_content(self):
+        with self.assertRaises(UnsupportedActivityFile):
+            _parse_activity_file(b"<TrainingCenterDatabase></TrainingCenterDatabase>", ".gpx", None, None)
+
+    def test_archive_and_short_files_are_rejected(self):
+        with self.assertRaises(InvalidActivityFile):
+            _parse_activity_file(b"tiny", ".tcx", None, None)
+        with self.assertRaises(UnsupportedActivityFile):
+            _parse_activity_file(b"PK\x03\x04" + b"\0" * 32, ".fit", None, None)
+
+    def test_gpx_extracts_recorded_heart_rate(self):
+        gpx = b"""<?xml version="1.0"?>
+        <gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
+          <trk><name>not persisted</name><trkseg>
+            <trkpt lat="55.0" lon="37.0"><ele>100</ele><time>2026-10-01T10:00:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>170</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+            <trkpt lat="55.001" lon="37.001"><ele>103</ele><time>2026-10-01T10:00:10Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>175</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+            <trkpt lat="55.002" lon="37.002"><ele>101</ele><time>2026-10-01T10:00:20Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>180</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+          </trkseg></trk>
+        </gpx>"""
+        parsed = _parse_activity_file(gpx, ".gpx", 165, 195)
+        self.assertEqual(parsed["moving_time"], 20)
+        self.assertGreater(parsed["distance"], 0)
+        self.assertEqual(parsed["hard_secs"], 20)
+        self.assertEqual(parsed["average_heartrate"], 175)
+
+    def test_doctype_and_entity_declarations_are_rejected(self):
+        gpx = b'<!DOCTYPE gpx [<!ENTITY x "x">]><gpx></gpx>'
+        with self.assertRaises(InvalidActivityFile):
+            _parse_activity_file(gpx, ".gpx", None, None)
+
+
+class HeartRateSettingsTests(unittest.TestCase):
+    def test_sensible_boundaries(self):
+        self.assertEqual(HeartRateSettingsUpdate(lthr=80, max_hr=100).lthr, 80)
+        self.assertEqual(HeartRateSettingsUpdate(lthr=220, max_hr=240).max_hr, 240)
+        with self.assertRaises(ValidationError):
+            HeartRateSettingsUpdate(lthr=79)
+        with self.assertRaises(ValidationError):
+            HeartRateSettingsUpdate(max_hr=241)
+
+    def test_preview_token_is_signed_and_expiring(self):
+        payload = {
+            "user_id": 7,
+            "nonce": "nonce-test",
+            "expires_at": int(datetime.now(timezone.utc).timestamp()) + 60,
+            "start_date": "2026-10-01T10:00:00",
+        }
+        token = _encode_preview(payload)
+        self.assertEqual(_decode_preview(token)["user_id"], 7)
+        altered = token[:-1] + ("A" if token[-1] != "A" else "B")
+        with self.assertRaises(Exception):
+            _decode_preview(altered)
+
+
+if __name__ == "__main__":
+    unittest.main()

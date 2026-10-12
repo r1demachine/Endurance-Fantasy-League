@@ -173,7 +173,8 @@ def quality_events_week(day_acts_by_date: dict, medians_by_sport: dict) -> list[
         for a in acts:
             if float(a.get("moving_time") or 0.0) < MIN_TRAINING_DURATION_SECONDS:
                 continue
-            if a.get("load_source") == "real" and float(a.get("intensity") or 0.0) >= QUALITY_IF_THRESHOLD:
+            hr_hard = int(a.get("hard_secs") or 0) >= 300 and a.get("load_source") != "manual"
+            if hr_hard or (a.get("load_source") == "real" and float(a.get("intensity") or 0.0) >= QUALITY_IF_THRESHOLD):
                 hard = True
             med = medians_by_sport.get(str(a.get("sport_type") or "").upper())
             if (

@@ -243,7 +243,8 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
             "is_manual": bool(a.is_manual),
         })
         a.tss = round(tss, 2)
-        a.tss_estimated = (source == "estimated")
+        # HR-derived TSS from uploaded files is useful for effort XP, but remains an estimate.
+        a.tss_estimated = (source == "estimated") or (getattr(a, "source", None) == "UPLOAD_SITE")
         a.base_xp = None
         a.rate_per_hour = None
         a.sleep_multiplier = None
@@ -387,7 +388,7 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
         if ws >= activation_ws:
             day_dicts = {
                 d: [{
-                    "moving_time": a.moving_time, "intensity": a.intensity,
+                    "moving_time": a.moving_time, "intensity": a.intensity, "hard_secs": a.hard_secs or 0,
                     "load_source": "estimated" if a.tss_estimated else "real",
                     "sport_type": a.sport_type, "id": a.id,
                 } for a in info["acts"]]
