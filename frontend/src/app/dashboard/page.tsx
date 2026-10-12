@@ -304,6 +304,7 @@ export default function Dashboard() {
   const [boardsLoaded, setBoardsLoaded] = useState(false);
   const [isAuthed, setIsAuthed] = useState(false);
   const [pauseDialogOpen, setPauseDialogOpen] = useState(false);
+  const [pauseNow, setPauseNow] = useState(0);
   const [pauseBusy, setPauseBusy] = useState(false);
   const [pauseError, setPauseError] = useState("");
   const [dashboardError, setDashboardError] = useState("");
@@ -669,7 +670,7 @@ export default function Dashboard() {
               onNextWeek={() => navigateWeek("next")}
               canGoPrevious={canGoPrevious}
               canGoNext={canGoNext}
-              onPauseClick={() => { setPauseError(""); setPauseDialogOpen(true); }}
+              onPauseClick={() => { setPauseNow(Date.now()); setPauseError(""); setPauseDialogOpen(true); }}
             />
             <AnimatePresence>
               {pauseDialogOpen && (
@@ -678,6 +679,7 @@ export default function Dashboard() {
                   onSubmit={handlePauseSubmit}
                   busy={pauseBusy}
                   error={pauseError}
+                  now={pauseNow}
                   pauseSetAt={userData?.user?.pause_set_at ?? null}
                   pausedUntil={userData?.user?.paused_until ?? null}
                 />
