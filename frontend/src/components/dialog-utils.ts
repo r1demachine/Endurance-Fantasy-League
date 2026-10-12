@@ -26,6 +26,17 @@ export function isConfirmDialogValid(values: {
     (!requirePassword || password.trim().length > 0);
 }
 
+export async function submitConfirmPayload(
+  values: { confirmation?: string; password?: string },
+  requirements: { requireDelete?: boolean; requirePassword?: boolean },
+  onConfirm: (payload: { confirmation: string; password: string }) => void | Promise<void>,
+): Promise<boolean> {
+  const payload = buildConfirmPayload(values, requirements);
+  if (!payload) return false;
+  await onConfirm(payload);
+  return true;
+}
+
 export function buildConfirmPayload(
   values: { confirmation?: string; password?: string },
   requirements: { requireDelete?: boolean; requirePassword?: boolean } = {},
