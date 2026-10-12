@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import XpTooltip from "@/components/XpTooltip";
 import { PauseDialog } from "@/components/Modal";
-import { getApiErrorMessage, parsePauseWeeks } from "@/components/dialog-utils";
+import { getApiErrorMessage, parsePauseDate, parsePauseWeeks } from "@/components/dialog-utils";
 
 type Tone = "default" | "yellow" | "orange" | "indigo";
 
@@ -514,7 +514,8 @@ export default function Dashboard() {
       return;
     }
     const endTimestamp = userData?.user?.paused_until;
-    const currentlyPaused = typeof endTimestamp === "string" && Date.parse(endTimestamp) > Date.now();
+    const parsedPauseEnd = parsePauseDate(typeof endTimestamp === "string" ? endTimestamp : null);
+    const currentlyPaused = Boolean(parsedPauseEnd && parsedPauseEnd.getTime() > Date.now());
     if (validWeeks === 0 && !currentlyPaused) {
       setPauseError("Сейчас активной паузы нет.");
       return;
