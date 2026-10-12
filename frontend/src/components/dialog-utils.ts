@@ -69,6 +69,14 @@ export function formatPauseDate(value: string | null, locale = "ru-RU"): string 
   }).format(date);
 }
 
+export function shouldCloseFromBackdrop(
+  isBackdropTarget: boolean,
+  closeOnBackdrop: boolean,
+  preventClose: boolean,
+): boolean {
+  return isBackdropTarget && closeOnBackdrop && !preventClose;
+}
+
 type FocusableElement = HTMLElement;
 interface DialogLike {
   querySelectorAll: (selector: string) => ArrayLike<FocusableElement>;
