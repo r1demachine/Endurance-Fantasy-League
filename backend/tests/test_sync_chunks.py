@@ -18,6 +18,7 @@ from app.models import SyncProgress, User
 from app.services.intervals import _month_ranges, _split_range, _records, fetch_activities_for_user
 from app.routers.sync import (
     _claim_sync_progress,
+    _claim_sync_progress_in_worker,
     _earliest_sync_date,
     _has_invalid_since_query,
     _progress_payload,
@@ -129,6 +130,9 @@ class SyncChunkTests(unittest.TestCase):
             second.expire_all()
             still_active = second.query(SyncProgress).filter_by(user_id=user.id).one()
             self.assertTrue(still_active.active)
+
+            # The production wrapper claims with an independent SessionLocal session.
+            self.assertFalse(_claim_sync_progress_in_worker(user.id, 24))
         finally:
             first.close()
             second.close()

@@ -671,6 +671,27 @@ def _progress_payload(row: SyncProgress | None) -> dict:
     }
 
 
+def _claim_sync_progress_in_worker(user_id: int, months_total: int) -> bool:
+    """Claim a sync using an independent DB session in the threadpool."""
+    session = SessionLocal()
+    try:
+        return _claim_sync_progress(session, user_id, months_total)
+    finally:
+        session.close()
+
+
+def _has_prior_intervals_activity(user_id: int) -> bool:
+    """Perform this sync eligibility query outside the async event loop."""
+    session = SessionLocal()
+    try:
+        return session.query(Activity.id).filter(
+            Activity.user_id == user_id,
+            Activity.source == "INTERVALS",
+        ).first() is not None
+    finally:
+        session.close()
+
+
 def _claim_sync_progress(db: Session, user_id: int, months_total: int) -> bool:
     """Serialize syncs per user across app workers by locking the existing User row."""
     try:
@@ -1040,7 +1061,10 @@ async def sync_activities(
                 detail=f"Полный импорт доступен не чаще одного раза в час. Повтори через {max(1, remaining // 60 + 1)} мин.",
             )
 
-    if not _claim_sync_progress(db, user_id, len(month_ranges)):
+    claimed = await run_in_threadpool(
+        _claim_sync_progress_in_worker, user_id, len(month_ranges)
+    )
+    if not claimed:
         raise HTTPException(status_code=409, detail="Синхронизация уже выполняется")
 
     final_status = "error"
@@ -1049,11 +1073,9 @@ async def sync_activities(
 
     try:
         # From this point onward every exception passes through the active-reset finally block.
-        had_prior_intervals_activity = db.query(Activity.id).filter(
-            Activity.user_id == user_id,
-            Activity.source == "INTERVALS",
-        ).first() is not None
-        db.commit()
+        had_prior_intervals_activity = await run_in_threadpool(
+            _has_prior_intervals_activity, user_id
+        )
         allow_week_notifications = bool(had_prior_intervals_activity and not full_sync)
         from ..services.intervals import fetch_activities_for_user, fetch_wellness_for_user
 
