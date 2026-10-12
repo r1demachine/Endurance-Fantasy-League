@@ -695,25 +695,28 @@ def _decode_preview(token: str) -> dict:
         raise HTTPException(status_code=422, detail="Предпросмотр истёк или недействителен. Выбери файл и загрузи его заново.") from exc
 
 
-def _find_intervals_duplicate(db: Session, user_id: int, start_date: datetime, moving_time: int) -> Activity | None:
-    return (
-        db.query(Activity)
-        .filter(
-            Activity.user_id == user_id,
-            Activity.source == "INTERVALS",
-            Activity.start_date >= start_date - timedelta(minutes=5),
-            Activity.start_date <= start_date + timedelta(minutes=5),
-            Activity.moving_time >= max(1, int(moving_time * 0.90)),
-            Activity.moving_time <= int(moving_time * 1.10),
-        )
-        .order_by(Activity.start_date.asc())
-        .first()
+def _find_intervals_duplicate(
+    db: Session,
+    user_id: int,
+    start_date: datetime,
+    moving_time: int,
+    start_date_local: datetime | None = None,
+    sources: tuple[str, ...] = ("INTERVALS", "UPLOAD_SITE", "UPLOAD_TELEGRAM"),
+) -> Activity | None:
+    from ..services.activity_dedupe import find_matching_activity
+    return find_matching_activity(
+        db, user_id, start_date, start_date_local, moving_time, sources=sources,
     )
 
 
 @router.get("/profile/heart-rate")
 def get_heart_rate_settings(current: User = Depends(get_current_user)):
-    return {"lthr": current.lthr, "max_hr": current.max_hr, "resting_hr": current.resting_hr}
+    return {
+        "lthr": current.lthr,
+        "max_hr": current.max_hr,
+        "resting_hr": current.resting_hr,
+        "timezone_name": current.timezone_name or "UTC",
+    }
 
 
 @router.patch("/profile/heart-rate")
@@ -724,21 +727,59 @@ def update_heart_rate_settings(
 ):
     fields = data.model_fields_set
     if not fields:
-        raise HTTPException(status_code=422, detail="Укажи LTHR и/или максимальный пульс.")
+        raise HTTPException(status_code=422, detail="Укажи пульсовые пороги или часовой пояс.")
+
     next_lthr = data.lthr if "lthr" in fields else current.lthr
     next_max_hr = data.max_hr if "max_hr" in fields else current.max_hr
-    if next_lthr is not None and next_max_hr is not None and next_lthr >= next_max_hr:
-        raise HTTPException(status_code=422, detail="LTHR должен быть ниже максимального пульса.")
-    if "lthr" in fields:
-        current.lthr = data.lthr
-    if "max_hr" in fields:
-        current.max_hr = data.max_hr
-    if "resting_hr" in fields:
-        current.resting_hr = data.resting_hr
+    next_resting_hr = data.resting_hr if "resting_hr" in fields else current.resting_hr
+    next_timezone = data.timezone_name if "timezone_name" in fields else (current.timezone_name or "UTC")
+    try:
+        ZoneInfo(next_timezone or "UTC")
+    except (ZoneInfoNotFoundError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Укажи корректный IANA часовой пояс, например Europe/Stockholm.") from exc
+
+    if next_resting_hr is not None and next_lthr is not None and next_max_hr is not None:
+        if not (next_resting_hr < next_lthr < next_max_hr):
+            raise HTTPException(status_code=422, detail="Требуется resting HR < LTHR < max HR.")
+        if not (0.75 * next_max_hr <= next_lthr <= 0.97 * next_max_hr):
+            raise HTTPException(status_code=422, detail="LTHR должен составлять 75–97% от max HR.")
+
+    hr_changed = (
+        next_lthr != current.lthr
+        or next_max_hr != current.max_hr
+        or next_resting_hr != current.resting_hr
+    )
+    if hr_changed:
+        from ..services.activity_upload import _settings_day_start_utc
+        day_start = _settings_day_start_utc(current)
+        changed_today = db.query(HeartRateSettingsHistory.id).filter(
+            HeartRateSettingsHistory.user_id == current.id,
+            HeartRateSettingsHistory.changed_at >= day_start,
+        ).first()
+        if changed_today:
+            raise HTTPException(status_code=429, detail="Пульсовые настройки можно менять не чаще одного раза в день.")
+
+        current.lthr = next_lthr
+        current.max_hr = next_max_hr
+        current.resting_hr = next_resting_hr
+        db.add(HeartRateSettingsHistory(
+            user_id=current.id,
+            changed_at=datetime.utcnow(),
+            lthr=next_lthr,
+            max_hr=next_max_hr,
+            resting_hr=next_resting_hr,
+        ))
+
+    current.timezone_name = next_timezone or "UTC"
     db.commit()
     db.refresh(current)
-    return {"lthr": current.lthr, "max_hr": current.max_hr, "resting_hr": current.resting_hr, "saved": True}
-
+    return {
+        "lthr": current.lthr,
+        "max_hr": current.max_hr,
+        "resting_hr": current.resting_hr,
+        "timezone_name": current.timezone_name,
+        "saved": True,
+    }
 
 @router.post("/upload/activity")
 @limiter.limit("10/hour", key_func=_upload_rate_key)
@@ -761,11 +802,10 @@ async def upload_activity_preview(
         raise HTTPException(status_code=413, detail="Размер файла превышает 5 МБ.")
 
     try:
-        parsed = await asyncio.wait_for(
-            asyncio.to_thread(_parse_activity_file, content, extension, current.lthr, current.max_hr, current.resting_hr),
-            timeout=PARSE_TIMEOUT_SECONDS,
+        parsed = await _parse_activity_file_bounded(
+            content, extension, current.lthr, current.max_hr, current.resting_hr, current.timezone_name
         )
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         raise HTTPException(status_code=408, detail="Разбор файла занял слишком много времени. Попробуй экспортировать файл заново.") from exc
     except UnsupportedActivityFile as exc:
         raise HTTPException(status_code=415, detail=str(exc)) from exc
@@ -785,7 +825,9 @@ async def upload_activity_preview(
 
 
 @router.post("/upload/activity/confirm")
+@limiter.limit("5/hour", key_func=_upload_rate_key)
 def confirm_activity_upload(
+    request: Request,
     data: ConfirmUploadInput = Body(...),
     current: User = Depends(require_privacy_consent),
     db: Session = Depends(get_db),
@@ -793,7 +835,7 @@ def confirm_activity_upload(
     preview = _decode_preview(data.preview_token)
     if preview.get("user_id") != current.id:
         raise HTTPException(status_code=403, detail="Этот предпросмотр создан другим пользователем.")
-    required = ("file_sha256", "start_date", "moving_time", "elapsed_time", "sport_type", "training_load", "intensity")
+    required = ("file_sha256", "start_date", "start_date_local", "moving_time", "elapsed_time", "sport_type", "training_load", "intensity")
     if any(key not in preview for key in required):
         raise HTTPException(status_code=422, detail="Предпросмотр неполный. Загрузи файл заново.")
 
@@ -809,19 +851,28 @@ def confirm_activity_upload(
         source=UPLOAD_SOURCE,
     )
     if status == "duplicate":
-        raise HTTPException(status_code=409, detail=reason or "Эта тренировка уже есть, повторно не сохранена.")
+        return JSONResponse(
+            status_code=409,
+            content={
+                "status": "duplicate",
+                "existing_activity_id": activity.id if activity else None,
+                "reason": reason or "Эта тренировка уже есть, повторно не сохранена.",
+            },
+        )
     if status == "rejected" or activity is None:
         raise HTTPException(status_code=422, detail=reason or "Не удалось принять тренировку.")
 
     db.refresh(activity)
     db.refresh(current)
     return {
+        "status": "created",
         "message": "Тренировка загружена, XP пересчитан.",
         "activity": {
             "id": activity.id,
             "name": activity.name,
             "source": activity.source,
             "start_date": activity.start_date.isoformat() if activity.start_date else None,
+            "start_date_local": activity.start_date_local.isoformat() if activity.start_date_local else None,
             "moving_time": activity.moving_time,
             "distance": activity.distance,
             "elevation_gain": activity.elevation_gain,
