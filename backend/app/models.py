@@ -35,6 +35,7 @@ class User(Base):
     last_full_sync_at = Column(DateTime, nullable=True)  # полный импорт: не чаще раза в час
     lthr = Column(Integer, nullable=True)  # пользовательский лактатный порог ЧСС
     max_hr = Column(Integer, nullable=True)  # максимальный пульс пользователя
+    resting_hr = Column(Integer, nullable=True)  # пульс в покое для HRSS/TRIMP
     
     # Устаревшие поля — оставим для совместимости, но не обязательны
     email = Column(String, unique=True, index=True, nullable=True)

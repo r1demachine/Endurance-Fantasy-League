@@ -12,7 +12,7 @@ import json
 import secrets
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
-from math import asin, cos, radians, sin, sqrt
+from math import asin, cos, exp, radians, sin, sqrt
 from pathlib import Path
 from statistics import mean
 from typing import Any
@@ -50,6 +50,7 @@ class InvalidActivityFile(ValueError):
 class HeartRateSettingsUpdate(BaseModel):
     lthr: int | None = Field(default=None, ge=80, le=220)
     max_hr: int | None = Field(default=None, ge=100, le=240)
+    resting_hr: int | None = Field(default=None, ge=30, le=100)
 
 
 class ConfirmUploadInput(BaseModel):
@@ -172,6 +173,7 @@ def _finalise_file_metrics(
     samples: list[dict],
     lthr: int | None,
     user_max_hr: int | None,
+    resting_hr: int | None = None,
 ) -> dict:
     times = [_parse_iso_datetime(s.get("time")) for s in samples]
     times = [t for t in times if t is not None]
@@ -212,23 +214,11 @@ def _finalise_file_metrics(
     if max_hr is not None and not 25 <= max_hr <= 240:
         max_hr = sample_max_hr
 
-    if lthr:
-        hr_threshold = float(lthr)
-        load_method = "lthr"
-    elif user_max_hr:
-        hr_threshold = float(user_max_hr) * 0.85
-        load_method = "max_hr_estimate"
-    elif avg_hr is not None:
-        hr_threshold = FALLBACK_LTHR
-        load_method = "duration_hr_estimate"
-    else:
-        hr_threshold = None
-        load_method = "duration_sport_estimate"
-
-    intensity = min(1.5, max(0.3, avg_hr / hr_threshold)) if avg_hr and hr_threshold else _sport_if(sport_type)
-    hr_tss = max(0.0, (float(moving) / 3600.0) * intensity ** 2 * 100.0)
-    hard_threshold = hr_threshold * 0.95 if hr_threshold else 0.80 * 180.0
-
+    # HRSS: normalized Banister TRIMP, the heart-rate load model used by Intervals.icu.
+    # One hour at LTHR is normalized to approximately 100 load points.
+    # After normalization the sex-specific coefficient cancels out; this uses
+    # the common 1.92 exponent. Without athlete-specific settings the result
+    # is explicitly marked as an estimate.
     ordered_samples = []
     for sample in samples:
         sample_time = _parse_iso_datetime(sample.get("time"))
@@ -236,10 +226,73 @@ def _finalise_file_metrics(
         if sample_time is not None and sample_hr is not None and 25 <= sample_hr <= 240:
             ordered_samples.append((sample_time, sample_hr))
     ordered_samples.sort(key=lambda item: item[0])
+
+    observed_max_hr = max(valid_hrs) if valid_hrs else max_hr
+    if user_max_hr is not None:
+        # If this activity exceeds the stored maximum, use the observed peak
+        # for its own load calculation while separately offering calibration.
+        formula_max_hr = float(max(user_max_hr, observed_max_hr or user_max_hr))
+    else:
+        # Fallback only until the athlete supplies a measured maximum HR.
+        formula_max_hr = float(max(190, observed_max_hr or 0))
+    formula_resting_hr = float(resting_hr if resting_hr is not None else 50)
+    formula_resting_hr = min(formula_resting_hr, formula_max_hr - 2)
+
+    if lthr is not None and formula_resting_hr < lthr < formula_max_hr:
+        hr_threshold = float(lthr)
+    else:
+        # Do not treat average HR as threshold. Estimate LTHR conservatively
+        # from max HR only when no usable user-specific threshold exists.
+        hr_threshold = formula_max_hr * 0.95
+    hr_threshold = min(formula_max_hr - 1, max(formula_resting_hr + 1, hr_threshold))
+
+    threshold_reserve = (hr_threshold - formula_resting_hr) / (formula_max_hr - formula_resting_hr)
+    threshold_weight = threshold_reserve * exp(1.92 * threshold_reserve)
+    hr_stress_seconds = 0.0
+    covered_seconds = 0.0
+
+    def _hr_weight(heart_rate: float) -> float:
+        # Clip HR to the physiological range just as the HRSS model does.
+        clipped_hr = min(formula_max_hr, max(formula_resting_hr, heart_rate))
+        reserve = (clipped_hr - formula_resting_hr) / (formula_max_hr - formula_resting_hr)
+        return reserve * exp(1.92 * reserve)
+
+    for (time_a, hr_a), (time_b, _) in zip(ordered_samples, ordered_samples[1:]):
+        seconds = (time_b - time_a).total_seconds()
+        # Never count large recording gaps as sustained effort.
+        if 0 < seconds <= 30:
+            hr_stress_seconds += _hr_weight(hr_a) * seconds
+            covered_seconds += seconds
+
+    enough_hr_stream = covered_seconds >= min(float(moving) * 0.5, 300.0)
+    if threshold_weight > 0 and enough_hr_stream:
+        hr_tss = (hr_stress_seconds / (threshold_weight * 3600.0)) * 100.0
+        if resting_hr is None:
+            load_method = "hrss_estimated_resting"
+        elif lthr is None or not (formula_resting_hr < lthr < formula_max_hr):
+            load_method = "hrss_estimated_threshold"
+        elif user_max_hr is None:
+            load_method = "hrss_estimated_max"
+        else:
+            load_method = "hrss"
+    elif threshold_weight > 0 and avg_hr is not None:
+        # Sparse GPX/TCX HR samples: apply average HR to moving time rather
+        # than falsely counting the unrecorded intervals as zero stress.
+        hr_tss = (_hr_weight(float(avg_hr)) / threshold_weight) * (float(moving) / 3600.0) * 100.0
+        load_method = "hrss_estimated_average_hr"
+    else:
+        # No usable HR: retain an explicit, low-confidence sport-duration estimate.
+        fallback_intensity = _sport_if(sport_type)
+        hr_tss = (float(moving) / 3600.0) * fallback_intensity ** 2 * 100.0
+        load_method = "duration_sport_estimate"
+
+    hr_tss = max(0.0, hr_tss)
+    intensity = min(1.5, max(0.3, sqrt(hr_tss / max(float(moving) / 3600.0 * 100.0, 1e-9))))
+    hard_threshold = hr_threshold * 0.95
+
     hard_secs = 0
     for (time_a, hr_a), (time_b, _) in zip(ordered_samples, ordered_samples[1:]):
         seconds = (time_b - time_a).total_seconds()
-        # A recording gap should not be counted as hard work.
         if 0 < seconds <= 30 and hr_a >= hard_threshold:
             hard_secs += int(round(seconds))
 
@@ -306,7 +359,7 @@ def _finalise_file_metrics(
     }
 
 
-def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None) -> dict:
+def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None, resting_hr: int | None = None) -> dict:
     from fitparse import FitFile
 
     try:
@@ -346,6 +399,7 @@ def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None) -> dict:
             samples=samples,
             lthr=lthr,
             user_max_hr=user_max_hr,
+            resting_hr=resting_hr,
         )
     except (InvalidActivityFile, UnsupportedActivityFile):
         raise
@@ -353,7 +407,7 @@ def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None) -> dict:
         raise InvalidActivityFile("FIT-файл повреждён или не содержит тренировку.") from exc
 
 
-def _parse_gpx(data: bytes, lthr: int | None, user_max_hr: int | None) -> dict:
+def _parse_gpx(data: bytes, lthr: int | None, user_max_hr: int | None, resting_hr: int | None = None) -> dict:
     if b"<!DOCTYPE" in data.upper() or b"<!ENTITY" in data.upper():
         raise InvalidActivityFile("GPX с DTD/ENTITY не поддерживается.")
     try:
@@ -383,6 +437,7 @@ def _parse_gpx(data: bytes, lthr: int | None, user_max_hr: int | None) -> dict:
             start=None, moving_time=None, elapsed_time=None, distance=None,
             elevation_gain=None, average_hr=None, maximum_hr=None,
             sport_type="WORKOUT", samples=samples, lthr=lthr, user_max_hr=user_max_hr,
+            resting_hr=resting_hr,
         )
     except (InvalidActivityFile, UnsupportedActivityFile):
         raise
@@ -390,7 +445,7 @@ def _parse_gpx(data: bytes, lthr: int | None, user_max_hr: int | None) -> dict:
         raise InvalidActivityFile("GPX-файл повреждён или не содержит трек тренировки.") from exc
 
 
-def _parse_tcx(data: bytes, lthr: int | None, user_max_hr: int | None) -> dict:
+def _parse_tcx(data: bytes, lthr: int | None, user_max_hr: int | None, resting_hr: int | None = None) -> dict:
     if b"<!DOCTYPE" in data.upper() or b"<!ENTITY" in data.upper():
         raise InvalidActivityFile("TCX с DTD/ENTITY не поддерживается.")
     try:
@@ -448,11 +503,11 @@ def _parse_tcx(data: bytes, lthr: int | None, user_max_hr: int | None) -> dict:
         start=start, moving_time=fallback_elapsed, elapsed_time=fallback_elapsed,
         distance=fallback_distance, elevation_gain=total_ascent,
         average_hr=None, maximum_hr=None, sport_type=sport,
-        samples=samples, lthr=lthr, user_max_hr=user_max_hr,
+        samples=samples, lthr=lthr, user_max_hr=user_max_hr, resting_hr=resting_hr,
     )
 
 
-def _parse_activity_file(data: bytes, extension: str, lthr: int | None, user_max_hr: int | None) -> dict:
+def _parse_activity_file(data: bytes, extension: str, lthr: int | None, user_max_hr: int | None, resting_hr: int | None = None) -> dict:
     extension = extension.lower()
     if extension not in ALLOWED_EXTENSIONS:
         raise UnsupportedActivityFile("Поддерживаются только файлы .fit, .gpx и .tcx.")
@@ -462,10 +517,10 @@ def _parse_activity_file(data: bytes, extension: str, lthr: int | None, user_max
         # FIT signature is bytes 8..11. Other binary formats are never unpacked.
         if data[8:12] != b".FIT":
             raise UnsupportedActivityFile("Расширение .fit не соответствует содержимому файла.")
-        return _parse_fit(data, lthr, user_max_hr)
+        return _parse_fit(data, lthr, user_max_hr, resting_hr)
     if extension == ".gpx":
-        return _parse_gpx(data, lthr, user_max_hr)
-    return _parse_tcx(data, lthr, user_max_hr)
+        return _parse_gpx(data, lthr, user_max_hr, resting_hr)
+    return _parse_tcx(data, lthr, user_max_hr, resting_hr)
 
 
 def _encode_preview(payload: dict) -> str:
@@ -513,7 +568,7 @@ def _find_intervals_duplicate(db: Session, user_id: int, start_date: datetime, m
 
 @router.get("/profile/heart-rate")
 def get_heart_rate_settings(current: User = Depends(get_current_user)):
-    return {"lthr": current.lthr, "max_hr": current.max_hr}
+    return {"lthr": current.lthr, "max_hr": current.max_hr, "resting_hr": current.resting_hr}
 
 
 @router.patch("/profile/heart-rate")
@@ -533,9 +588,11 @@ def update_heart_rate_settings(
         current.lthr = data.lthr
     if "max_hr" in fields:
         current.max_hr = data.max_hr
+    if "resting_hr" in fields:
+        current.resting_hr = data.resting_hr
     db.commit()
     db.refresh(current)
-    return {"lthr": current.lthr, "max_hr": current.max_hr, "saved": True}
+    return {"lthr": current.lthr, "max_hr": current.max_hr, "resting_hr": current.resting_hr, "saved": True}
 
 
 @router.post("/upload/activity")
@@ -560,7 +617,7 @@ async def upload_activity_preview(
 
     try:
         parsed = await asyncio.wait_for(
-            asyncio.to_thread(_parse_activity_file, content, extension, current.lthr, current.max_hr),
+            asyncio.to_thread(_parse_activity_file, content, extension, current.lthr, current.max_hr, current.resting_hr),
             timeout=PARSE_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError as exc:

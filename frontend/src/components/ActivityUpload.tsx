@@ -48,9 +48,11 @@ function getErrorMessage(error: unknown) {
   return "Не удалось загрузить тренировку. Проверь файл и попробуй ещё раз.";
 }
 const LOAD_METHODS: Record<string, string> = {
-  lthr: "по указанному LTHR",
-  max_hr_estimate: "по max HR (оценка порога)",
-  duration_hr_estimate: "по длительности и среднему пульсу (оценка)",
+  hrss: "HRSS / нормализованный TRIMP по ряду пульса",
+  hrss_estimated_resting: "HRSS, пульс в покое принят за 50 уд/мин",
+  hrss_estimated_threshold: "HRSS с оценочным LTHR",
+  hrss_estimated_max: "HRSS с оценочным max HR",
+  hrss_estimated_average_hr: "HRSS по среднему пульсу (ряд неполный)",
   duration_sport_estimate: "по длительности и виду спорта (оценка)",
 };
 
@@ -215,7 +217,7 @@ export default function ActivityUpload() {
             )}
             <div className="px-4 py-3 text-xs text-[#555]">
               Метод расчёта нагрузки: {LOAD_METHODS[metrics.load_method] ?? "оценка"}.
-              {metrics.load_method !== "lthr" && " Результат ориентировочный; точность улучшится после настройки пульсовых порогов в профиле."}
+              {metrics.load_method !== "hrss" && " Расчёт ориентировочный; точность улучшится после заполнения LTHR, max HR и пульса в покое."}
             </div>
           </div>
         )}

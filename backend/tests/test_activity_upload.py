@@ -41,6 +41,54 @@ class ActivityFileParsingTests(unittest.TestCase):
         self.assertGreater(parsed["training_load"], 0)
         self.assertEqual(parsed["start_date"], "2026-10-01T10:00:00")
 
+    def test_hrss_is_100_for_one_hour_at_lthr(self):
+        start = datetime(2026, 10, 1, 10, 0, 0, tzinfo=timezone.utc)
+        samples = [
+            {"time": start + timedelta(seconds=seconds), "hr": 180, "ele": None}
+            for seconds in range(0, 3601, 10)
+        ]
+        parsed = _finalise_file_metrics(
+            start=start,
+            moving_time=3600,
+            elapsed_time=3600,
+            distance=10000,
+            elevation_gain=0,
+            average_hr=180,
+            maximum_hr=180,
+            sport_type="RIDE",
+            samples=samples,
+            lthr=180,
+            user_max_hr=190,
+            resting_hr=50,
+        )
+        self.assertAlmostEqual(parsed["training_load"], 100.0, delta=0.5)
+        self.assertEqual(parsed["load_method"], "hrss")
+
+    def test_hrss_reference_ride_is_near_60_load_points(self):
+        start = datetime(2026, 10, 1, 10, 0, 0, tzinfo=timezone.utc)
+        samples = [
+            {"time": start + timedelta(seconds=seconds), "hr": 141, "ele": None}
+            for seconds in range(0, 5351, 10)
+        ]
+        samples[-1]["hr"] = 175
+        parsed = _finalise_file_metrics(
+            start=start,
+            moving_time=5350,
+            elapsed_time=5350,
+            distance=37010,
+            elevation_gain=161,
+            average_hr=141,
+            maximum_hr=175,
+            sport_type="RIDE",
+            samples=samples,
+            lthr=180,
+            user_max_hr=190,
+            resting_hr=50,
+        )
+        self.assertGreater(parsed["training_load"], 50)
+        self.assertLess(parsed["training_load"], 70)
+        self.assertEqual(parsed["load_method"], "hrss")
+
     def test_extension_must_match_content(self):
         with self.assertRaises(UnsupportedActivityFile):
             _parse_activity_file(b"<TrainingCenterDatabase></TrainingCenterDatabase>", ".gpx", None, None)
@@ -102,6 +150,8 @@ class HeartRateSettingsTests(unittest.TestCase):
             HeartRateSettingsUpdate(lthr=79)
         with self.assertRaises(ValidationError):
             HeartRateSettingsUpdate(max_hr=241)
+        with self.assertRaises(ValidationError):
+            HeartRateSettingsUpdate(resting_hr=101)
 
     def test_preview_token_is_signed_and_expiring(self):
         payload = {

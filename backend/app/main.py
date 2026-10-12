@@ -38,6 +38,8 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN lthr INTEGER"))
             if "max_hr" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN max_hr INTEGER"))
+            if "resting_hr" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN resting_hr INTEGER"))
             if "legacy_xp_offset" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN legacy_xp_offset FLOAT DEFAULT 0"))
             if "xp_migrated_at" not in cols:
