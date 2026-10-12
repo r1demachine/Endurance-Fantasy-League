@@ -94,6 +94,21 @@ class TelegramLinkAttempt(Base):
     )
 
 
+class SyncProgress(Base):
+    """Per-user sync progress persisted in DB so every app worker sees the same state."""
+    __tablename__ = "sync_progress"
+
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    active = Column(Boolean, nullable=False, default=False, server_default="false")
+    status = Column(String(32), nullable=False, default="idle", server_default="idle")
+    phase = Column(String(32), nullable=True)
+    months_done = Column(Integer, nullable=False, default=0, server_default="0")
+    months_total = Column(Integer, nullable=False, default=0, server_default="0")
+    current_month = Column(String(7), nullable=True)
+    message = Column(String(255), nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class HeartRateSettingsHistory(Base):
     """Immutable snapshots of validated heart-rate settings changes."""
     __tablename__ = "heart_rate_settings_history"

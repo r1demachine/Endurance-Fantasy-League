@@ -4,7 +4,7 @@ import httpx
 import logging
 import asyncio
 from datetime import date, datetime, timedelta
-from typing import Optional
+from typing import Optional, Callable, Awaitable
 from ..config import get_settings
 
 settings = get_settings()
@@ -127,39 +127,59 @@ async def _fetch_activity_chunk(client, url, api_key, start: date, end: date) ->
     return result
 
 
+ProgressCallback = Callable[[str, int, int, date], Awaitable[None]]
+
+
+async def _report_progress(
+    callback: ProgressCallback | None,
+    phase: str,
+    done: int,
+    total: int,
+    current_month: date,
+) -> None:
+    if callback is not None:
+        await callback(phase, done, total, current_month)
+
+
 async def fetch_activities_for_user(
     api_key: str, athlete_id: str, oldest: Optional[str] = None,
     newest: Optional[str] = None, limit: int = 200,
+    progress_callback: ProgressCallback | None = None,
 ) -> list[dict]:
     start = date.fromisoformat(oldest) if oldest else date.today() - timedelta(days=90)
     end = date.fromisoformat(newest) if newest else date.today()
     if start > end:
         return []
     url, result = f"{settings.INTERVALS_API_URL}/athlete/{athlete_id}/activities", []
+    chunks = _month_ranges(start, end)
     async with httpx.AsyncClient() as client:
-        for chunk_start, chunk_end in _month_ranges(start, end):
+        for index, (chunk_start, chunk_end) in enumerate(chunks, start=1):
             if result:
                 await asyncio.sleep(0.25)
             result.extend(await _fetch_activity_chunk(client, url, api_key, chunk_start, chunk_end))
+            await _report_progress(progress_callback, "activities", index, len(chunks), chunk_start)
     return result
 
 
 async def fetch_wellness_for_user(
     api_key: str, athlete_id: str, oldest: Optional[str] = None,
     newest: Optional[str] = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> list[dict]:
     start = date.fromisoformat(oldest) if oldest else date.today() - timedelta(days=30)
     end = date.fromisoformat(newest) if newest else date.today()
     if start > end:
         return []
     url, result = f"{settings.INTERVALS_API_URL}/athlete/{athlete_id}/wellness", []
+    chunks = _month_ranges(start, end)
     async with httpx.AsyncClient() as client:
-        for chunk_start, chunk_end in _month_ranges(start, end):
+        for index, (chunk_start, chunk_end) in enumerate(chunks, start=1):
             if result:
                 await asyncio.sleep(0.25)
             data = await _request_json(client, url, api_key,
                 {"oldest": chunk_start.isoformat(), "newest": chunk_end.isoformat()}, 20.0)
             result.extend(_records(data))
+            await _report_progress(progress_callback, "wellness", index, len(chunks), chunk_start)
     return result
 
 
