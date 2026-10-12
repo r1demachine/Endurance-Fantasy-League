@@ -189,6 +189,20 @@ class ActivityFileParsingTests(unittest.TestCase):
                 user_max_hr=190, resting_hr=50,
             )
 
+    def test_elapsed_duration_cannot_exceed_sample_span_by_more_than_twenty_percent(self):
+        start = datetime.now(timezone.utc) - timedelta(hours=1)
+        samples = [
+            {"time": start + timedelta(seconds=seconds), "hr": 150, "ele": None}
+            for seconds in range(0, 61, 10)
+        ]
+        with self.assertRaisesRegex(InvalidActivityFile, "более чем на 20%"):
+            _finalise_file_metrics(
+                start=start, moving_time=50, elapsed_time=100, distance=100,
+                elevation_gain=0, average_hr=150, maximum_hr=160,
+                sport_type="RIDE", samples=samples, lthr=160,
+                user_max_hr=190, resting_hr=50,
+            )
+
     def test_xml_rejects_non_utf8_declaration(self):
         with self.assertRaisesRegex(InvalidActivityFile, "UTF-8"):
             _decode_xml_utf8(b'<?xml version="1.0" encoding="ISO-8859-1"?><gpx></gpx>')

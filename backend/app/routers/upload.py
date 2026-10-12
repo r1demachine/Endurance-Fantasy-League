@@ -258,7 +258,7 @@ def _finalise_file_metrics(
         raise InvalidActivityFile("Можно загружать тренировки не старше 30 дней.")
     if measured_elapsed is None or measured_elapsed <= 0:
         raise InvalidActivityFile("Недостаточно временных точек трека для проверки длительности.")
-    if float(moving) > measured_elapsed * 1.2:
+    if max(float(moving), float(elapsed or moving)) > measured_elapsed * 1.2:
         raise InvalidActivityFile("Длительность превышает охват временных меток более чем на 20%.")
 
     distance_m = _number(distance) or _track_distance(samples)

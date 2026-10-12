@@ -8,6 +8,7 @@ type ParsedActivity = {
   name: string;
   sport_type: string;
   start_date: string;
+  start_date_local: string;
   moving_time: number;
   elapsed_time: number;
   distance: number;
@@ -35,16 +36,18 @@ function formatDuration(seconds: number) {
     : String(minutes) + ":" + String(remainder).padStart(2, "0");
 }
 function formatStart(value: string) {
-  const date = new Date(value.replace(/Z$/, "") + "Z");
+  // start_date_local is stored as a naive wall-clock timestamp; don't reinterpret it as UTC.
+  const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ru-RU");
 }
 function getErrorMessage(error: unknown) {
-  const response = (error as { response?: { data?: { detail?: unknown } } })?.response;
+  const response = (error as { response?: { data?: { detail?: unknown; reason?: unknown } } })?.response;
   const detail = response?.data?.detail;
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
     return detail.map((item) => String((item as { msg?: unknown }).msg ?? item)).join("; ");
   }
+  if (typeof response?.data?.reason === "string") return response.data.reason;
   return "Не удалось загрузить тренировку. Проверь файл и попробуй ещё раз.";
 }
 const LOAD_METHODS: Record<string, string> = {
@@ -192,7 +195,7 @@ export default function ActivityUpload() {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3">
               {[
-                { label: "Старт", value: formatStart(metrics.start_date) },
+                { label: "Старт", value: formatStart(metrics.start_date_local || metrics.start_date) },
                 { label: "Длительность", value: formatDuration(metrics.moving_time) },
                 { label: "Дистанция", value: metrics.distance >= 1000 ? (metrics.distance / 1000).toFixed(2) + " км" : String(Math.round(metrics.distance)) + " м" },
                 { label: "Набор", value: String(Math.round(metrics.elevation_gain)) + " м" },
