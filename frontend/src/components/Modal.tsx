@@ -51,9 +51,10 @@ export function Modal({
     document.body.style.overflow = "hidden";
 
     const dialog = dialogRef.current;
-    const initialFocus = dialog?.querySelector<HTMLElement>(
-      "[autofocus], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])",
-    );
+    const initialFocus = dialog?.querySelector<HTMLElement>("[autofocus]")
+      ?? dialog?.querySelector<HTMLElement>(
+        "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])",
+      );
     const frame = window.requestAnimationFrame(() => {
       (initialFocus ?? dialog)?.focus();
     });
@@ -83,7 +84,7 @@ export function Modal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4"
-      onMouseDown={(event) => {
+      onClick={(event) => {
         if (event.target === event.currentTarget && closeOnBackdrop && !preventClose) onClose();
       }}
     >
