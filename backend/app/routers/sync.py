@@ -838,17 +838,15 @@ async def sync_activities(
         if sleep_secs is None:
             prev = ((parsed.get("start_date_local") or parsed["start_date"]) - timedelta(days=1)).strftime("%Y-%m-%d")
             sleep_secs = sleep_by_date.get(prev)
-        from ..services.activity_dedupe import UPLOAD_SOURCES, find_matching_activity
-        uploaded_match = find_matching_activity(
+        from ..services.activity_dedupe import remove_matching_upload_duplicate
+        uploaded_match = remove_matching_upload_duplicate(
             db,
             current.id,
             parsed["start_date"],
             parsed.get("start_date_local"),
             int(parsed.get("moving_time") or 0),
-            sources=UPLOAD_SOURCES,
         )
         if uploaded_match is not None:
-            db.delete(uploaded_match)
             existing_rows.pop(uploaded_match.intervals_activity_id, None)
             merged_upload_count += 1
 

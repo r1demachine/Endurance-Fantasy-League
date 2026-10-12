@@ -45,3 +45,27 @@ def find_matching_activity(
         .order_by(Activity.start_date.asc(), Activity.id.asc())
         .first()
     )
+
+
+
+def remove_matching_upload_duplicate(
+    db: Session,
+    user_id: int,
+    start_date: datetime,
+    start_date_local: datetime | None,
+    moving_time: int,
+) -> Activity | None:
+    """Delete one uploaded copy when Intervals sends the canonical equivalent activity."""
+    uploaded = find_matching_activity(
+        db,
+        user_id,
+        start_date,
+        start_date_local,
+        moving_time,
+        sources=UPLOAD_SOURCES,
+    )
+    if uploaded is None:
+        return None
+    db.delete(uploaded)
+    db.flush()
+    return uploaded
