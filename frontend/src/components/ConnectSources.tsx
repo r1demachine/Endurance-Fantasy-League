@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { authApi } from "@/lib/auth";
 import { refreshUser } from "@/lib/apiCache";
+import { ConfirmDialog } from "@/components/Modal";
+import { getApiErrorMessage } from "@/components/dialog-utils";
 
 export type ConnectMessage = { type: "success" | "error" | "info"; text: string };
 
@@ -36,6 +38,8 @@ export default function ConnectSources({
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [disconnectDialogOpen, setDisconnectDialogOpen] = useState(false);
+  const [disconnectError, setDisconnectError] = useState("");
   const [sinceDate, setSinceDate] = useState(`${new Date().getFullYear()}-01-01`);
   const [syncProgress, setSyncProgress] = useState<{
     months_done: number;
@@ -88,33 +92,28 @@ export default function ConnectSources({
       setExpanded(null); // сворачиваем секцию после успеха
       setApiKey("");
       await refreshUser(true);
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      onMessage({ type: "error", text: `❌ ${typeof detail === "string" ? detail : err.message}` });
+    } catch (error: unknown) {
+      onMessage({ type: "error", text: getApiErrorMessage(error, "Не удалось подключить Intervals.") });
     } finally {
       setLoading(false);
     }
   };
 
   const handleDisconnect = async () => {
-    const confirmed = window.confirm(
-      "Отвязка удалит API-ключ, импортированные тренировки, данные сна/пульса, XP-события и недельные сводки. Аккаунт и друзья останутся. Продолжить?"
-    );
-    if (!confirmed) return;
-
     setDisconnecting(true);
+    setDisconnectError("");
     try {
       const res = await authApi.delete("/api/intervals/disconnect");
       setExpanded(null);
       setApiKey("");
+      setDisconnectDialogOpen(false);
       onMessage({
         type: "success",
-        text: res.data.message || "Intervals отвязан, импортированные данные удалены.",
+        text: typeof res.data.message === "string" ? res.data.message : "Intervals отвязан, импортированные данные удалены.",
       });
       await refreshUser(true);
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      onMessage({ type: "error", text: typeof detail === "string" ? detail : "Не удалось отвязать Intervals." });
+    } catch (error: unknown) {
+      setDisconnectError(getApiErrorMessage(error, "Не удалось отвязать Intervals."));
     } finally {
       setDisconnecting(false);
     }
@@ -134,9 +133,8 @@ export default function ConnectSources({
       });
       onMessage({ type: "success", text: `Синхронизация завершена: новых ${res.data.synced_count}, обновлено ${res.data.updated_count ?? 0}, +${Math.round(res.data.new_xp)} XP` });
       await refreshUser(true);
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      onMessage({ type: "error", text: typeof detail === "string" ? detail : "Ошибка синхронизации" });
+    } catch (error: unknown) {
+      onMessage({ type: "error", text: getApiErrorMessage(error, "Не удалось синхронизировать данные.") });
     } finally {
       setSyncing(false);
     }
@@ -156,7 +154,14 @@ export default function ConnectSources({
           status: res.data.status ?? null,
           message: res.data.message ?? null,
         });
-      } catch {}
+      } catch (error: unknown) {
+        if (!stopped) {
+          setSyncProgress((previous) => previous ? {
+            ...previous,
+            message: getApiErrorMessage(error, "Не удалось обновить прогресс синхронизации."),
+          } : previous);
+        }
+      }
     };
     void poll();
     const timer = window.setInterval(() => { void poll(); }, 1000);
@@ -291,7 +296,7 @@ export default function ConnectSources({
                       </button>
                       <button
                         type="button"
-                        onClick={handleDisconnect}
+                        onClick={() => { setDisconnectError(""); setDisconnectDialogOpen(true); }}
                         disabled={disconnecting || syncing}
                         className="w-full px-4 py-2 border-2 border-[#ff4b26] text-[#ff4b26] text-[10px] font-bold tracking-widest uppercase hover:bg-[#ff4b26] hover:text-white transition-colors disabled:opacity-50"
                       >
@@ -377,6 +382,20 @@ export default function ConnectSources({
           </AnimatePresence>
         </div>
       ))}
+      <AnimatePresence>
+        {disconnectDialogOpen && (
+          <ConfirmDialog
+            title="Отвязать Intervals?"
+            text="Будут удалены API-ключ, импортированные тренировки, данные сна и пульса, XP-события и недельные сводки. Аккаунт и друзья останутся."
+            confirmLabel="Отвязать и удалить данные"
+            danger
+            busy={disconnecting}
+            error={disconnectError}
+            onClose={() => setDisconnectDialogOpen(false)}
+            onConfirm={handleDisconnect}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
