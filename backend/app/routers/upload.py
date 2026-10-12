@@ -632,6 +632,7 @@ async def upload_activity_preview(
     token_payload = {
         "user_id": current.id,
         "nonce": secrets.token_hex(16),
+        "file_sha256": hashlib.sha256(content).hexdigest(),
         "expires_at": int(datetime.now(timezone.utc).timestamp()) + PREVIEW_TTL_SECONDS,
         **parsed,
     }
@@ -647,88 +648,26 @@ def confirm_activity_upload(
     preview = _decode_preview(data.preview_token)
     if preview.get("user_id") != current.id:
         raise HTTPException(status_code=403, detail="Этот предпросмотр создан другим пользователем.")
-    required = ("nonce", "start_date", "moving_time", "elapsed_time", "sport_type", "training_load", "intensity")
+    required = ("file_sha256", "start_date", "moving_time", "elapsed_time", "sport_type", "training_load", "intensity")
     if any(key not in preview for key in required):
         raise HTTPException(status_code=422, detail="Предпросмотр неполный. Загрузи файл заново.")
 
-    activity_id = f"UPLOAD_SITE:{preview['nonce']}"
-    if db.query(Activity).filter(
-        Activity.user_id == current.id,
-        Activity.intervals_activity_id == activity_id,
-    ).first():
-        raise HTTPException(status_code=409, detail="Эта тренировка уже была сохранена.")
-
-    try:
-        start_date = datetime.fromisoformat(str(preview["start_date"]))
-        moving_time = int(preview["moving_time"])
-        elapsed_time = int(preview.get("elapsed_time") or moving_time)
-        distance = max(0.0, float(preview.get("distance") or 0.0))
-        elevation = max(0.0, float(preview.get("elevation_gain") or 0.0))
-        training_load = max(0.0, float(preview["training_load"]))
-        intensity = min(1.5, max(0.3, float(preview["intensity"])))
-        hard_secs = max(0, int(preview.get("hard_secs") or 0))
-        average_hr = preview.get("average_heartrate")
-        maximum_hr = preview.get("max_heartrate")
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise HTTPException(status_code=422, detail="Данные предпросмотра повреждены. Загрузи файл заново.") from exc
-    if moving_time <= 0 or moving_time > 7 * 24 * 3600:
-        raise HTTPException(status_code=422, detail="Некорректная длительность тренировки.")
-
-    duplicate = _find_intervals_duplicate(db, current.id, start_date, moving_time)
-    if duplicate:
-        when = duplicate.start_date.strftime("%d.%m.%Y %H:%M") if duplicate.start_date else "время неизвестно"
-        mins = round((duplicate.moving_time or 0) / 60)
-        raise HTTPException(
-            status_code=409,
-            detail=f"Похожа тренировка из Intervals.icu уже есть: «{duplicate.name or 'Без названия'}», {when}, длительность {mins} мин.",
-        )
-
+    from ..services.activity_upload import create_activity_from_upload
     from ..services.xp import round_xp
-    from .sync import _recalculate_user_xp, _recalculate_user_xp_v6
 
     before_xp = float(current.total_xp or 0)
-    activity = Activity(
-        user_id=current.id,
-        intervals_activity_id=activity_id,
+    status, activity, reason = create_activity_from_upload(
+        db,
+        current,
+        preview,
+        str(preview.get("file_sha256") or ""),
         source=UPLOAD_SOURCE,
-        name=str(preview.get("name") or "Загруженная тренировка")[:255],
-        sport_type=str(preview.get("sport_type") or "WORKOUT")[:32],
-        distance=distance,
-        moving_time=moving_time,
-        elapsed_time=elapsed_time,
-        elevation_gain=elevation,
-        average_speed=(distance / moving_time) if distance and moving_time else None,
-        average_heartrate=float(average_hr) if average_hr is not None else None,
-        max_heartrate=float(maximum_hr) if maximum_hr is not None else None,
-        training_load=training_load,
-        intensity=intensity,
-        hard_secs=hard_secs,
-        is_manual=False,
-        start_date=start_date,
-        start_date_local=start_date,
-        indoor=False,
-        is_indoor=False,
     )
-    db.add(activity)
-    try:
-        # Apply only upward updates calculated from this uploaded activity.
-        updates = preview.get("auto_zone_updates", {})
-        proposed_max = updates.get("max_hr") if isinstance(updates, dict) else None
-        proposed_lthr = updates.get("lthr") if isinstance(updates, dict) else None
-        if isinstance(proposed_max, int) and current.max_hr is not None and current.max_hr < proposed_max <= 240:
-            current.max_hr = proposed_max
-        if isinstance(proposed_lthr, int) and current.lthr is not None and current.lthr < proposed_lthr <= 220:
-            if current.max_hr is None or proposed_lthr < current.max_hr:
-                current.lthr = proposed_lthr
-        db.flush()
-        if get_settings().XP_ENGINE == "v6":
-            _recalculate_user_xp_v6(db, current)
-        else:
-            _recalculate_user_xp(db, current)
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
+    if status == "duplicate":
+        raise HTTPException(status_code=409, detail=reason or "Эта тренировка уже есть, повторно не сохранена.")
+    if status == "rejected" or activity is None:
+        raise HTTPException(status_code=422, detail=reason or "Не удалось принять тренировку.")
+
     db.refresh(activity)
     db.refresh(current)
     return {
