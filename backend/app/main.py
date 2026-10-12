@@ -8,7 +8,7 @@ from slowapi.errors import RateLimitExceeded
 from .database import engine, Base
 from .config import get_settings
 from .rate_limit import limiter
-from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy, upload, duels, clubs
+from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy, upload, duels, clubs, telegram
 
 Base.metadata.create_all(bind=engine)
 
@@ -60,6 +60,15 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN privacy_consent_version VARCHAR(64)"))
             if "privacy_consent_at" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN privacy_consent_at TIMESTAMP"))
+            if "telegram_chat_id" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN telegram_chat_id VARCHAR(32)"))
+            if "telegram_notify" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN telegram_notify BOOLEAN NOT NULL DEFAULT FALSE"))
+            if "telegram_link_code" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN telegram_link_code VARCHAR(16)"))
+            if "telegram_link_expires" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN telegram_link_expires TIMESTAMP"))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram_chat_id ON users(telegram_chat_id)"))
             conn.execute(text("ALTER TABLE users ALTER COLUMN intervals_id DROP NOT NULL"))
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)"))
 
@@ -173,7 +182,7 @@ try:
                 "CREATE UNIQUE INDEX IF NOT EXISTS uq_club_join_pending ON club_join_requests(club_id, user_id)"
             ))
 
-    print("✅ Auto-migration complete (users + activities + weekly_summaries + notifications + duels + clubs)")
+    print("✅ Auto-migration complete (users + activities + weekly_summaries + notifications + duels + clubs + telegram)")
 except Exception as e:
     print(f"❌ Critical database migration failure: {type(e).__name__}: {e}")
     raise RuntimeError(
@@ -217,6 +226,7 @@ app.include_router(privacy.router)
 app.include_router(upload.router)
 app.include_router(duels.router)
 app.include_router(clubs.router)
+app.include_router(telegram.router)
 
 # Дуэли закрываются в тот же момент, что и лиги (wrap без правки огромного sync.py)
 _orig_close_league_week = sync._close_league_week
@@ -228,6 +238,11 @@ def _close_league_week_with_duels(db, week_start_d):
         finalize_duels_for_week(db, week_start_d)
     except Exception as _duel_err:  # noqa: BLE001
         print(f"⚠️ finalize_duels_for_week failed: {_duel_err}")
+    try:
+        from .services.telegram_week import notify_week_results
+        notify_week_results(db, week_start_d)
+    except Exception as _tg_err:  # noqa: BLE001
+        print(f"⚠️ telegram week notify failed: {_tg_err}")
 
 sync._close_league_week = _close_league_week_with_duels
 

@@ -1,5 +1,7 @@
 from datetime import date
 from functools import lru_cache
+from typing import Optional
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -9,7 +11,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
 
     # Redis (опционально: без него уведомления идут через in-memory брокер)
-    REDIS_URL: str | None = None
+    REDIS_URL: Optional[str] = None
     # Trust this header only on a deployment where Cloudflare overwrites it (Render).
     TRUST_CF_CONNECTING_IP: bool = False
 
@@ -35,6 +37,10 @@ class Settings(BaseSettings):
     XP_QUESTS_ACTIVATION_DATE: date = date(2026, 10, 12)
     # Increment when the data-processing consent text changes materially.
     PRIVACY_CONSENT_VERSION: str = "2026-10-11-v1"
+    # Telegram bot (optional). Without token webhook is disabled.
+    TELEGRAM_BOT_TOKEN: Optional[str] = None
+    TELEGRAM_WEBHOOK_SECRET: Optional[str] = None
+    TELEGRAM_BOT_USERNAME: Optional[str] = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

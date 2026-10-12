@@ -28,6 +28,12 @@ class User(Base):
     privacy_consent_version = Column(String(64), nullable=True)
     privacy_consent_at = Column(DateTime, nullable=True)
 
+    # Telegram-бот
+    telegram_chat_id = Column(String(32), unique=True, nullable=True, index=True)
+    telegram_notify = Column(Boolean, nullable=False, default=False, server_default="false")
+    telegram_link_code = Column(String(16), nullable=True, index=True)
+    telegram_link_expires = Column(DateTime, nullable=True)
+
     
     # Intervals.icu привязка (опциональна до первого sync)
     intervals_id = Column(String, unique=True, index=True, nullable=True)
