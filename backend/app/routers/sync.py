@@ -219,7 +219,7 @@ def _recalculate_user_xp(db: Session, user: User) -> None:
     user.level = level_from_xp(user.total_xp)
 
 
-def _recalculate_user_xp_v6(db: Session, user: User) -> None:
+def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications: bool = False) -> None:
     """XP v6: аддитивный пересчёт всей истории + upsert XPEvent/WeeklySummary.
 
     Недели: ВСЕ календарные недели от первой активности до текущей, нулевые тоже —
@@ -441,7 +441,7 @@ def _recalculate_user_xp_v6(db: Session, user: User) -> None:
     # 6) лиги: закрываем завершённые недели без лиги
     for ws in all_weeks:
         if ws < this_week:
-            _close_league_week(db, ws)
+            _close_league_week(db, ws, allow_week_notifications=allow_week_notifications)
 
     db.flush()
     events_sum = round_xp(sum(e.amount for e in events_by_key.values()))
@@ -504,81 +504,102 @@ def _user_division(db: Session, user: User, week_start_d: _date, week_load: floa
     return None, "provisional"
 
 
-def _close_league_week(db: Session, week_start_d: _date) -> None:
-    """Закрытие недельной лиги: дивизионы, ранги, зоны ↑↓. Идемпотентно."""
+def _close_league_week(
+    db: Session,
+    week_start_d: _date,
+    *,
+    allow_week_notifications: bool = False,
+) -> bool:
+    """Close a league once; return True only when a real league was formed."""
     from ..services import xp_v6 as X6
     from ..models import LeagueWeek, LeagueMembership
 
     ws_dt = datetime.combine(week_start_d, datetime.min.time())
     if db.query(LeagueWeek).filter(LeagueWeek.week_start == ws_dt).first():
-        return
+        return False
     summaries = (
         db.query(WeeklySummary)
         .filter(WeeklySummary.week_start == ws_dt, WeeklySummary.finalized == True)  # noqa: E712
         .all()
     )
     if not summaries:
-        return
+        return False
 
     entries = []
-    for s in summaries:
-        u = db.get(User, s.user_id)
-        if not u or _is_paused_week(u, week_start_d):
+    for summary in summaries:
+        user = db.get(User, summary.user_id)
+        if not user or _is_paused_week(user, week_start_d):
             continue
-        div, source = _division_for_week(db, u, week_start_d, s.actual_load or 0)
-        entries.append(dict(user=u, summ=s, div=div, source=source,
-                            score=s.league_score or 0))
-
-    # группы по дивизионам; provisional → общая группа "Open"
-    groups: dict = {}
-    for e in entries:
-        groups.setdefault(e["div"] or "Open", []).append(e)
-
-    # слияние малых групп с соседними (порядок дивизионов)
-    order = list(X6.DIVISION_NAMES) + ["Open"]
-    keys = [k for k in order if k in groups] + [k for k in groups if k not in order]
-    merged = []
-    for k in keys:
-        if merged and len(merged[-1][1]) < X6.MIN_LEAGUE_SIZE:
-            merged[-1][0].append(k)
-            merged[-1][1].extend(groups[k])
-        else:
-            merged.append(([k], list(groups[k])))
-    if len(merged) > 1 and len(merged[-1][1]) < X6.MIN_LEAGUE_SIZE:
-        merged[-2][0].extend(merged[-1][0])
-        merged[-2][1].extend(merged[-1][1])
-        merged.pop()
+        division, source = _division_for_week(db, user, week_start_d, summary.actual_load or 0)
+        entries.append({
+            "user": user, "summ": summary, "div": division,
+            "source": source, "score": summary.league_score or 0,
+        })
 
     formed = len(entries) >= X6.MIN_LEAGUE_SIZE
     db.add(LeagueWeek(week_start=ws_dt, status="closed" if formed else "not_formed"))
 
-    for group_keys, members in merged:
-        members.sort(key=lambda e: (-e["score"], e["user"].id))
-        n = len(members)
-        zone = X6.PROMOTION_ZONE if formed and n >= 2 * X6.PROMOTION_ZONE else 0
-        for i, e in enumerate(members):
-            u = e["user"]
-            protected = False
-            if u.xp_migrated_at:
-                weeks_since = (week_start_d - X6.week_start(u.xp_migrated_at.date())).days // 7
-                protected = weeks_since < X6.NEWCOMER_PROTECTION_WEEKS
-            promoted = bool(zone) and i < zone
-            demoted = bool(zone) and i >= n - zone and not protected
-            # реальная лестница: флаги двигают ступень дивизиона на следующую неделю
-            if promoted and u.division_current:
-                u.division_current = min(u.division_current + 1, len(X6.DIVISION_NAMES))
-            elif demoted and u.division_current:
-                u.division_current = max(u.division_current - 1, 1)
-            db.add(LeagueMembership(
-                week_start=ws_dt, user_id=u.id,
-                division=e["div"], division_source=e["source"],
-                league_score=round(e["score"], 2), rank=i + 1,
-                group_key="+".join(group_keys),
-                promoted=promoted, demoted=demoted, protected=protected,
-            ))
-            e["summ"].division = e["div"]
-            e["summ"].division_source = e["source"]
+    if entries:
+        groups: dict = {}
+        for entry in entries:
+            groups.setdefault(entry["div"] or "Open", []).append(entry)
+        order = list(X6.DIVISION_NAMES) + ["Open"]
+        keys = [key for key in order if key in groups] + [key for key in groups if key not in order]
+        merged = []
+        for key in keys:
+            if merged and len(merged[-1][1]) < X6.MIN_LEAGUE_SIZE:
+                merged[-1][0].append(key)
+                merged[-1][1].extend(groups[key])
+            else:
+                merged.append(([key], list(groups[key])))
+        if len(merged) > 1 and len(merged[-1][1]) < X6.MIN_LEAGUE_SIZE:
+            merged[-2][0].extend(merged[-1][0])
+            merged[-2][1].extend(merged[-1][1])
+            merged.pop()
+
+        for group_keys, members in merged:
+            members.sort(key=lambda entry: (-entry["score"], entry["user"].id))
+            count = len(members)
+            zone = X6.PROMOTION_ZONE if formed and count >= 2 * X6.PROMOTION_ZONE else 0
+            for index, entry in enumerate(members):
+                user = entry["user"]
+                protected = False
+                if user.xp_migrated_at:
+                    weeks_since = (week_start_d - X6.week_start(user.xp_migrated_at.date())).days // 7
+                    protected = weeks_since < X6.NEWCOMER_PROTECTION_WEEKS
+                promoted = bool(zone) and index < zone
+                demoted = bool(zone) and index >= count - zone and not protected
+                if promoted and user.division_current:
+                    user.division_current = min(user.division_current + 1, len(X6.DIVISION_NAMES))
+                elif demoted and user.division_current:
+                    user.division_current = max(user.division_current - 1, 1)
+                db.add(LeagueMembership(
+                    week_start=ws_dt, user_id=user.id, division=entry["div"],
+                    division_source=entry["source"], league_score=round(entry["score"], 2),
+                    rank=index + 1, group_key="+".join(group_keys), promoted=promoted,
+                    demoted=demoted, protected=protected,
+                ))
+                entry["summ"].division = entry["div"]
+                entry["summ"].division_source = entry["source"]
+
     db.commit()
+    if not formed:
+        return False
+
+    # These side effects run once, immediately after this week actually forms.
+    try:
+        from .duels import finalize_duels_for_week
+        finalize_duels_for_week(db, week_start_d)
+    except Exception as exc:  # noqa: BLE001
+        print(f"finalize_duels_for_week failed: {type(exc).__name__}")
+
+    if allow_week_notifications:
+        try:
+            from ..services.telegram_week import notify_week_results
+            notify_week_results(db, week_start_d)
+        except Exception as exc:  # noqa: BLE001
+            print(f"telegram week notify failed: {type(exc).__name__}")
+    return True
 
 _sync_progress: dict[int, dict] = {}
 
@@ -622,6 +643,13 @@ async def sync_activities(
     athlete_id = current.intervals_id
     
     today = _date.today()
+    had_prior_intervals_activity = db.query(Activity.id).filter(
+        Activity.user_id == current.id,
+        Activity.source == "INTERVALS",
+    ).first() is not None
+    allow_week_notifications = bool(
+        had_prior_intervals_activity and since is None and oldest is None and newest is None
+    )
     if since is not None:
         earliest = _date(today.year - 1, 1, 1)
         if since < earliest:
@@ -737,7 +765,7 @@ async def sync_activities(
     # ── Нет новых тренировок: сон всё равно обновился → пересчитываем ──
     if not activities_data:
         if get_settings().XP_ENGINE == "v6":
-            _recalculate_user_xp_v6(db, current)
+            _recalculate_user_xp_v6(db, current, allow_week_notifications=allow_week_notifications)
         else:
             _recalculate_user_xp(db, current)
         db.commit()

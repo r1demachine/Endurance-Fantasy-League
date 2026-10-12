@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Index, Boolean, Enum as SAEnum
+from sqlalchemy import Column, Integer, BigInteger, String, Float, DateTime, Date, ForeignKey, Index, Boolean, Enum as SAEnum
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -31,8 +31,9 @@ class User(Base):
     # Telegram-бот
     telegram_chat_id = Column(String(32), unique=True, nullable=True, index=True)
     telegram_notify = Column(Boolean, nullable=False, default=False, server_default="false")
-    telegram_link_code = Column(String(16), nullable=True, index=True)
+    telegram_link_code = Column(String(64), nullable=True, index=True)  # SHA-256 хеш одноразового кода
     telegram_link_expires = Column(DateTime, nullable=True)
+    telegram_last_notified_week = Column(Date, nullable=True)
 
     
     # Intervals.icu привязка (опциональна до первого sync)
@@ -68,6 +69,27 @@ class User(Base):
     
     __table_args__ = (
         Index('idx_users_total_xp', 'total_xp'),
+    )
+
+
+class TelegramWebhookUpdate(Base):
+    """Telegram update_id dedupe with bounded retention."""
+    __tablename__ = "telegram_webhook_updates"
+
+    update_id = Column(BigInteger, primary_key=True)
+    processed_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+
+class TelegramLinkAttempt(Base):
+    """Failed /link attempts, counted per chat ID over a rolling window."""
+    __tablename__ = "telegram_link_attempts"
+
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(String(32), nullable=False, index=True)
+    attempted_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index("idx_telegram_link_attempt_chat_time", "chat_id", "attempted_at"),
     )
 
 

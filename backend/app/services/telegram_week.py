@@ -1,54 +1,69 @@
-"""Синхронная рассылка итогов недели в Telegram (вызывается из close league)."""
-from datetime import datetime
+"""Idempotent asynchronous Telegram summary delivery for the last completed league week."""
+import asyncio
+from datetime import date, datetime, timedelta
 
-import httpx
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..models import User, WeeklySummary
+from .telegram import send_message
 
 
-def notify_week_results(db: Session, week_start_d) -> int:
-    """Шлёт итоги недели пользователям с telegram_notify=True."""
-    settings = get_settings()
-    if not settings.TELEGRAM_BOT_TOKEN:
+def latest_completed_week_start(today: date | None = None) -> date:
+    today = today or date.today()
+    current_week_start = today - timedelta(days=today.weekday())
+    return current_week_start - timedelta(days=7)
+
+
+async def _deliver(messages: list[tuple[str, str]]) -> None:
+    for chat_id, message in messages:
+        await send_message(chat_id, message)
+
+
+def notify_week_results(db: Session, week_start_d: date) -> int:
+    """Persist notification markers before enqueueing async Telegram delivery."""
+    if not get_settings().TELEGRAM_BOT_TOKEN:
         return 0
-    ws_dt = datetime.combine(week_start_d, datetime.min.time())
+
+    last_completed = latest_completed_week_start()
+    current_week_start = last_completed + timedelta(days=7)
+    if week_start_d != last_completed or week_start_d < current_week_start - timedelta(days=7):
+        return 0
+
+    week_datetime = datetime.combine(week_start_d, datetime.min.time())
     rows = (
         db.query(WeeklySummary, User)
         .join(User, User.id == WeeklySummary.user_id)
         .filter(
-            WeeklySummary.week_start == ws_dt,
+            WeeklySummary.week_start == week_datetime,
             WeeklySummary.finalized.is_(True),
             User.telegram_chat_id.isnot(None),
             User.telegram_notify.is_(True),
         )
         .all()
     )
-    sent = 0
-    token = settings.TELEGRAM_BOT_TOKEN
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    with httpx.Client(timeout=15.0) as client:
-        for summ, user in rows:
-            parts = [
-                f"Итоги недели {week_start_d.isoformat()}:",
-                f"{round(float(summ.total_xp or 0), 1)} XP",
-                f"Дней: {summ.training_days or 0}",
-            ]
-            if summ.league_score is not None:
-                parts.append(f"League score: {round(float(summ.league_score), 1)}")
-            text = "\n".join(parts)
-            try:
-                r = client.post(
-                    url,
-                    json={
-                        "chat_id": user.telegram_chat_id,
-                        "text": text,
-                        "disable_web_page_preview": True,
-                    },
-                )
-                if r.status_code < 400:
-                    sent += 1
-            except Exception:
-                pass
-    return sent
+    messages: list[tuple[str, str]] = []
+    for summary, user in rows:
+        if user.telegram_last_notified_week is not None and user.telegram_last_notified_week >= week_start_d:
+            continue
+        parts = [
+            f"Итоги недели {week_start_d.isoformat()}:",
+            f"{round(float(summary.total_xp or 0), 1)} XP",
+            f"Дней: {summary.training_days or 0}",
+        ]
+        if summary.league_score is not None:
+            parts.append(f"League score: {round(float(summary.league_score), 1)}")
+        messages.append((str(user.telegram_chat_id), "\n".join(parts)))
+        user.telegram_last_notified_week = week_start_d
+
+    if not messages:
+        return 0
+    db.commit()
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(_deliver(messages))
+    else:
+        loop.create_task(_deliver(messages))
+    return len(messages)
