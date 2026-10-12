@@ -18,6 +18,7 @@ type ParsedActivity = {
   intensity: number;
   hard_secs: number;
   load_method: string;
+  auto_zone_updates?: { lthr?: number; max_hr?: number };
 };
 type PreviewResponse = { preview_token: string; preview: ParsedActivity };
 
@@ -205,6 +206,13 @@ export default function ActivityUpload() {
                 </div>
               ))}
             </div>
+            {metrics.auto_zone_updates && Object.keys(metrics.auto_zone_updates).length > 0 && (
+              <div className="border-t border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                После подтверждения автоматически обновятся пульсовые настройки:
+                {metrics.auto_zone_updates.max_hr != null && <div>Максимальный пульс: {metrics.auto_zone_updates.max_hr} уд/мин</div>}
+                {metrics.auto_zone_updates.lthr != null && <div>Порог LTHR: {metrics.auto_zone_updates.lthr} уд/мин (не менее часа выше прежнего порога)</div>}
+              </div>
+            )}
             <div className="px-4 py-3 text-xs text-[#555]">
               Метод расчёта нагрузки: {LOAD_METHODS[metrics.load_method] ?? "оценка"}.
               {metrics.load_method !== "lthr" && " Результат ориентировочный; точность улучшится после настройки пульсовых порогов в профиле."}

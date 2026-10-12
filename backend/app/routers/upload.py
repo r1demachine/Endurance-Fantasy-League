@@ -28,7 +28,7 @@ from ..dependencies import get_current_user
 from ..models import Activity, User
 from ..rate_limit import get_client_address, limiter
 
-router = APIRouter(tags=["Activity uploads"])
+router = APIRouter(prefix="/api", tags=["Activity uploads"])
 
 MAX_FILE_BYTES = 5 * 1024 * 1024
 PARSE_TIMEOUT_SECONDS = 12
@@ -243,6 +243,46 @@ def _finalise_file_metrics(
         if 0 < seconds <= 30 and hr_a >= hard_threshold:
             hard_secs += int(round(seconds))
 
+    # Conservative, one-way auto-calibration: never lower user settings.
+    auto_zone_updates: dict[str, int] = {}
+    observed_max_hr = max(valid_hrs) if valid_hrs else max_hr
+    next_max_hr = user_max_hr
+    if user_max_hr is not None and observed_max_hr is not None and observed_max_hr > user_max_hr:
+        next_max_hr = min(240, int(round(observed_max_hr)))
+        if next_max_hr > user_max_hr:
+            auto_zone_updates["max_hr"] = next_max_hr
+
+    # Raise LTHR only if the recording contains a continuous hour above the
+    # configured threshold. Any low sample or gap >30 s resets the segment.
+    if lthr is not None and ordered_samples:
+        segments: list[list[tuple[datetime, float]]] = []
+        current_segment: list[tuple[datetime, float]] = []
+        for sample in ordered_samples:
+            sample_time, sample_hr = sample
+            if sample_hr <= lthr:
+                if current_segment:
+                    segments.append(current_segment)
+                    current_segment = []
+                continue
+            if current_segment and (sample_time - current_segment[-1][0]).total_seconds() > 30:
+                segments.append(current_segment)
+                current_segment = []
+            current_segment.append(sample)
+        if current_segment:
+            segments.append(current_segment)
+
+        for segment in segments:
+            if len(segment) < 2 or (segment[-1][0] - segment[0][0]).total_seconds() < 3600:
+                continue
+            hour_end = segment[0][0] + timedelta(seconds=3600)
+            hour_hrs = [hr for sample_time, hr in segment if sample_time <= hour_end]
+            if len(hour_hrs) >= 2:
+                candidate_lthr = int(round(mean(hour_hrs)))
+                effective_max = next_max_hr or user_max_hr
+                if candidate_lthr > lthr and (effective_max is None or candidate_lthr < effective_max):
+                    auto_zone_updates["lthr"] = candidate_lthr
+                    break
+
     return {
         "name": {
             "RIDE": "Загруженная велотренировка",
@@ -262,6 +302,7 @@ def _finalise_file_metrics(
         "intensity": round(intensity, 4),
         "hard_secs": hard_secs,
         "load_method": load_method,
+        "auto_zone_updates": auto_zone_updates,
     }
 
 
@@ -613,6 +654,15 @@ def confirm_activity_upload(
     )
     db.add(activity)
     try:
+        # Apply only upward updates calculated from this uploaded activity.
+        updates = preview.get("auto_zone_updates", {})
+        proposed_max = updates.get("max_hr") if isinstance(updates, dict) else None
+        proposed_lthr = updates.get("lthr") if isinstance(updates, dict) else None
+        if isinstance(proposed_max, int) and current.max_hr is not None and current.max_hr < proposed_max <= 240:
+            current.max_hr = proposed_max
+        if isinstance(proposed_lthr, int) and current.lthr is not None and current.lthr < proposed_lthr <= 220:
+            if current.max_hr is None or proposed_lthr < current.max_hr:
+                current.lthr = proposed_lthr
         db.flush()
         if get_settings().XP_ENGINE == "v6":
             _recalculate_user_xp_v6(db, current)
@@ -641,5 +691,6 @@ def confirm_activity_upload(
         },
         "new_xp": round_xp(float(current.total_xp or 0) - before_xp),
         "total_xp": round_xp(current.total_xp or 0),
+        "heart_rate_settings": {"lthr": current.lthr, "max_hr": current.max_hr},
         "level": current.level,
     }
