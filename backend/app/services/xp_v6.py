@@ -36,7 +36,8 @@ STARTER_WORKOUTS = 4   # PR8: было 3 — норма была слишком 
 STARTER_MINUTES = 45
 
 # ── Ручные записи и качество дня (PR8) ──
-MANUAL_LOAD_FACTOR = 0.5          # вклад ручной записи в нагрузку
+MANUAL_LOAD_FACTOR = 0.5
+UPLOAD_TSS_FACTOR = 0.8  # Imported file loads are attenuated to reduce easy HR/TSS gaming.          # вклад ручной записи в нагрузку
 QUALIFYING_DAY_MIN_TSS = 20.0     # пол дня: 20-минутная прогулка (~12 TSS) не открывает бонус
 
 # ── Разгрузочные недели (PR8) ──
@@ -120,6 +121,9 @@ def resolve_training_load(act: dict) -> tuple[float, str]:
     if tss > 0:
         if manual:
             return tss * MANUAL_LOAD_FACTOR, "manual"
+        source = str(act.get("source") or "").upper()
+        if source in {"UPLOAD_SITE", "UPLOAD_TELEGRAM"}:
+            return tss * UPLOAD_TSS_FACTOR, "estimated"
         return tss, "real"
     seconds = float(act.get("moving_time") or 0.0)
     if seconds <= 0:
