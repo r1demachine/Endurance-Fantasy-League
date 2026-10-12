@@ -14,6 +14,7 @@ os.environ.setdefault("REDIS_URL", "")
 from pydantic import ValidationError
 
 from app.models import Club, Duel
+from app.routers.clubs import _member_brief
 from app.routers.clubs import (
     CreateClubIn,
     JoinCodeIn,
@@ -62,6 +63,40 @@ class ClubValidationTests(unittest.TestCase):
         self.assertEqual(JoinCodeIn(code="  short  ").code, "SHORT")
         self.assertEqual(JoinCodeIn(code=" abcdefgh2345 ").code, "ABCDEFGH2345")
 
+
+class ClubPrivacyTests(unittest.TestCase):
+    @staticmethod
+    def user(user_id, visibility="authenticated"):
+        return type("TestUser", (), {
+            "id": user_id,
+            "username": f"user_{user_id}",
+            "display_name": f"Athlete {user_id}",
+            "level": 7,
+            "profile_visibility": visibility,
+        })()
+
+    def test_friends_visibility_hides_profile_from_non_friends(self):
+        me = self.user(1)
+        athlete = self.user(2, "friends")
+        row = _member_brief(athlete, "member", me, set())
+        self.assertTrue(row["hidden"])
+        self.assertEqual(row["display_name"], "Скрыто")
+        self.assertIsNone(row["username"])
+        self.assertIsNone(row["level"])
+
+    def test_friends_visibility_allows_accepted_friend(self):
+        me = self.user(1)
+        athlete = self.user(2, "friends")
+        row = _member_brief(athlete, "member", me, {2})
+        self.assertFalse(row["hidden"])
+        self.assertEqual(row["username"], "user_2")
+
+    def test_private_visibility_hides_even_from_friend(self):
+        me = self.user(1)
+        athlete = self.user(2, "private")
+        row = _member_brief(athlete, "member", me, {2})
+        self.assertTrue(row["hidden"])
+        self.assertEqual(row["display_name"], "Скрыто")
 
 class DuelRulesTests(unittest.TestCase):
     def test_username_normalization_strips_at_sign_before_pattern_check(self):
