@@ -20,6 +20,8 @@ class CleanupSocialTests(unittest.TestCase):
         duel_q.filter.return_value = duel_q
         duel_q.delete.return_value = 1
         duel_q.update.return_value = 1
+        duel_q.count.return_value = 0
+        duel_q.first.return_value = None
         duel_q.order_by.return_value = duel_q
         duel_q.all.side_effect = [
             [club],
