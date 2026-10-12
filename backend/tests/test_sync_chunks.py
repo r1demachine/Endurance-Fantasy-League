@@ -131,8 +131,9 @@ class SyncChunkTests(unittest.TestCase):
             still_active = second.query(SyncProgress).filter_by(user_id=user.id).one()
             self.assertTrue(still_active.active)
 
-            # The production wrapper claims with an independent SessionLocal session.
-            self.assertFalse(_claim_sync_progress_in_worker(user.id, 24))
+            # The production wrapper opens its own session; bind that factory to this test DB.
+            with patch("app.routers.sync.SessionLocal", side_effect=Session):
+                self.assertFalse(_claim_sync_progress_in_worker(user.id, 24))
         finally:
             first.close()
             second.close()
