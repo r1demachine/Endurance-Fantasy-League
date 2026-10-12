@@ -387,7 +387,7 @@ class Club(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(40), nullable=False, index=True)
-    invite_code = Column(String(16), unique=True, nullable=False, index=True)
+    invite_code = Column(String(12), unique=True, nullable=False, index=True)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     instant_join = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime, default=datetime.utcnow)
