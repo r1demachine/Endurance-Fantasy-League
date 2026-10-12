@@ -1,7 +1,10 @@
 import os
 os.environ.setdefault("PGCLIENTENCODING", "UTF8")
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -211,6 +214,17 @@ app = FastAPI(
     redoc_url=None if _is_prod else "/redoc",
     openapi_url=None if _is_prod else "/openapi.json",
 )
+
+@app.exception_handler(RequestValidationError)
+async def _request_validation_error_handler(request: Request, exc: RequestValidationError):
+    # Keep FastAPI's normal 422 validation contract elsewhere, but make bad sync dates a client 400.
+    if request.url.path == "/api/sync" and sync._has_invalid_since_query(exc.errors()):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Параметр since должен быть датой в формате YYYY-MM-DD."},
+        )
+    return await request_validation_exception_handler(request, exc)
+
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

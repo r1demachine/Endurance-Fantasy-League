@@ -1,17 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, func
 from ..dependencies import get_current_user, require_privacy_consent
 from ..auth import decrypt_secret, decode_access_token_claims
-from ..database import get_db
-from ..models import User, Activity, Wellness, Friendship, FriendshipStatus, WeeklySummary, XPEvent, LeagueWeek, LeagueMembership
+from ..database import get_db, SessionLocal
+from ..models import User, Activity, Wellness, Friendship, FriendshipStatus, WeeklySummary, XPEvent, LeagueWeek, LeagueMembership, SyncProgress
 import asyncio
 from collections import defaultdict
 from ..services.xp import recalculate_timeline, level_from_xp, round_xp
 from datetime import date as _date
-from ..services.intervals import calculate_xp
+from ..services.intervals import calculate_xp, _month_ranges
 from ..config import get_settings
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -639,325 +640,556 @@ def _close_league_week(
             print(f"telegram week notify failed: {type(exc).__name__}")
     return True
 
-_sync_progress: dict[int, dict] = {}
+def _has_invalid_since_query(errors: list[dict]) -> bool:
+    """Identify malformed since query parameters for the route's HTTP 400 contract."""
+    return any(
+        len(error.get("loc", ())) >= 2
+        and error["loc"][0] == "query"
+        and error["loc"][1] == "since"
+        for error in errors
+    )
 
-def _sync_month_ranges(start: _date, end: _date) -> list[tuple[_date, _date]]:
-    ranges, cursor = [], start.replace(day=1)
-    while cursor <= end:
-        next_month = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
-        ranges.append((max(start, cursor), min(end, next_month - timedelta(days=1))))
-        cursor = next_month
-    return ranges
+
+_SYNC_PROGRESS_STALE_AFTER = timedelta(minutes=15)
+
+
+def _progress_payload(row: SyncProgress | None) -> dict:
+    if row is None:
+        return {
+            "active": False, "status": "idle", "phase": "idle",
+            "months_done": 0, "months_total": 0, "current_month": None, "message": None,
+        }
+    return {
+        "active": bool(row.active),
+        "status": row.status,
+        "phase": row.phase,
+        "months_done": int(row.months_done or 0),
+        "months_total": int(row.months_total or 0),
+        "current_month": row.current_month,
+        "message": row.message,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _claim_sync_progress_in_worker(user_id: int, months_total: int) -> bool:
+    """Claim a sync using an independent DB session in the threadpool."""
+    session = SessionLocal()
+    try:
+        return _claim_sync_progress(session, user_id, months_total)
+    finally:
+        session.close()
+
+
+def _has_prior_intervals_activity(user_id: int) -> bool:
+    """Perform this sync eligibility query outside the async event loop."""
+    session = SessionLocal()
+    try:
+        return session.query(Activity.id).filter(
+            Activity.user_id == user_id,
+            Activity.source == "INTERVALS",
+        ).first() is not None
+    finally:
+        session.close()
+
+
+def _claim_sync_progress(db: Session, user_id: int, months_total: int) -> bool:
+    """Serialize syncs per user across app workers by locking the existing User row."""
+    try:
+        db.query(User.id).filter(User.id == user_id).with_for_update().one()
+        row = db.query(SyncProgress).filter(SyncProgress.user_id == user_id).first()
+        now = datetime.utcnow()
+        if row is not None and row.active:
+            last_update = row.updated_at or now
+            if now - last_update < _SYNC_PROGRESS_STALE_AFTER:
+                db.rollback()
+                return False
+            row.status = "interrupted"
+            row.active = False
+        if row is None:
+            row = SyncProgress(user_id=user_id)
+            db.add(row)
+        row.active = True
+        row.status = "running"
+        row.phase = "activities"
+        row.months_done = 0
+        row.months_total = months_total
+        row.current_month = None
+        row.message = None
+        row.updated_at = now
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _write_sync_progress(user_id: int, values: dict) -> None:
+    """Persist progress through an independent short-lived session."""
+    session = SessionLocal()
+    try:
+        row = session.query(SyncProgress).filter(SyncProgress.user_id == user_id).first()
+        if row is None:
+            row = SyncProgress(user_id=user_id)
+            session.add(row)
+        for key, value in values.items():
+            setattr(row, key, value)
+        row.updated_at = datetime.utcnow()
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
 
 @router.get("/sync/progress")
-def get_sync_progress(current: User = Depends(get_current_user)):
-    return _sync_progress.get(current.id, {"active": False, "status": "idle", "months_done": 0, "months_total": 0})
+def get_sync_progress(
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    row = db.query(SyncProgress).filter(SyncProgress.user_id == current.id).first()
+    if row is not None and row.active and row.updated_at:
+        if datetime.utcnow() - row.updated_at >= _SYNC_PROGRESS_STALE_AFTER:
+            row.active = False
+            row.status = "interrupted"
+            row.phase = "interrupted"
+            row.current_month = None
+            row.message = "Синхронизация прервана, запусти её повторно."
+            row.updated_at = datetime.utcnow()
+            db.commit()
+    return _progress_payload(row)
+
+def _persist_sync_payload(
+    user_id: int,
+    activities_data: list[dict],
+    wellness_data: list[dict],
+    allow_week_notifications: bool,
+    full_sync: bool,
+    months_total: int,
+) -> dict:
+    """Persist downloaded Intervals data and recalculate XP in a worker thread."""
+    db = SessionLocal()
+    try:
+        current = db.query(User).filter(User.id == user_id).first()
+        if current is None:
+            raise RuntimeError("Пользователь синхронизации больше не существует.")
+        # ── Тянем wellness этим же юзером + upsert в БД (не зависит от активностей) ──
+        sleep_by_date: dict = {}
+        wellness_upserted = 0
+        try:
+            wellness_records = wellness_data
+            for row in wellness_records:
+                if not isinstance(row, dict):
+                    continue
+                date_str = str(row.get("id") or row.get("date") or "").strip()[:10]
+                if len(date_str) < 10:
+                    continue
+                raw_sleep = row.get("sleepSecs") if row.get("sleepSecs") is not None else row.get("sleep_secs")
+                try:
+                    secs = int(raw_sleep) if raw_sleep is not None else None
+                except (TypeError, ValueError):
+                    secs = None
+                if secs is not None and secs > 0:
+                    sleep_by_date[date_str] = secs
+                score = _parse_w_float(row.get("sleepScore") if row.get("sleepScore") is not None else row.get("sleep_score"))
+                hrv = _parse_w_float(row.get("hrv"))
+                resting = _parse_w_int(row.get("restingHR") if row.get("restingHR") is not None else row.get("resting_hr"))
+                ctl = _parse_w_float(row.get("ctl"))
+                atl = _parse_w_float(row.get("atl"))
+                existing_w = (
+                    db.query(Wellness)
+                    .filter(Wellness.user_id == current.id, Wellness.date == date_str)
+                    .first()
+                )
+                if existing_w:
+                    # upsert: повторный синк ОБНОВЛЯЕТ, а не дублирует
+                    if secs is not None:
+                        existing_w.sleep_secs = secs
+                    if score is not None:
+                        existing_w.sleep_score = score
+                    if hrv is not None:
+                        existing_w.hrv = hrv
+                    if resting is not None:
+                        existing_w.resting_hr = resting
+                    if ctl is not None:
+                        existing_w.ctl = ctl
+                    if atl is not None:
+                        existing_w.atl = atl
+                else:
+                    db.add(Wellness(
+                        user_id=current.id,
+                        date=date_str,
+                        sleep_secs=secs,
+                        sleep_score=score,
+                        hrv=hrv,
+                        resting_hr=resting,
+                        ctl=ctl,
+                        atl=atl,
+                    ))
+                wellness_upserted += 1
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Wellness sync skipped ({type(e).__name__})")
+        
+        # ── Нет новых тренировок: сон всё равно обновился → пересчитываем ──
+        if not activities_data:
+            if get_settings().XP_ENGINE == "v6":
+                _recalculate_user_xp_v6(db, current, allow_week_notifications=allow_week_notifications)
+            else:
+                _recalculate_user_xp(db, current)
+            if full_sync:
+                current.last_full_sync_at = datetime.utcnow()
+            db.commit()
+            db.refresh(current)
+            return {
+                "message": "Новых активностей нет, но сон и восстановление обновлены",
+                "synced_count": 0,
+                "updated_count": 0,
+                "wellness_upserted": wellness_upserted,
+                "months_done": months_total, "months_total": months_total,
+                "new_xp": 0,
+            }
+    
+        # ── Пишем в БД (upsert: существующие обновляем, новые создаём) ──
+        new_xp = 0.0
+        synced_count = 0
+        updated_count = 0
+        skipped_empty = 0
+        seen_ids: set[str] = set()
+        existing_rows = {
+            row.intervals_activity_id: row
+            for row in db.query(Activity).filter(Activity.user_id == current.id).all()
+        }
+        merged_upload_count = 0
+        for raw in activities_data:
+            if not isinstance(raw, dict):
+                continue
+            parsed = _parse_activity(raw, current.timezone_name)
+            if not parsed:
+                continue
+            act_id = parsed["intervals_activity_id"]
+            if act_id in seen_ids:
+                continue
+            seen_ids.add(act_id)
+            if not _has_real_data(parsed):
+                skipped_empty += 1
+                continue
+            act_date = (parsed.get("start_date_local") or parsed["start_date"]).strftime("%Y-%m-%d")
+            sleep_secs = sleep_by_date.get(act_date)
+            if sleep_secs is None:
+                prev = ((parsed.get("start_date_local") or parsed["start_date"]) - timedelta(days=1)).strftime("%Y-%m-%d")
+                sleep_secs = sleep_by_date.get(prev)
+            from ..services.activity_dedupe import remove_matching_upload_duplicate
+            uploaded_match = remove_matching_upload_duplicate(
+                db,
+                current.id,
+                parsed["start_date"],
+                parsed.get("start_date_local"),
+                int(parsed.get("moving_time") or 0),
+            )
+            if uploaded_match is not None:
+                existing_rows.pop(uploaded_match.intervals_activity_id, None)
+                merged_upload_count += 1
+    
+            if act_id in existing_rows:
+                # UPSERT: Intervals досылает TSS/пульс/сон ПОЗЖЕ самой тренировки
+                row = existing_rows[act_id]
+                changed = False
+                if bool(parsed.get("is_manual")) != bool(row.is_manual):
+                    row.is_manual = bool(parsed.get("is_manual"))
+                    changed = True
+                is_indoor = bool(parsed.get("is_indoor"))
+                if bool(getattr(row, "is_indoor", False)) != is_indoor:
+                    row.is_indoor = is_indoor
+                    changed = True
+                if bool(row.indoor) != is_indoor:
+                    row.indoor = is_indoor
+                    changed = True
+                if parsed.get("start_date_local") is not None and row.start_date_local != parsed["start_date_local"]:
+                    row.start_date_local = parsed["start_date_local"]
+                    changed = True
+                if row.start_date != parsed["start_date"]:
+                    row.start_date = parsed["start_date"]
+                    changed = True
+                for field, value in (
+                    ("training_load", parsed.get("training_load") or 0),
+                    ("intensity", parsed.get("intensity") or 0),
+                    ("moving_time", parsed.get("moving_time") or 0),
+                    ("average_heartrate", parsed.get("average_heartrate") or 0),
+                    ("distance", parsed.get("distance") or 0),
+                    ("elevation_gain", parsed.get("elevation_gain") or 0),
+                ):
+                    old = getattr(row, field) or 0
+                    if value and abs(old - value) > 1e-6:
+                        setattr(row, field, value)
+                        changed = True
+                if sleep_secs and (row.sleep_secs or 0) != sleep_secs:
+                    row.sleep_secs = sleep_secs
+                    changed = True
+                if changed:
+                    updated_count += 1
+                continue
+            new_activity = Activity(
+                user_id=current.id,
+                intervals_activity_id=act_id,
+                name=parsed["name"],
+                sport_type=parsed["sport_type"],
+                distance=parsed["distance"],
+                moving_time=parsed["moving_time"],
+                elevation_gain=parsed["elevation_gain"],
+                average_heartrate=parsed.get("average_heartrate") or 0,
+                training_load=parsed.get("training_load") or 0,
+                intensity=parsed.get("intensity") or 0,
+                sleep_secs=sleep_secs,
+                start_date=parsed["start_date"],
+                start_date_local=parsed.get("start_date_local") or parsed["start_date"],
+                is_manual=bool(parsed.get("is_manual", False)),
+                indoor=bool(parsed.get("is_indoor", False)),
+                is_indoor=bool(parsed.get("is_indoor", False)),
+            )
+            db.add(new_activity)
+            existing_rows[act_id] = new_activity
+            synced_count += 1
+            dist_km = parsed["distance"] / 1000 if parsed["distance"] else 0
+            # Do not write private workout names, distances, durations or health data to logs.
+            print("✅ Activity synchronized")
+        db.commit()
+    
+    
+        # Не удаляем активности только потому, что их нет в текущем ответе Intervals.
+        # API-синхронизация использует ограниченное окно истории (обычно 90 дней), поэтому
+        # старые активности закономерно отсутствуют в payload. Удаление выполняется явными
+        # пользовательскими действиями (disconnect/account deletion), не этим sync.
+        deleted_count = merged_upload_count
+        db.commit()
+    
+        total_before = float(current.total_xp or 0)
+        if get_settings().XP_ENGINE == "v6":
+            _recalculate_user_xp_v6(db, current, allow_week_notifications=allow_week_notifications)
+        else:
+            _recalculate_user_xp(db, current)
+        if full_sync:
+            current.last_full_sync_at = datetime.utcnow()
+        db.commit()
+        db.refresh(current)
+        new_xp = round(float(current.total_xp or 0) - total_before, 2)
+    
+        return {
+            "message": "Синхронизация успешна!",
+            "synced_count": synced_count,
+            "updated_count": updated_count,
+            "deleted_count": deleted_count,
+            "wellness_upserted": wellness_upserted,
+            "months_done": months_total, "months_total": months_total,
+            "skipped_empty": skipped_empty,
+            "new_xp": new_xp,
+            "user": {
+                "id": current.id,
+                "name": current.display_name,
+                "level": current.level,
+                "total_xp": round(float(current.total_xp or 0), 2),
+            },
+        }
+    
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def _earliest_sync_date(today: _date) -> _date:
+    """First day of the earliest month in an inclusive 24-calendar-month window."""
+    month_index = today.year * 12 + (today.month - 1) - 23
+    year, month_zero_based = divmod(month_index, 12)
+    return _date(year, month_zero_based + 1, 1)
+
 
 @router.post("/sync")
 @limiter.limit("3/minute")
 async def sync_activities(
     request: Request,
-    oldest: str | None = None,
-    newest: str | None = None,
     since: _date | None = Query(default=None),
     current: User = Depends(require_privacy_consent),
     db: Session = Depends(get_db),
 ):
-    """Синхронизирует тренировки ТЕКУЩЕГО пользователя его ключом Intervals."""
-    from ..auth import decrypt_secret
-    from ..services.intervals import fetch_activities_for_user, fetch_wellness_for_user
-    
-    if not current.api_key_encrypted or not current.intervals_id:
+    """Async Intervals download; synchronous persistence and XP run in a worker thread."""
+    if "oldest" in request.query_params or "newest" in request.query_params:
         raise HTTPException(
             status_code=400,
-            detail="Сначала привяжи Intervals.icu в профиле",
+            detail="Параметры oldest/newest больше не поддерживаются. Используй since=YYYY-MM-DD.",
         )
-    
+    if not current.api_key_encrypted or not current.intervals_id:
+        raise HTTPException(status_code=400, detail="Сначала привяжи Intervals.icu в профиле")
+
     try:
         api_key = decrypt_secret(current.api_key_encrypted)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Не удалось расшифровать ключ. Подключи заново.")
-    
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Не удалось расшифровать ключ. Подключи заново.") from exc
+
+    user_id = current.id
     athlete_id = current.intervals_id
-    
     today = _user_local_today(current)
-    had_prior_intervals_activity = db.query(Activity.id).filter(
-        Activity.user_id == current.id,
-        Activity.source == "INTERVALS",
-    ).first() is not None
-    allow_week_notifications = bool(
-        had_prior_intervals_activity and since is None and oldest is None and newest is None
-    )
+    start_date = since or (today - timedelta(days=90))
+    end_date = today
+
     if since is not None:
-        earliest = _date(today.year - 1, 1, 1)
+        earliest = _earliest_sync_date(today)
         if since < earliest:
-            raise HTTPException(status_code=422, detail=f"Дата начала не может быть раньше {earliest.isoformat()}")
-        if since > today:
-            raise HTTPException(status_code=422, detail="Дата начала не может быть в будущем")
-        last_sync = getattr(current, "last_full_sync_at", None)
-        if last_sync and datetime.utcnow() - last_sync < timedelta(minutes=1):
-            remaining = int((timedelta(minutes=1) - (datetime.utcnow() - last_sync)).total_seconds())
-            raise HTTPException(status_code=429, detail=f"Полный импорт доступен не чаще одного раза в час. Повтори через {max(1, remaining // 60 + 1)} мин.")
-    start_date = since or (_date.fromisoformat(oldest) if oldest else today - timedelta(days=90))
-    end_date = min(today, _date.fromisoformat(newest) if newest else today)
-    if start_date > end_date:
-        raise HTTPException(status_code=422, detail="Дата начала не может быть позже конечной даты")
-    month_ranges = _sync_month_ranges(start_date, end_date)
-    if _sync_progress.get(current.id, {}).get("active"):
-        raise HTTPException(status_code=409, detail="Синхронизация уже выполняется")
-    if since is not None:
-        current.last_full_sync_at = datetime.utcnow()
-        db.commit()
-        db.refresh(current)
-    progress = {"active": True, "status": "running", "months_done": 0, "months_total": len(month_ranges), "current_month": None}
-    _sync_progress[current.id] = progress
-    activities_data = []
-    wellness_data = []
-    try:
-        for chunk_start, chunk_end in month_ranges:
-            if progress["months_done"]:
-                await asyncio.sleep(0.25)
-            progress["current_month"] = chunk_start.strftime("%Y-%m")
-            activities_data.extend(await fetch_activities_for_user(
-                api_key=api_key, athlete_id=athlete_id, oldest=chunk_start.isoformat(), newest=chunk_end.isoformat()
-            ))
-            try:
-                wellness_data.extend(await fetch_wellness_for_user(
-                    api_key=api_key, athlete_id=athlete_id,
-                    oldest=chunk_start.isoformat(), newest=chunk_end.isoformat()
-                ))
-            except Exception as exc:
-                print(f"Wellness sync skipped ({type(exc).__name__})")
-            progress["months_done"] += 1
-    except PermissionError as e:
-        progress["status"], progress["active"] = "error", False
-        raise HTTPException(status_code=401, detail=str(e))
-    except ValueError as e:
-        progress["status"], progress["active"] = "error", False
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        progress["status"], progress["active"] = "error", False
-        raise HTTPException(status_code=502, detail=f"Intervals.icu недоступен: {type(e).__name__}")
-    
-
-    
-    # ── Тянем wellness этим же юзером + upsert в БД (не зависит от активностей) ──
-    sleep_by_date: dict = {}
-    wellness_upserted = 0
-    try:
-        wellness_records = wellness_data
-        for row in wellness_records:
-            if not isinstance(row, dict):
-                continue
-            date_str = str(row.get("id") or row.get("date") or "").strip()[:10]
-            if len(date_str) < 10:
-                continue
-            raw_sleep = row.get("sleepSecs") if row.get("sleepSecs") is not None else row.get("sleep_secs")
-            try:
-                secs = int(raw_sleep) if raw_sleep is not None else None
-            except (TypeError, ValueError):
-                secs = None
-            if secs is not None and secs > 0:
-                sleep_by_date[date_str] = secs
-            score = _parse_w_float(row.get("sleepScore") if row.get("sleepScore") is not None else row.get("sleep_score"))
-            hrv = _parse_w_float(row.get("hrv"))
-            resting = _parse_w_int(row.get("restingHR") if row.get("restingHR") is not None else row.get("resting_hr"))
-            ctl = _parse_w_float(row.get("ctl"))
-            atl = _parse_w_float(row.get("atl"))
-            existing_w = (
-                db.query(Wellness)
-                .filter(Wellness.user_id == current.id, Wellness.date == date_str)
-                .first()
+            raise HTTPException(
+                status_code=400,
+                detail=f"За один запрос можно импортировать не более 24 календарных месяцев (начиная с {earliest.isoformat()}).",
             )
-            if existing_w:
-                # upsert: повторный синк ОБНОВЛЯЕТ, а не дублирует
-                if secs is not None:
-                    existing_w.sleep_secs = secs
-                if score is not None:
-                    existing_w.sleep_score = score
-                if hrv is not None:
-                    existing_w.hrv = hrv
-                if resting is not None:
-                    existing_w.resting_hr = resting
-                if ctl is not None:
-                    existing_w.ctl = ctl
-                if atl is not None:
-                    existing_w.atl = atl
-            else:
-                db.add(Wellness(
-                    user_id=current.id,
-                    date=date_str,
-                    sleep_secs=secs,
-                    sleep_score=score,
-                    hrv=hrv,
-                    resting_hr=resting,
-                    ctl=ctl,
-                    atl=atl,
-                ))
-            wellness_upserted += 1
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        print(f"⚠️ Wellness sync skipped ({type(e).__name__})")
-    
-    # ── Нет новых тренировок: сон всё равно обновился → пересчитываем ──
-    if not activities_data:
-        if get_settings().XP_ENGINE == "v6":
-            _recalculate_user_xp_v6(db, current, allow_week_notifications=allow_week_notifications)
-        else:
-            _recalculate_user_xp(db, current)
-        db.commit()
-        db.refresh(current)
-        progress["status"], progress["active"] = "complete", False
-        return {
-            "message": "Новых активностей нет, но сон и восстановление обновлены",
-            "synced_count": 0,
-            "updated_count": 0,
-            "wellness_upserted": wellness_upserted,
-            "months_done": len(month_ranges), "months_total": len(month_ranges),
-            "new_xp": 0,
-        }
+        if since > today:
+            raise HTTPException(status_code=400, detail="Дата начала не может быть в будущем")
 
-    # ── Пишем в БД (upsert: существующие обновляем, новые создаём) ──
-    new_xp = 0.0
-    synced_count = 0
-    updated_count = 0
-    skipped_empty = 0
-    seen_ids: set[str] = set()
-    existing_rows = {
-        row.intervals_activity_id: row
-        for row in db.query(Activity).filter(Activity.user_id == current.id).all()
-    }
-    merged_upload_count = 0
-    for raw in activities_data:
-        if not isinstance(raw, dict):
-            continue
-        parsed = _parse_activity(raw, current.timezone_name)
-        if not parsed:
-            continue
-        act_id = parsed["intervals_activity_id"]
-        if act_id in seen_ids:
-            continue
-        seen_ids.add(act_id)
-        if not _has_real_data(parsed):
-            skipped_empty += 1
-            continue
-        act_date = (parsed.get("start_date_local") or parsed["start_date"]).strftime("%Y-%m-%d")
-        sleep_secs = sleep_by_date.get(act_date)
-        if sleep_secs is None:
-            prev = ((parsed.get("start_date_local") or parsed["start_date"]) - timedelta(days=1)).strftime("%Y-%m-%d")
-            sleep_secs = sleep_by_date.get(prev)
-        from ..services.activity_dedupe import remove_matching_upload_duplicate
-        uploaded_match = remove_matching_upload_duplicate(
-            db,
-            current.id,
-            parsed["start_date"],
-            parsed.get("start_date_local"),
-            int(parsed.get("moving_time") or 0),
+    if start_date > end_date:
+        raise HTTPException(status_code=400, detail="Дата начала не может быть позже текущей даты")
+    month_ranges = _month_ranges(start_date, end_date)
+    if len(month_ranges) > 24:
+        raise HTTPException(status_code=400, detail="За один запрос разрешено не более 24 календарных месяцев.")
+
+    full_sync = since is not None
+    if full_sync:
+        last_sync = current.last_full_sync_at
+        now = datetime.utcnow()
+        if last_sync and now - last_sync < timedelta(hours=1):
+            remaining = int((timedelta(hours=1) - (now - last_sync)).total_seconds())
+            raise HTTPException(
+                status_code=429,
+                detail=f"Полный импорт доступен не чаще одного раза в час. Повтори через {max(1, remaining // 60 + 1)} мин.",
+            )
+
+    claimed = await run_in_threadpool(
+        _claim_sync_progress_in_worker, user_id, len(month_ranges)
+    )
+    if not claimed:
+        raise HTTPException(status_code=409, detail="Синхронизация уже выполняется")
+
+    final_status = "error"
+    final_message = "Синхронизация не завершена."
+    allow_week_notifications = False
+
+    try:
+        # From this point onward every exception passes through the active-reset finally block.
+        had_prior_intervals_activity = await run_in_threadpool(
+            _has_prior_intervals_activity, user_id
         )
-        if uploaded_match is not None:
-            existing_rows.pop(uploaded_match.intervals_activity_id, None)
-            merged_upload_count += 1
+        allow_week_notifications = bool(had_prior_intervals_activity and not full_sync)
+        from ..services.intervals import fetch_activities_for_user, fetch_wellness_for_user
 
-        if act_id in existing_rows:
-            # UPSERT: Intervals досылает TSS/пульс/сон ПОЗЖЕ самой тренировки
-            row = existing_rows[act_id]
-            changed = False
-            if bool(parsed.get("is_manual")) != bool(row.is_manual):
-                row.is_manual = bool(parsed.get("is_manual"))
-                changed = True
-            is_indoor = bool(parsed.get("is_indoor"))
-            if bool(getattr(row, "is_indoor", False)) != is_indoor:
-                row.is_indoor = is_indoor
-                changed = True
-            if bool(row.indoor) != is_indoor:
-                row.indoor = is_indoor
-                changed = True
-            if parsed.get("start_date_local") is not None and row.start_date_local != parsed["start_date_local"]:
-                row.start_date_local = parsed["start_date_local"]
-                changed = True
-            if row.start_date != parsed["start_date"]:
-                row.start_date = parsed["start_date"]
-                changed = True
-            for field, value in (
-                ("training_load", parsed.get("training_load") or 0),
-                ("intensity", parsed.get("intensity") or 0),
-                ("moving_time", parsed.get("moving_time") or 0),
-                ("average_heartrate", parsed.get("average_heartrate") or 0),
-                ("distance", parsed.get("distance") or 0),
-                ("elevation_gain", parsed.get("elevation_gain") or 0),
-            ):
-                old = getattr(row, field) or 0
-                if value and abs(old - value) > 1e-6:
-                    setattr(row, field, value)
-                    changed = True
-            if sleep_secs and (row.sleep_secs or 0) != sleep_secs:
-                row.sleep_secs = sleep_secs
-                changed = True
-            if changed:
-                updated_count += 1
-            continue
-        new_activity = Activity(
-            user_id=current.id,
-            intervals_activity_id=act_id,
-            name=parsed["name"],
-            sport_type=parsed["sport_type"],
-            distance=parsed["distance"],
-            moving_time=parsed["moving_time"],
-            elevation_gain=parsed["elevation_gain"],
-            average_heartrate=parsed.get("average_heartrate") or 0,
-            training_load=parsed.get("training_load") or 0,
-            intensity=parsed.get("intensity") or 0,
-            sleep_secs=sleep_secs,
-            start_date=parsed["start_date"],
-            start_date_local=parsed.get("start_date_local") or parsed["start_date"],
-            is_manual=bool(parsed.get("is_manual", False)),
-            indoor=bool(parsed.get("is_indoor", False)),
-            is_indoor=bool(parsed.get("is_indoor", False)),
+        async def report_progress(phase: str, done: int, total: int, month_start: _date) -> None:
+            status = "fetching_activities" if phase == "activities" else "fetching_wellness"
+            await run_in_threadpool(
+                _write_sync_progress,
+                user_id,
+                {
+                    "active": True, "status": status, "phase": phase,
+                    "months_done": done, "months_total": total,
+                    "current_month": month_start.strftime("%Y-%m"), "message": None,
+                },
+            )
+
+        await run_in_threadpool(
+            _write_sync_progress,
+            user_id,
+            {
+                "active": True, "status": "fetching_activities", "phase": "activities",
+                "months_done": 0, "months_total": len(month_ranges),
+                "current_month": None, "message": None,
+            },
         )
-        db.add(new_activity)
-        existing_rows[act_id] = new_activity
-        synced_count += 1
-        dist_km = parsed["distance"] / 1000 if parsed["distance"] else 0
-        # Do not write private workout names, distances, durations or health data to logs.
-        print("✅ Activity synchronized")
-    db.commit()
+
+        try:
+            activities_data = await fetch_activities_for_user(
+                api_key=api_key,
+                athlete_id=athlete_id,
+                oldest=start_date.isoformat(),
+                newest=end_date.isoformat(),
+                progress_callback=report_progress,
+            )
+        except PermissionError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Intervals.icu недоступен: {type(exc).__name__}") from exc
+
+        await run_in_threadpool(
+            _write_sync_progress,
+            user_id,
+            {
+                "active": True,
+                "status": "fetching_wellness",
+                "phase": "wellness",
+                "months_done": 0,
+                "months_total": len(month_ranges),
+                "current_month": None,
+                "message": None,
+            },
+        )
+
+        try:
+            wellness_data = await fetch_wellness_for_user(
+                api_key=api_key,
+                athlete_id=athlete_id,
+                oldest=start_date.isoformat(),
+                newest=end_date.isoformat(),
+                progress_callback=report_progress,
+            )
+        except Exception as exc:
+            print(f"Wellness sync skipped ({type(exc).__name__})")
+            wellness_data = []
+
+        await run_in_threadpool(
+            _write_sync_progress,
+            user_id,
+            {
+                "active": True, "status": "processing", "phase": "database",
+                "months_done": len(month_ranges), "months_total": len(month_ranges),
+                "current_month": None, "message": "Сохраняем данные и пересчитываем XP.",
+            },
+        )
+
+        try:
+            result = await run_in_threadpool(
+                _persist_sync_payload,
+                user_id,
+                activities_data,
+                wellness_data,
+                allow_week_notifications,
+                full_sync,
+                len(month_ranges),
+            )
+        except Exception as exc:
+            print(f"Sync persistence failed ({type(exc).__name__})")
+            raise HTTPException(
+                status_code=500,
+                detail="Данные получены, но не удалось сохранить синхронизацию. Попробуй ещё раз.",
+            ) from exc
+
+        final_status = "complete"
+        final_message = "Синхронизация успешна."
+        return result
+    except HTTPException as exc:
+        final_status = "error"
+        final_message = str(exc.detail)[:255]
+        raise
+    finally:
+        try:
+            await run_in_threadpool(
+                _write_sync_progress,
+                user_id,
+                {
+                    "active": False, "status": final_status, "phase": final_status,
+                    "current_month": None, "message": final_message,
+                },
+            )
+        except Exception as exc:
+            print(f"Could not persist final sync progress ({type(exc).__name__})")
 
 
-    # Не удаляем активности только потому, что их нет в текущем ответе Intervals.
-    # API-синхронизация использует ограниченное окно истории (обычно 90 дней), поэтому
-    # старые активности закономерно отсутствуют в payload. Удаление выполняется явными
-    # пользовательскими действиями (disconnect/account deletion), не этим sync.
-    deleted_count = merged_upload_count
-    db.commit()
-
-    total_before = float(current.total_xp or 0)
-    if get_settings().XP_ENGINE == "v6":
-        _recalculate_user_xp_v6(db, current)
-    else:
-        _recalculate_user_xp(db, current)
-    db.commit()
-    db.refresh(current)
-    new_xp = round(float(current.total_xp or 0) - total_before, 2)
-
-    progress["status"], progress["active"] = "complete", False
-    progress["current_month"] = None
-    return {
-        "message": "Синхронизация успешна!",
-        "synced_count": synced_count,
-        "updated_count": updated_count,
-        "deleted_count": deleted_count,
-        "wellness_upserted": wellness_upserted,
-        "months_done": len(month_ranges), "months_total": len(month_ranges),
-        "skipped_empty": skipped_empty,
-        "new_xp": new_xp,
-        "user": {
-            "id": current.id,
-            "name": current.display_name,
-            "level": current.level,
-            "total_xp": round(float(current.total_xp or 0), 2),
-        },
-    }
 
 
 @router.get("/user")

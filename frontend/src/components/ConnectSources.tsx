@@ -37,9 +37,20 @@ export default function ConnectSources({
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [sinceDate, setSinceDate] = useState(`${new Date().getFullYear()}-01-01`);
-  const [syncProgress, setSyncProgress] = useState<{ months_done: number; months_total: number; current_month?: string | null } | null>(null);
+  const [syncProgress, setSyncProgress] = useState<{
+    months_done: number;
+    months_total: number;
+    current_month?: string | null;
+    phase?: string | null;
+    status?: string | null;
+    message?: string | null;
+  } | null>(null);
 
   const isOpen = expanded === "intervals";
+  const localToday = new Date();
+  const earliestMonth = new Date(localToday.getFullYear(), localToday.getMonth() - 23, 1);
+  const earliestSyncDate = `${earliestMonth.getFullYear()}-${String(earliestMonth.getMonth() + 1).padStart(2, "0")}-01`;
+  const todayIso = `${localToday.getFullYear()}-${String(localToday.getMonth() + 1).padStart(2, "0")}-${String(localToday.getDate()).padStart(2, "0")}`;
 
   const openForm = () => {
     setAthleteInput(athleteId || "");
@@ -114,7 +125,13 @@ export default function ConnectSources({
     setSyncProgress({ months_done: 0, months_total: 0 });
     try {
       const res = await authApi.post("/api/sync", null, { params: { since: sinceDate } });
-      setSyncProgress({ months_done: res.data.months_done ?? 0, months_total: res.data.months_total ?? 0 });
+      setSyncProgress({
+        months_done: res.data.months_done ?? 0,
+        months_total: res.data.months_total ?? 0,
+        phase: "complete",
+        status: "complete",
+        message: null,
+      });
       onMessage({ type: "success", text: `Синхронизация завершена: новых ${res.data.synced_count}, обновлено ${res.data.updated_count ?? 0}, +${Math.round(res.data.new_xp)} XP` });
       await refreshUser(true);
     } catch (err: any) {
@@ -131,7 +148,14 @@ export default function ConnectSources({
     const poll = async () => {
       try {
         const res = await authApi.get("/api/sync/progress");
-        if (!stopped) setSyncProgress({ months_done: res.data.months_done ?? 0, months_total: res.data.months_total ?? 0, current_month: res.data.current_month ?? null });
+        if (!stopped) setSyncProgress({
+          months_done: res.data.months_done ?? 0,
+          months_total: res.data.months_total ?? 0,
+          current_month: res.data.current_month ?? null,
+          phase: res.data.phase ?? null,
+          status: res.data.status ?? null,
+          message: res.data.message ?? null,
+        });
       } catch {}
     };
     void poll();
@@ -234,8 +258,8 @@ export default function ConnectSources({
                       <div className="w-full grid sm:grid-cols-[minmax(0,1fr)_auto] gap-2 items-end">
                         <label className="block text-[10px] font-bold tracking-widest uppercase">
                           Дата начала импорта
-                          <input type="date" value={sinceDate} min={`${new Date().getFullYear() - 1}-01-01`}
-                            max={new Date().toISOString().slice(0, 10)} onChange={(e) => setSinceDate(e.target.value)}
+                          <input type="date" value={sinceDate} min={earliestSyncDate}
+                            max={todayIso} onChange={(e) => setSinceDate(e.target.value)}
                             disabled={syncing} className="mt-1 block w-full border-2 border-black bg-white px-3 py-2 text-sm font-mono" />
                         </label>
                         <button type="button" onClick={handleSync} disabled={syncing || !sinceDate}
@@ -246,7 +270,7 @@ export default function ConnectSources({
                       {syncProgress && (
                         <div className="w-full border-2 border-black/20 bg-white px-3 py-2 text-xs">
                           <div className="flex justify-between gap-3 font-bold">
-                            <span>{syncing ? "Загрузка истории" : "Последний импорт"}</span>
+                            <span>{syncing ? (syncProgress.phase === "wellness" ? "Загрузка восстановления" : syncProgress.phase === "database" ? "Сохранение и пересчёт XP" : "Загрузка истории") : "Последний импорт"}</span>
                             <span>{syncProgress.months_done} из {syncProgress.months_total} месяцев</span>
                           </div>
                           <div className="mt-2 h-2 bg-black/10 overflow-hidden">
@@ -254,6 +278,7 @@ export default function ConnectSources({
                               style={{ width: `${syncProgress.months_total ? (syncProgress.months_done / syncProgress.months_total) * 100 : 0}%` }} />
                           </div>
                           {syncing && syncProgress.current_month && <p className="mt-1 text-[#666]">Текущий месяц: {syncProgress.current_month}</p>}
+                          {syncProgress.message && <p className="mt-1 text-[#666]">{syncProgress.message}</p>}
                           <p className="mt-1 text-[#666]">Полный импорт доступен не чаще одного раза в час.</p>
                         </div>
                       )}

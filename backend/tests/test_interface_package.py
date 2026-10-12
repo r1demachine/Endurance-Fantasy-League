@@ -10,7 +10,7 @@ os.environ.setdefault("JWT_SECRET", "unit-test-jwt-secret-value-longer-than-32-c
 os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
 os.environ.setdefault("REDIS_URL", "")
 
-from app.routers.sync import _parse_activity, _monday_for_day, _sync_month_ranges
+from app.routers.sync import _parse_activity, _monday_for_day
 from app.services.quests import (
     _is_qualifying_trainer_activity,
     _trainer_season_active,
