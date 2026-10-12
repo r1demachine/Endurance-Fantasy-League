@@ -636,8 +636,8 @@ async def sync_activities(
         if since > today:
             raise HTTPException(status_code=422, detail="Дата начала не может быть в будущем")
         last_sync = getattr(current, "last_full_sync_at", None)
-        if last_sync and datetime.utcnow() - last_sync < timedelta(hours=1):
-            remaining = int((timedelta(hours=1) - (datetime.utcnow() - last_sync)).total_seconds())
+        if last_sync and datetime.utcnow() - last_sync < timedelta(minutes=1):
+            remaining = int((timedelta(minutes=1) - (datetime.utcnow() - last_sync)).total_seconds())
             raise HTTPException(status_code=429, detail=f"Полный импорт доступен не чаще одного раза в час. Повтори через {max(1, remaining // 60 + 1)} мин.")
     start_date = since or (_date.fromisoformat(oldest) if oldest else today - timedelta(days=90))
     end_date = min(today, _date.fromisoformat(newest) if newest else today)
