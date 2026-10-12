@@ -555,8 +555,8 @@ function ClubsPanel() {
     }
   };
 
-  const search = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const search = async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
     if (searchText.trim().length < 2) {
       setSearchError("Для поиска введи минимум 2 символа.");
       return;
@@ -789,7 +789,7 @@ function ClubsPanel() {
             {searchError && (
               <div role="alert" className="text-sm font-bold text-[#a62910]">
                 <p>{searchError}</p>
-                <button type="button" onClick={(event) => { event.preventDefault(); void search({ preventDefault() {} } as React.FormEvent<HTMLFormElement>); }} className="underline">Повторить поиск</button>
+                <button type="button" onClick={(event) => { event.preventDefault(); void search(); }} className="underline">Повторить поиск</button>
               </div>
             )}
             {searchResults.length === 0 && !searchBusy && !searchError && (
