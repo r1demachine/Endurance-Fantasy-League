@@ -65,9 +65,15 @@ try:
             if "telegram_notify" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN telegram_notify BOOLEAN NOT NULL DEFAULT FALSE"))
             if "telegram_link_code" not in cols:
-                conn.execute(text("ALTER TABLE users ADD COLUMN telegram_link_code VARCHAR(16)"))
+                conn.execute(text("ALTER TABLE users ADD COLUMN telegram_link_code VARCHAR(64)"))
+            else:
+                conn.execute(text("ALTER TABLE users ALTER COLUMN telegram_link_code TYPE VARCHAR(64)"))
+                # Invalidate legacy plaintext short codes; only SHA-256 hashes remain valid.
+                conn.execute(text("UPDATE users SET telegram_link_code = NULL, telegram_link_expires = NULL WHERE telegram_link_code IS NOT NULL AND length(telegram_link_code) < 64"))
             if "telegram_link_expires" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN telegram_link_expires TIMESTAMP"))
+            if "telegram_last_notified_week" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN telegram_last_notified_week DATE"))
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram_chat_id ON users(telegram_chat_id)"))
             conn.execute(text("ALTER TABLE users ALTER COLUMN intervals_id DROP NOT NULL"))
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)"))
@@ -227,24 +233,6 @@ app.include_router(upload.router)
 app.include_router(duels.router)
 app.include_router(clubs.router)
 app.include_router(telegram.router)
-
-# Дуэли закрываются в тот же момент, что и лиги (wrap без правки огромного sync.py)
-_orig_close_league_week = sync._close_league_week
-
-def _close_league_week_with_duels(db, week_start_d):
-    _orig_close_league_week(db, week_start_d)
-    try:
-        from .routers.duels import finalize_duels_for_week
-        finalize_duels_for_week(db, week_start_d)
-    except Exception as _duel_err:  # noqa: BLE001
-        print(f"⚠️ finalize_duels_for_week failed: {_duel_err}")
-    try:
-        from .services.telegram_week import notify_week_results
-        notify_week_results(db, week_start_d)
-    except Exception as _tg_err:  # noqa: BLE001
-        print(f"⚠️ telegram week notify failed: {_tg_err}")
-
-sync._close_league_week = _close_league_week_with_duels
 
 @app.on_event("startup")
 async def _init_broker():

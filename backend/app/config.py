@@ -1,4 +1,5 @@
 from datetime import date
+import re
 from functools import lru_cache
 from typing import Optional
 
@@ -55,6 +56,15 @@ class Settings(BaseSettings):
         if len(v) < 32:
             raise ValueError("JWT_SECRET должен быть не короче 32 символов")
         return v
+
+    @field_validator("TELEGRAM_WEBHOOK_SECRET")
+    @classmethod
+    def _valid_telegram_webhook_secret(cls, value: Optional[str]) -> Optional[str]:
+        if value is None or value == "":
+            return None
+        if not re.fullmatch(r"[A-Za-z0-9_-]{16,256}", value):
+            raise ValueError("TELEGRAM_WEBHOOK_SECRET должен содержать 16–256 символов A-Z, a-z, 0-9, _ или -")
+        return value
 
 
 @lru_cache()
