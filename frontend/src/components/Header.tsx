@@ -17,6 +17,7 @@ export default function Header() {
 
   const links = [
     { href: "/dashboard", label: "Dashboard" },
+    { href: "/duels", label: "Дуэли" },
     { href: "/profile", label: "Profile" },
   ];
 
@@ -64,18 +65,15 @@ export default function Header() {
                       </Link>
                     );
                   })}
-                  {/* 🔔 колокольчик уведомлений (десктоп) */}
                   <NotificationBell variant="top" />
                 </nav>
               </div>
             </div>
           </header>
-          {/* резерв места под фикс-шапку */}
           <div className="hidden md:block h-[72px] lg:h-[88px]" aria-hidden="true" />
         </>
       )}
 
-      {/* ── МОБИЛКА: навигация снизу ── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[60] bg-[#f4f4f0] text-[#111] border-t-2 border-black flex items-stretch pb-[env(safe-area-inset-bottom)]">
         <Link
           href="/"
@@ -97,7 +95,6 @@ export default function Header() {
             </Link>
           );
         })}
-        {/* 🔔 колокольчик уведомлений (мобилка) */}
         <NotificationBell variant="bottom" />
       </nav>
     </>
