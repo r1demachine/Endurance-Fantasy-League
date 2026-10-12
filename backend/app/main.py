@@ -222,7 +222,25 @@ try:
         # enforcing the fixed-length Base32 format expected by the API.
         invalid_invites = conn.execute(text("""
             SELECT id FROM clubs
-            WHERE invite_code !~ '^[A-Z2-7]{12}
+            WHERE length(invite_code) <> 12 OR invite_code ~ '[^A-Z2-7]'
+            ORDER BY id
+        """)).fetchall()
+        for (club_id,) in invalid_invites:
+            for _ in range(32):
+                code = "".join(secrets.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567") for _ in range(12))
+                collision = conn.execute(
+                    text("SELECT 1 FROM clubs WHERE invite_code = :code LIMIT 1"),
+                    {"code": code},
+                ).first()
+                if not collision:
+                    conn.execute(
+                        text("UPDATE clubs SET invite_code = :code WHERE id = :club_id"),
+                        {"code": code, "club_id": club_id},
+                    )
+                    break
+            else:
+                raise RuntimeError("Could not rotate a legacy club invite code")
+
         if "club_members" not in tables:
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS club_members (
