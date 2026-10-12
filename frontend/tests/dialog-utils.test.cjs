@@ -53,6 +53,28 @@ test("DELETE and password requirements block incomplete confirmations and return
   assert.deepEqual(utils.buildConfirmPayload({}, {}), { confirmation: "", password: "" });
 });
 
+test("confirm submit calls the action with the exact DELETE token and password", async () => {
+  let received = null;
+  const submitted = await utils.submitConfirmPayload(
+    { confirmation: "DELETE", password: "correct horse battery staple" },
+    { requireDelete: true, requirePassword: true },
+    async (payload) => { received = payload; },
+  );
+  assert.equal(submitted, true);
+  assert.deepEqual(received, { confirmation: "DELETE", password: "correct horse battery staple" });
+});
+
+test("confirm submit does not invoke the action when required values are missing", async () => {
+  let calls = 0;
+  const submitted = await utils.submitConfirmPayload(
+    { confirmation: "DELETE", password: "" },
+    { requireDelete: true, requirePassword: true },
+    async () => { calls++; },
+  );
+  assert.equal(submitted, false);
+  assert.equal(calls, 0);
+});
+
 test("pause timestamps without a zone are treated as UTC and formatted", () => {
   assert.equal(utils.parsePauseDate("not-a-date"), null);
   assert.equal(utils.parsePauseDate(null), null);
