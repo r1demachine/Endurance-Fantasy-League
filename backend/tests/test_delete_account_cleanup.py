@@ -13,7 +13,7 @@ class CleanupSocialTests(unittest.TestCase):
         db = MagicMock()
         uid = 10
         other_member = SimpleNamespace(user_id=20, role=ClubMemberRole.MEMBER.value, joined_at=datetime.utcnow())
-        club = SimpleNamespace(id=1, owner_id=uid)
+        club = SimpleNamespace(id=1, owner_id=uid, name="North Shore")
 
         duel_q = MagicMock()
         db.query.return_value = duel_q
