@@ -1,6 +1,7 @@
 """Tests for bounded Intervals sync ranges and shared progress."""
 import os
 import unittest
+from unittest.mock import AsyncMock, patch
 from datetime import date
 from cryptography.fernet import Fernet
 from sqlalchemy import create_engine
@@ -14,13 +15,48 @@ os.environ.setdefault("REDIS_URL", "")
 
 from app.database import Base
 from app.models import SyncProgress, User
-from app.services.intervals import _month_ranges, _split_range, _records
+from app.services.intervals import _month_ranges, _split_range, _records, fetch_activities_for_user
 from app.routers.sync import (
     _claim_sync_progress,
     _earliest_sync_date,
     _has_invalid_since_query,
     _progress_payload,
 )
+
+
+class SyncCallbackTests(unittest.IsolatedAsyncioTestCase):
+    async def test_month_progress_is_reported_by_the_service_splitter(self):
+        class FakeAsyncClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        callbacks = []
+
+        async def progress(phase, done, total, month_start):
+            callbacks.append((phase, done, total, month_start))
+
+        with patch("app.services.intervals.httpx.AsyncClient", FakeAsyncClient), patch(
+            "app.services.intervals._fetch_activity_chunk",
+            new_callable=AsyncMock,
+            side_effect=[[], [], []],
+        ):
+            result = await fetch_activities_for_user(
+                api_key="test-key",
+                athlete_id="i123",
+                oldest="2026-01-05",
+                newest="2026-03-05",
+                progress_callback=progress,
+            )
+
+        self.assertEqual(result, [])
+        self.assertEqual(callbacks, [
+            ("activities", 1, 3, date(2026, 1, 5)),
+            ("activities", 2, 3, date(2026, 2, 1)),
+            ("activities", 3, 3, date(2026, 3, 1)),
+        ])
 
 
 class SyncChunkTests(unittest.TestCase):
