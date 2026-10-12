@@ -58,14 +58,14 @@ def _apply_auto_hr_updates(db: Session, user: User, updates: dict) -> None:
     if (next_lthr, next_max, next_resting) == (user.lthr, user.max_hr, user.resting_hr):
         return
 
-    # Validate every relationship that can be checked with currently configured values.
-    # A missing resting HR does not block a verified max-HR update.
-    if next_lthr is not None and next_max is not None:
-        if not (next_lthr < next_max and 0.75 * next_max <= next_lthr <= 0.97 * next_max):
-            return
-    if next_resting is not None and next_lthr is not None and not next_resting < next_lthr:
+    # Automatic calibration is only allowed with a complete set of thresholds.
+    # This keeps all saved settings within the same physiological constraints.
+    if next_resting is None or next_lthr is None or next_max is None:
         return
-
+    if not (next_resting < next_lthr < next_max):
+        return
+    if not (0.75 * next_max <= next_lthr <= 0.97 * next_max):
+        return
     user.lthr = next_lthr
     user.max_hr = next_max
     user.resting_hr = next_resting

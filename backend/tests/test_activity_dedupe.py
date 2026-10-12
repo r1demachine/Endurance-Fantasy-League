@@ -148,6 +148,10 @@ class ActivityDedupeTests(unittest.TestCase):
     def test_heart_rate_settings_validate_ratio_and_limit_updates_per_local_day(self):
         from fastapi import HTTPException
 
+        with self.assertRaises(HTTPException) as caught:
+            update_heart_rate_settings(HeartRateSettingsUpdate(lthr=165, max_hr=190), self.user, self.db)
+        self.assertEqual(caught.exception.status_code, 422)
+
         invalid = HeartRateSettingsUpdate(lthr=140, max_hr=200, resting_hr=50)
         with self.assertRaises(HTTPException) as caught:
             update_heart_rate_settings(invalid, self.user, self.db)

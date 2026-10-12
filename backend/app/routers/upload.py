@@ -750,6 +750,16 @@ def update_heart_rate_settings(
     except (ZoneInfoNotFoundError, TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail="Укажи корректный IANA часовой пояс, например Europe/Stockholm.") from exc
 
+    hr_changed = (
+        next_lthr != current.lthr
+        or next_max_hr != current.max_hr
+        or next_resting_hr != current.resting_hr
+    )
+    if hr_changed and next_lthr is not None and (next_max_hr is None or next_resting_hr is None):
+        raise HTTPException(
+            status_code=422,
+            detail="Чтобы задать LTHR, сначала укажи пульс в покое и максимальный пульс.",
+        )
     if next_lthr is not None and next_max_hr is not None:
         if not next_lthr < next_max_hr:
             raise HTTPException(status_code=422, detail="LTHR должен быть ниже максимального пульса.")
@@ -758,11 +768,6 @@ def update_heart_rate_settings(
     if next_resting_hr is not None and next_lthr is not None and not next_resting_hr < next_lthr:
         raise HTTPException(status_code=422, detail="Пульс в покое должен быть ниже LTHR.")
 
-    hr_changed = (
-        next_lthr != current.lthr
-        or next_max_hr != current.max_hr
-        or next_resting_hr != current.resting_hr
-    )
     if hr_changed:
         from ..services.activity_upload import _settings_day_start_utc
         day_start = _settings_day_start_utc(current)
