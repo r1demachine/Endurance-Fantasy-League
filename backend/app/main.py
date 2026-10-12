@@ -8,7 +8,7 @@ from slowapi.errors import RateLimitExceeded
 from .database import engine, Base
 from .config import get_settings
 from .rate_limit import limiter
-from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy, upload
+from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy, upload, duels, clubs
 
 Base.metadata.create_all(bind=engine)
 
@@ -107,7 +107,73 @@ try:
             if "read" not in ncols:
                 conn.execute(text("ALTER TABLE notifications ADD COLUMN read BOOLEAN DEFAULT FALSE"))
 
-    print("✅ Auto-migration complete (users + activities + weekly_summaries + notifications)")
+        # ── duels ──
+        if "duels" not in tables:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS duels (
+                    id SERIAL PRIMARY KEY,
+                    challenger_id INTEGER NOT NULL REFERENCES users(id),
+                    opponent_id INTEGER NOT NULL REFERENCES users(id),
+                    week_start TIMESTAMP NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    challenger_xp FLOAT,
+                    opponent_xp FLOAT,
+                    winner_id INTEGER REFERENCES users(id),
+                    created_at TIMESTAMP,
+                    updated_at TIMESTAMP,
+                    responded_at TIMESTAMP,
+                    finished_at TIMESTAMP
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_duels_challenger ON duels(challenger_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_duels_opponent ON duels(opponent_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_duels_week ON duels(week_start)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_duels_status_week ON duels(status, week_start)"))
+
+        # ── clubs ──
+        if "clubs" not in tables:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS clubs (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(64) NOT NULL,
+                    invite_code VARCHAR(16) NOT NULL UNIQUE,
+                    owner_id INTEGER NOT NULL REFERENCES users(id),
+                    created_at TIMESTAMP
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_clubs_name ON clubs(name)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_clubs_invite ON clubs(invite_code)"))
+
+        if "club_members" not in tables:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS club_members (
+                    id SERIAL PRIMARY KEY,
+                    club_id INTEGER NOT NULL REFERENCES clubs(id),
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    role VARCHAR(20) NOT NULL DEFAULT 'member',
+                    joined_at TIMESTAMP
+                )
+            """))
+            conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_club_member ON club_members(club_id, user_id)"
+            ))
+
+        if "club_join_requests" not in tables:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS club_join_requests (
+                    id SERIAL PRIMARY KEY,
+                    club_id INTEGER NOT NULL REFERENCES clubs(id),
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    created_at TIMESTAMP,
+                    responded_at TIMESTAMP
+                )
+            """))
+            conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_club_join_pending ON club_join_requests(club_id, user_id)"
+            ))
+
+    print("✅ Auto-migration complete (users + activities + weekly_summaries + notifications + duels + clubs)")
 except Exception as e:
     print(f"❌ Critical database migration failure: {type(e).__name__}: {e}")
     raise RuntimeError(
@@ -149,6 +215,8 @@ app.include_router(notifications.router)
 app.include_router(admin.router)
 app.include_router(privacy.router)
 app.include_router(upload.router)
+app.include_router(duels.router)
+app.include_router(clubs.router)
 
 @app.on_event("startup")
 async def _init_broker():
