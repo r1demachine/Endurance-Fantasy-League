@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, func
-from ..dependencies import get_current_user
+from ..dependencies import get_current_user, require_privacy_consent
 from ..auth import decrypt_secret, decode_access_token_claims
 from ..database import get_db
 from ..models import User, Activity, Wellness, Friendship, FriendshipStatus, WeeklySummary, XPEvent, LeagueWeek, LeagueMembership
@@ -601,18 +601,10 @@ async def sync_activities(
     oldest: str | None = None,
     newest: str | None = None,
     since: _date | None = Query(default=None),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_privacy_consent),
     db: Session = Depends(get_db),
 ):
     """Синхронизирует тренировки ТЕКУЩЕГО пользователя его ключом Intervals."""
-    if (
-        current.privacy_consent_version != settings.PRIVACY_CONSENT_VERSION
-        or current.privacy_consent_at is None
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail="Перед синхронизацией необходимо принять актуальную политику обработки данных",
-        )
     from ..auth import decrypt_secret
     from ..services.intervals import fetch_activities_for_user, fetch_wellness_for_user
     
@@ -1468,6 +1460,12 @@ async def public_activities(
         ],
     }
 
+
+from ..services.leaderboard_privacy import (
+    viewer_friend_ids as _viewer_friend_ids,
+    profile_visible_on_leaderboard as _profile_visible_on_leaderboard,
+)
+
 @router.get("/leaderboard")
 async def leaderboard(
     scope: str = Query("global", regex="^(global|friends|weekly)$"),
@@ -1498,9 +1496,12 @@ async def leaderboard(
             .all()
         )
         entries = []
+        friend_ids = _viewer_friend_ids(db, current)
         for s in sums:
             u = db.get(User, s.user_id)
             if not u:
+                continue
+            if not _profile_visible_on_leaderboard(u, current, friend_ids):
                 continue
             div, src = _user_division(db, u, this_ws_d, s.actual_load or 0)
             entries.append({
@@ -1541,19 +1542,25 @@ async def leaderboard(
     rank_expr = func.coalesce(User.total_xp, 0.0)
 
     if scope == "global":
-        users = (
+        friend_ids = _viewer_friend_ids(db, current)
+        candidates = (
             db.query(User)
             .order_by(rank_expr.desc(), User.id.asc())
-            .limit(limit)
             .all()
         )
-        if current is not None:
-            xp = float(current.total_xp or 0)
-            before = db.query(User).filter(or_(
-                rank_expr > xp,
-                and_(rank_expr == xp, User.id < current.id),
-            )).count()
-            your_rank = before + 1
+        users = [
+            u for u in candidates
+            if _profile_visible_on_leaderboard(u, current, friend_ids)
+        ][:limit]
+        if current is not None and _profile_visible_on_leaderboard(current, current, friend_ids):
+            visible_ids = [
+                u.id for u in candidates
+                if _profile_visible_on_leaderboard(u, current, friend_ids)
+            ]
+            try:
+                your_rank = visible_ids.index(current.id) + 1
+            except ValueError:
+                your_rank = None
 
     else:
         if current is None:

@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from ..auth import decode_access_token_claims
 from ..config import get_settings
 from ..database import get_db
-from ..dependencies import get_current_user
+from ..dependencies import get_current_user, require_privacy_consent
 from ..models import Activity, User
 from ..rate_limit import get_client_address, limiter
 
@@ -574,7 +574,7 @@ def get_heart_rate_settings(current: User = Depends(get_current_user)):
 @router.patch("/profile/heart-rate")
 def update_heart_rate_settings(
     data: HeartRateSettingsUpdate,
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_privacy_consent),
     db: Session = Depends(get_db),
 ):
     fields = data.model_fields_set
@@ -600,7 +600,7 @@ def update_heart_rate_settings(
 async def upload_activity_preview(
     request: Request,
     file: UploadFile = File(...),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_privacy_consent),
 ):
     extension = Path(file.filename or "").suffix.lower()
     if extension not in ALLOWED_EXTENSIONS:
@@ -641,7 +641,7 @@ async def upload_activity_preview(
 @router.post("/upload/activity/confirm")
 def confirm_activity_upload(
     data: ConfirmUploadInput = Body(...),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_privacy_consent),
     db: Session = Depends(get_db),
 ):
     preview = _decode_preview(data.preview_token)
