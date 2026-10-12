@@ -23,6 +23,15 @@ router = APIRouter(prefix="/api", tags=["Sync"])
 settings = get_settings()
 _optional_bearer = HTTPBearer(auto_error=False)
 
+def _user_local_today(user: User | None) -> _date:
+    """Current calendar date in the user's configured IANA timezone."""
+    try:
+        zone = ZoneInfo(getattr(user, "timezone_name", None) or "UTC")
+    except (ZoneInfoNotFoundError, TypeError, ValueError):
+        zone = ZoneInfo("UTC")
+    return datetime.now(timezone.utc).astimezone(zone).date()
+
+
 def _parse_activity(act: dict, timezone_name: str | None = "UTC") -> dict | None:
     """Нормализует активность из JSON или CSV в единый dict."""
     act = {str(k).replace("\ufeff", "").strip(): v for k, v in act.items()}
@@ -324,7 +333,7 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
             pass
 
     # 4) ВСЕ календарные недели, включая нулевые (справедливо после перерыва)
-    this_week = X6.week_start(_date.today())
+    this_week = X6.week_start(_user_local_today(user))
     if day_info:
         first_week = min(X6.week_start(d) for d in day_info)
         all_weeks: list[_date] = []
@@ -671,7 +680,7 @@ async def sync_activities(
     
     athlete_id = current.intervals_id
     
-    today = _date.today()
+    today = _user_local_today(current)
     had_prior_intervals_activity = db.query(Activity.id).filter(
         Activity.user_id == current.id,
         Activity.source == "INTERVALS",
@@ -962,7 +971,7 @@ async def get_user_profile(
     
     activities = db.query(Activity).filter(Activity.user_id == user.id).order_by(Activity.start_date.desc()).limit(40).all()
     all_activities = db.query(Activity).filter(Activity.user_id == user.id).all()
-    today = datetime.utcnow().date()
+    today = _user_local_today(user)
     
     dates = sorted({(a.start_date_local or a.start_date).date() for a in all_activities if (a.start_date_local or a.start_date)}, reverse=True)
     day_streak = 0
@@ -993,7 +1002,7 @@ async def get_user_profile(
     
     season_year = today.year if today.month >= 9 else today.year - 1
     SEASON_START = datetime(season_year, 9, 1)
-    season_acts = [a for a in all_activities if a.start_date and a.start_date >= SEASON_START]
+    season_acts = [a for a in all_activities if (a.start_date_local or a.start_date) and (a.start_date_local or a.start_date) >= SEASON_START]
     season_stats = {
         "season_start": SEASON_START.strftime("%d.%m.%Y"),
         "total_km": round(sum(a.distance or 0 for a in season_acts) / 1000, 1),
@@ -1138,7 +1147,7 @@ async def get_user_profile(
                 "streak_reason": act.streak_reason or "",
                 "tss_estimated": bool(act.tss_estimated),
                 "is_long": bool(act.is_long),
-                "date": act.start_date.strftime("%d.%m.%Y") if act.start_date else "Неизвестно",
+                "date": (act.start_date_local or act.start_date).strftime("%d.%m.%Y") if (act.start_date_local or act.start_date) else "Неизвестно",
             }
             for act in activities
         ]
@@ -1182,7 +1191,7 @@ def get_weekly_summary(
     db: Session = Depends(get_db),
 ):
     """Сводка, события и тренировки выбранной недели; по умолчанию текущая неделя."""
-    today = datetime.utcnow().date()
+    today = _user_local_today(current)
     current_start = _monday_for_day(today)
     selected_start = _monday_for_day(week_start or today)
     if selected_start > current_start:
@@ -1287,8 +1296,12 @@ def get_weekly_summary(
 
     activities = (
         db.query(Activity)
-        .filter(Activity.user_id == current.id, Activity.start_date >= selected_dt, Activity.start_date < next_dt)
-        .order_by(Activity.start_date.desc(), Activity.id.desc())
+        .filter(
+            Activity.user_id == current.id,
+            func.coalesce(Activity.start_date_local, Activity.start_date) >= selected_dt,
+            func.coalesce(Activity.start_date_local, Activity.start_date) < next_dt,
+        )
+        .order_by(func.coalesce(Activity.start_date_local, Activity.start_date).desc(), Activity.id.desc())
         .all()
     )
     return {
@@ -1304,7 +1317,7 @@ def get_weekly_summary(
 def get_season_weeks(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """WeeklySummary timeline for the current September–August season."""
     from ..models import WeeklySummary
-    today = datetime.utcnow().date()
+    today = _user_local_today(current)
     season_year = today.year if today.month >= 9 else today.year - 1
     season_start = _date(season_year, 9, 1)
     first_week = _monday_for_day(season_start)
@@ -1445,7 +1458,7 @@ async def public_profile(
     if can_view_profile_stats:
         all_acts = db.query(Activity).filter(Activity.user_id == user.id).all()
         season_start = datetime(2026, 9, 1)
-        season_acts = [a for a in all_acts if a.start_date and a.start_date >= season_start]
+        season_acts = [a for a in all_acts if (a.start_date_local or a.start_date) and (a.start_date_local or a.start_date) >= season_start]
         season_stats = {
             "season_start": season_start.strftime("%d.%m.%Y"),
             "total_km": round(sum(a.distance or 0 for a in season_acts) / 1000, 1),
@@ -1459,7 +1472,7 @@ async def public_profile(
         if is_owner or (is_friend and activity_visibility == "friends"):
             month_ago = datetime.utcnow() - timedelta(days=30)
             hr_points = [
-                {"date": a.start_date.strftime("%d.%m"), "hr": round(a.average_heartrate, 1)}
+                {"date": (a.start_date_local or a.start_date).strftime("%d.%m"), "hr": round(a.average_heartrate, 1)}
                 for a in sorted(all_acts, key=lambda x: x.start_date or datetime.min)
                 if a.start_date and a.start_date >= month_ago and (a.average_heartrate or 0) > 0
             ]
@@ -1531,7 +1544,7 @@ async def public_activities(
                 "streak_reason": a.streak_reason or "",
                 "tss_estimated": bool(a.tss_estimated),
                 "is_long": bool(a.is_long),
-                "date": a.start_date.strftime("%d.%m.%Y") if a.start_date else "—",
+                "date": (a.start_date_local or a.start_date).strftime("%d.%m.%Y") if (a.start_date_local or a.start_date) else "—",
             }
             for a in acts
         ],
@@ -1564,7 +1577,7 @@ async def leaderboard(
     if scope == "weekly":
         from ..services import xp_v6 as X6
         from ..models import LeagueWeek, WeeklySummary
-        today = datetime.utcnow().date()
+        today = _user_local_today(current)
         this_ws_d = X6.week_start(today)
         this_ws = datetime.combine(this_ws_d, datetime.min.time())
         sums = (
