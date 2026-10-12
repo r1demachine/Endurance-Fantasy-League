@@ -44,3 +44,17 @@ def require_admin(current: User = Depends(get_current_user)) -> User:
     if current.id not in _admin_ids():
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
     return current
+
+
+def require_privacy_consent(current: User = Depends(get_current_user)) -> User:
+    """Блокирует операции с данными без актуального согласия на политику."""
+    settings = get_settings()
+    if (
+        current.privacy_consent_version != settings.PRIVACY_CONSENT_VERSION
+        or current.privacy_consent_at is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Перед продолжением необходимо принять актуальную политику обработки данных",
+        )
+    return current
