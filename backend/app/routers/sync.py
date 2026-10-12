@@ -1043,16 +1043,18 @@ async def sync_activities(
     if not _claim_sync_progress(db, user_id, len(month_ranges)):
         raise HTTPException(status_code=409, detail="Синхронизация уже выполняется")
 
-    had_prior_intervals_activity = db.query(Activity.id).filter(
-        Activity.user_id == user_id,
-        Activity.source == "INTERVALS",
-    ).first() is not None
-    db.commit()
-    allow_week_notifications = bool(had_prior_intervals_activity and not full_sync)
     final_status = "error"
     final_message = "Синхронизация не завершена."
+    allow_week_notifications = False
 
     try:
+        # From this point onward every exception passes through the active-reset finally block.
+        had_prior_intervals_activity = db.query(Activity.id).filter(
+            Activity.user_id == user_id,
+            Activity.source == "INTERVALS",
+        ).first() is not None
+        db.commit()
+        allow_week_notifications = bool(had_prior_intervals_activity and not full_sync)
         from ..services.intervals import fetch_activities_for_user, fetch_wellness_for_user
 
         async def report_progress(phase: str, done: int, total: int, month_start: _date) -> None:
@@ -1091,6 +1093,20 @@ async def sync_activities(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"Intervals.icu недоступен: {type(exc).__name__}") from exc
+
+        await run_in_threadpool(
+            _write_sync_progress,
+            user_id,
+            {
+                "active": True,
+                "status": "fetching_wellness",
+                "phase": "wellness",
+                "months_done": 0,
+                "months_total": len(month_ranges),
+                "current_month": None,
+                "message": None,
+            },
+        )
 
         try:
             wellness_data = await fetch_wellness_for_user(
