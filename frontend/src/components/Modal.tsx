@@ -9,6 +9,7 @@ import {
   handleDialogKeyDown,
   parsePauseDate,
   parsePauseWeeks,
+  submitConfirmPayload,
 } from "./dialog-utils";
 
 export interface ModalProps {
@@ -161,10 +162,14 @@ export function ConfirmDialog({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!payload || busy) return;
+    if (busy) return;
     setInternalError("");
     try {
-      await onConfirm(payload);
+      await submitConfirmPayload(
+        { confirmation, password },
+        { requireDelete, requirePassword },
+        onConfirm,
+      );
     } catch (submitError) {
       setInternalError(getApiErrorMessage(submitError, "Не удалось выполнить действие. Повторите попытку."));
     }
