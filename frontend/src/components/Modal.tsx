@@ -244,6 +244,7 @@ export interface PauseDialogProps {
   onSubmit: (weeks: number) => void | Promise<void>;
   busy: boolean;
   error?: string;
+  now: number;
   pauseSetAt?: string | null;
   pausedUntil?: string | null;
 }
@@ -253,12 +254,13 @@ export function PauseDialog({
   onSubmit,
   busy,
   error,
+  now,
   pauseSetAt,
   pausedUntil,
 }: PauseDialogProps) {
   const [weeks, setWeeks] = useState(1);
   const endDate = parsePauseDate(pausedUntil ?? null);
-  const currentlyPaused = Boolean(endDate && endDate.getTime() > Date.now());
+  const currentlyPaused = Boolean(endDate && endDate.getTime() > now);
 
   const changeWeeks = (next: number) => {
     const parsed = parsePauseWeeks(next);
