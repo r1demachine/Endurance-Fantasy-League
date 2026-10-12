@@ -640,6 +640,16 @@ def _close_league_week(
             print(f"telegram week notify failed: {type(exc).__name__}")
     return True
 
+def _has_invalid_since_query(errors: list[dict]) -> bool:
+    """Identify malformed since query parameters for the route's HTTP 400 contract."""
+    return any(
+        len(error.get("loc", ())) >= 2
+        and error["loc"][0] == "query"
+        and error["loc"][1] == "since"
+        for error in errors
+    )
+
+
 _SYNC_PROGRESS_STALE_AFTER = timedelta(minutes=15)
 
 
