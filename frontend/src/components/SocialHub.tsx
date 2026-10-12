@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import { authApi } from "@/lib/auth";
 import Link from "next/link";
+import { Modal, ConfirmDialog } from "@/components/Modal";
+import { getApiErrorMessage } from "@/components/dialog-utils";
 
 type ModalKind = null | "search" | "list";
 type Tab = "friends" | "clubs";
@@ -16,39 +18,6 @@ interface Person {
   total_xp: number;
   relation?: "friends" | "sent" | "incoming" | null;
   friendship_id?: number | null;
-}
-
-/* ── Оболочка модалки: затемнение + кнопка назад ── */
-function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ y: 28, scale: 0.97 }}
-        animate={{ y: 0, scale: 1 }}
-        exit={{ y: 28, scale: 0.97 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
-        className="w-full max-w-md bg-[#f4f4f0] border-2 border-black shadow-[6px_6px_0_rgba(0,0,0,0.45)] max-h-[80vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3 border-b-2 border-black bg-[#5866f2] text-white px-4 py-3">
-          <p className="font-display uppercase text-xl leading-none">{title}</p>
-          <button
-            onClick={onClose}
-            className="px-3 py-2 border-2 border-black bg-white text-[#111] text-[10px] font-bold tracking-widest uppercase hover:bg-black hover:text-white transition-colors"
-          >
-            ← Back
-          </button>
-        </div>
-        <div className="overflow-y-auto p-4">{children}</div>
-      </motion.div>
-    </motion.div>
-  );
 }
 
 /* ── Строка атлета ── */
@@ -81,10 +50,11 @@ function PersonRow({ p, action, href }: { p: Person; action?: ReactNode; href?: 
 }
 
 /* ── Модалка поиска ── */
-function SearchModal({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
+function SearchModal({ onClose, onChanged, onError }: { onClose: () => void; onChanged: () => void; onError: (message: string) => void }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<Person[]>([]);
   const [searched, setSearched] = useState(false);
+  const [searchError, setSearchError] = useState("");
   const [searching, setSearching] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
@@ -94,16 +64,19 @@ function SearchModal({ onClose, onChanged }: { onClose: () => void; onChanged: (
     const controller = new AbortController();
     controllerRef.current = controller;
     setSearching(true);
+    setSearchError("");
     try {
       const r = await authApi.get("/api/friends/search", { params: { q: query }, signal: controller.signal });
       if (!controller.signal.aborted) {
         setResults(r.data.results || []);
         setSearched(true);
       }
-    } catch (error: any) {
-      if (!controller.signal.aborted && error.name !== "CanceledError" && error.name !== "AbortError") {
+    } catch (error: unknown) {
+      const errorName = error && typeof error === "object" && "name" in error ? String(error.name) : "";
+      if (!controller.signal.aborted && errorName !== "CanceledError" && errorName !== "AbortError") {
         setResults([]);
         setSearched(true);
+        setSearchError(getApiErrorMessage(error, "Не удалось выполнить поиск друзей."));
       }
     } finally {
       if (!controller.signal.aborted) setSearching(false);
@@ -117,6 +90,7 @@ function SearchModal({ onClose, onChanged }: { onClose: () => void; onChanged: (
       setResults([]);
       setSearched(false);
       setSearching(false);
+      setSearchError("");
       return;
     }
     const timer = window.setTimeout(() => { void performSearch(query); }, 300);
@@ -144,8 +118,8 @@ function SearchModal({ onClose, onChanged }: { onClose: () => void; onChanged: (
       const newRel = r.data.status === "accepted" ? "friends" : "sent";
       setResults((prev) => prev.map((x) => (x.id === p.id ? { ...x, relation: newRel } : x)));
       onChanged();
-    } catch (err: any) {
-      alert(err.response?.data?.detail || "Ошибка заявки");
+    } catch (error: unknown) {
+      onError(getApiErrorMessage(error, "Не удалось отправить заявку в друзья."));
     } finally {
       setBusyId(null);
     }
@@ -157,7 +131,9 @@ function SearchModal({ onClose, onChanged }: { onClose: () => void; onChanged: (
       await authApi.post("/api/friends/accept", { friendship_id: p.friendship_id });
       setResults((prev) => prev.map((x) => (x.id === p.id ? { ...x, relation: "friends" } : x)));
       onChanged();
-    } catch {} finally {
+    } catch (error: unknown) {
+      onError(getApiErrorMessage(error, "Не удалось принять заявку в друзья."));
+    } finally {
       setBusyId(null);
     }
   };
@@ -192,7 +168,7 @@ function SearchModal({ onClose, onChanged }: { onClose: () => void; onChanged: (
   };
 
   return (
-    <ModalShell title="Find athletes" onClose={onClose}>
+    <Modal title="Find athletes" onClose={onClose}>
       <div className="flex gap-2 mb-4">
         <input
           type="text"
@@ -212,6 +188,7 @@ function SearchModal({ onClose, onChanged }: { onClose: () => void; onChanged: (
       </div>
 
       <div className="space-y-2">
+        {searchError && <p role="alert" className="border-l-4 border-[#ff4b26] bg-[#ff4b26]/10 px-3 py-2 text-sm font-bold text-[#a62910]">{searchError}</p>}
         {results.map((p) => (
           <PersonRow key={p.id} p={p} action={actionFor(p)} href={`/u/${p.username}`} />
         ))}
@@ -227,7 +204,7 @@ function SearchModal({ onClose, onChanged }: { onClose: () => void; onChanged: (
           </p>
         )}
       </div>
-    </ModalShell>
+    </Modal>
   );
 }
 
@@ -239,12 +216,17 @@ function ListModal({ onClose, onChanged }: { onClose: () => void; onChanged: () 
     outgoing: [],
   });
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState("");
+  const [busyId, setBusyId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
       const r = await authApi.get("/api/friends");
       setData(r.data);
-    } catch {} finally {
+      setError("");
+    } catch (error: unknown) {
+      setError(getApiErrorMessage(error, "Не удалось загрузить список друзей."));
+    } finally {
       setLoaded(true);
     }
   }, []);
@@ -252,20 +234,30 @@ function ListModal({ onClose, onChanged }: { onClose: () => void; onChanged: () 
     load();
   }, [load]);
 
-  const accept = async (p: Person) => {
-    await authApi.post("/api/friends/accept", { friendship_id: p.friendship_id });
-    load();
-    onChanged();
+  const updateRelation = async (p: Person, action: "accept" | "reject") => {
+    if (p.friendship_id == null) {
+      setError("Не удалось определить заявку. Обнови список и попробуй снова.");
+      return;
+    }
+    setBusyId(p.id);
+    setError("");
+    try {
+      await authApi.post("/api/friends/" + action, { friendship_id: p.friendship_id });
+      await load();
+      onChanged();
+    } catch (error: unknown) {
+      setError(getApiErrorMessage(error, action === "accept" ? "Не удалось принять заявку." : "Не удалось отклонить заявку."));
+    } finally {
+      setBusyId(null);
+    }
   };
-  const reject = async (p: Person) => {
-    await authApi.post("/api/friends/reject", { friendship_id: p.friendship_id });
-    load();
-    onChanged();
-  };
+  const accept = (p: Person) => updateRelation(p, "accept");
+  const reject = (p: Person) => updateRelation(p, "reject");
 
   return (
-    <ModalShell title="My friends" onClose={onClose}>
+    <Modal title="My friends" onClose={onClose}>
       <div className="space-y-5">
+        {error && <p role="alert" className="border-l-4 border-[#ff4b26] bg-[#ff4b26]/10 px-3 py-2 text-sm font-bold text-[#a62910]">{error}</p>}
         {/* Входящие заявки */}
         {data.incoming.length > 0 && (
           <div>
@@ -280,8 +272,8 @@ function ListModal({ onClose, onChanged }: { onClose: () => void; onChanged: () 
                   href={`/u/${p.username}`}
                   action={
                     <span className="flex gap-1 shrink-0">
-                      <button onClick={() => accept(p)} className="px-2 py-2 bg-[#ffd500] border-2 border-black text-[9px] font-bold tracking-widest uppercase hover:bg-black hover:text-white">✓</button>
-                      <button onClick={() => reject(p)} className="px-2 py-2 bg-white border-2 border-black text-[9px] font-bold tracking-widest uppercase hover:bg-[#ff4b26] hover:text-white">✕</button>
+                      <button onClick={() => accept(p)} disabled={busyId === p.id} className="px-2 py-2 bg-[#ffd500] border-2 border-black text-[9px] font-bold tracking-widest uppercase hover:bg-black hover:text-white disabled:opacity-50">✓</button>
+                      <button onClick={() => reject(p)} disabled={busyId === p.id} className="px-2 py-2 bg-white border-2 border-black text-[9px] font-bold tracking-widest uppercase hover:bg-[#ff4b26] hover:text-white disabled:opacity-50">✕</button>
                     </span>
                   }
                 />
@@ -319,7 +311,7 @@ function ListModal({ onClose, onChanged }: { onClose: () => void; onChanged: () 
 
         {!loaded && <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-6">Loading...</p>}
       </div>
-    </ModalShell>
+    </Modal>
   );
 }
 
@@ -327,6 +319,7 @@ function ListModal({ onClose, onChanged }: { onClose: () => void; onChanged: () 
 function FriendsPanel({ version, onOpen }: { version: number; onOpen: (m: "search" | "list") => void }) {
   const [incoming, setIncoming] = useState(0);
   const [friendsCount, setFriendsCount] = useState<number | null>(null);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -334,7 +327,10 @@ function FriendsPanel({ version, onOpen }: { version: number; onOpen: (m: "searc
         const r = await authApi.get("/api/friends");
         setIncoming(r.data.incoming?.length ?? 0);
         setFriendsCount(r.data.friends?.length ?? 0);
-      } catch {}
+        setLoadError("");
+      } catch (error: unknown) {
+        setLoadError(getApiErrorMessage(error, "Не удалось загрузить данные о друзьях."));
+      }
     })();
   }, [version]);
 
@@ -363,6 +359,7 @@ function FriendsPanel({ version, onOpen }: { version: number; onOpen: (m: "searc
           )}
         </button>
       </div>
+      {loadError && <p role="alert" className="mt-3 text-sm font-bold text-[#a62910]">{loadError}</p>}
       <p className="text-[10px] font-bold tracking-widest uppercase text-[#666] mt-4">
         Friends compete in the Friends rating on your dashboard
       </p>
@@ -390,6 +387,7 @@ export default function SocialHub() {
   const [tab, setTab] = useState<Tab>("friends");
   const [modal, setModal] = useState<ModalKind>(null);
   const [version, setVersion] = useState(0);
+  const [friendRequestError, setFriendRequestError] = useState("");
   const bump = () => setVersion((v) => v + 1);
 
   return (
@@ -439,8 +437,21 @@ export default function SocialHub() {
 
       {/* Модалки */}
       <AnimatePresence>
-        {modal === "search" && <SearchModal onClose={() => setModal(null)} onChanged={bump} />}
+        {modal === "search" && <SearchModal onClose={() => setModal(null)} onChanged={bump} onError={setFriendRequestError} />}
         {modal === "list" && <ListModal onClose={() => setModal(null)} onChanged={bump} />}
+      </AnimatePresence>
+      <AnimatePresence>
+        {friendRequestError && (
+          <ConfirmDialog
+            title="Ошибка заявки в друзья"
+            text={friendRequestError}
+            confirmLabel="Понятно"
+            danger={false}
+            busy={false}
+            onClose={() => setFriendRequestError("")}
+            onConfirm={() => setFriendRequestError("")}
+          />
+        )}
       </AnimatePresence>
     </div>
   );
