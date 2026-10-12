@@ -13,7 +13,8 @@ from ..services.xp import recalculate_timeline, level_from_xp, round_xp
 from datetime import date as _date
 from ..services.intervals import calculate_xp
 from ..config import get_settings
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Optional
 
 from ..rate_limit import limiter
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/api", tags=["Sync"])
 settings = get_settings()
 _optional_bearer = HTTPBearer(auto_error=False)
 
-def _parse_activity(act: dict) -> dict | None:
+def _parse_activity(act: dict, timezone_name: str | None = "UTC") -> dict | None:
     """Нормализует активность из JSON или CSV в единый dict."""
     act = {str(k).replace("\ufeff", "").strip(): v for k, v in act.items()}
 
@@ -64,20 +65,47 @@ def _parse_activity(act: dict) -> dict | None:
     xp_earned = round(base_xp * intensity_multiplier, 2)
     base_xp = round(base_xp, 2)
 
-    start_date_str = (
-        act.get("start_date_local")
-        or act.get("start_date")
-        or act.get("startDateLocal")
-        or ""
-    )
+    raw_start_utc = act.get("start_date") or act.get("startDate")
+    raw_start_local = act.get("start_date_local") or act.get("startDateLocal")
+
     try:
-        start_date = (
-            datetime.fromisoformat(str(start_date_str).replace("Z", "+00:00"))
-            if start_date_str
-            else datetime.utcnow()
-        )
-    except Exception:
+        zone = ZoneInfo(timezone_name or "UTC")
+    except (ZoneInfoNotFoundError, TypeError, ValueError):
+        zone = ZoneInfo("UTC")
+
+    def _dt(value):
+        if isinstance(value, datetime):
+            return value
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+
+    utc_value = _dt(raw_start_utc)
+    local_value = _dt(raw_start_local)
+    if utc_value is not None:
+        if utc_value.tzinfo is None:
+            start_date = utc_value
+            utc_aware = utc_value.replace(tzinfo=timezone.utc)
+        else:
+            utc_aware = utc_value.astimezone(timezone.utc)
+            start_date = utc_aware.replace(tzinfo=None)
+        if local_value is not None:
+            start_date_local = local_value.replace(tzinfo=None)
+        else:
+            start_date_local = utc_aware.astimezone(zone).replace(tzinfo=None)
+    elif local_value is not None:
+        if local_value.tzinfo is None:
+            start_date_local = local_value
+            start_date = local_value.replace(tzinfo=zone).astimezone(timezone.utc).replace(tzinfo=None)
+        else:
+            start_date_local = local_value.replace(tzinfo=None)
+            start_date = local_value.astimezone(timezone.utc).replace(tzinfo=None)
+    else:
         start_date = datetime.utcnow()
+        start_date_local = start_date.replace(tzinfo=timezone.utc).astimezone(zone).replace(tzinfo=None)
 
     return {
         "intervals_activity_id": act_id,
@@ -92,6 +120,7 @@ def _parse_activity(act: dict) -> dict | None:
         "intensity_multiplier": intensity_multiplier,
         "xp_earned": xp_earned,
         "start_date": start_date,
+        "start_date_local": start_date_local,
         "is_manual": _detect_manual(act),
         "is_indoor": any(_as_bool(act.get(k)) for k in ("trainer", "is_indoor", "indoor")),
         "average_heartrate": _f("average_heartrate") or _f("avg_hr"),
@@ -168,7 +197,7 @@ def _recalculate_user_xp(db: Session, user: User) -> None:
     # группа по календарной дате
     by_day: dict[_date, list] = defaultdict(list)
     for a in acts:
-        d = a.start_date.date() if a.start_date else _date.today()
+        d = (a.start_date_local or a.start_date).date() if (a.start_date_local or a.start_date) else _date.today()
         by_day[d].append(a)
 
     # полный диапазон дат (чтобы считать пропуски)
@@ -240,11 +269,11 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         tss, source = X6.resolve_training_load({
             "training_load": a.training_load, "moving_time": a.moving_time,
             "intensity": a.intensity, "sport_type": a.sport_type,
-            "is_manual": bool(a.is_manual),
+            "is_manual": bool(a.is_manual), "source": getattr(a, "source", None),
         })
         a.tss = round(tss, 2)
         # HR-derived TSS from uploaded files is useful for effort XP, but remains an estimate.
-        a.tss_estimated = (source == "estimated") or (getattr(a, "source", None) == "UPLOAD_SITE")
+        a.tss_estimated = (source == "estimated") or (getattr(a, "source", None) in {"UPLOAD_SITE", "UPLOAD_TELEGRAM"})
         a.base_xp = None
         a.rate_per_hour = None
         a.sleep_multiplier = None
@@ -790,10 +819,11 @@ async def sync_activities(
         row.intervals_activity_id: row
         for row in db.query(Activity).filter(Activity.user_id == current.id).all()
     }
+    merged_upload_count = 0
     for raw in activities_data:
         if not isinstance(raw, dict):
             continue
-        parsed = _parse_activity(raw)
+        parsed = _parse_activity(raw, current.timezone_name)
         if not parsed:
             continue
         act_id = parsed["intervals_activity_id"]
@@ -808,6 +838,20 @@ async def sync_activities(
         if sleep_secs is None:
             prev = (parsed["start_date"] - timedelta(days=1)).strftime("%Y-%m-%d")
             sleep_secs = sleep_by_date.get(prev)
+        from ..services.activity_dedupe import UPLOAD_SOURCES, find_matching_activity
+        uploaded_match = find_matching_activity(
+            db,
+            current.id,
+            parsed["start_date"],
+            parsed.get("start_date_local"),
+            int(parsed.get("moving_time") or 0),
+            sources=UPLOAD_SOURCES,
+        )
+        if uploaded_match is not None:
+            db.delete(uploaded_match)
+            existing_rows.pop(uploaded_match.intervals_activity_id, None)
+            merged_upload_count += 1
+
         if act_id in existing_rows:
             # UPSERT: Intervals досылает TSS/пульс/сон ПОЗЖЕ самой тренировки
             row = existing_rows[act_id]
@@ -821,6 +865,12 @@ async def sync_activities(
                 changed = True
             if bool(row.indoor) != is_indoor:
                 row.indoor = is_indoor
+                changed = True
+            if parsed.get("start_date_local") is not None and row.start_date_local != parsed["start_date_local"]:
+                row.start_date_local = parsed["start_date_local"]
+                changed = True
+            if row.start_date != parsed["start_date"]:
+                row.start_date = parsed["start_date"]
                 changed = True
             for field, value in (
                 ("training_load", parsed.get("training_load") or 0),
@@ -853,6 +903,7 @@ async def sync_activities(
             intensity=parsed.get("intensity") or 0,
             sleep_secs=sleep_secs,
             start_date=parsed["start_date"],
+            start_date_local=parsed.get("start_date_local") or parsed["start_date"],
             is_manual=bool(parsed.get("is_manual", False)),
             indoor=bool(parsed.get("is_indoor", False)),
             is_indoor=bool(parsed.get("is_indoor", False)),
@@ -870,7 +921,7 @@ async def sync_activities(
     # API-синхронизация использует ограниченное окно истории (обычно 90 дней), поэтому
     # старые активности закономерно отсутствуют в payload. Удаление выполняется явными
     # пользовательскими действиями (disconnect/account deletion), не этим sync.
-    deleted_count = 0
+    deleted_count = merged_upload_count
     db.commit()
 
     total_before = float(current.total_xp or 0)
