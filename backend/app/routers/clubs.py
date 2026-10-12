@@ -1,8 +1,7 @@
 """Клубы: создание, инвайт-код, заявки, рейтинги."""
-from __future__ import annotations
-
 import secrets
 from datetime import date, datetime
+from typing import Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -55,7 +54,7 @@ def _member_count(db: Session, club_id: int) -> int:
     return db.query(ClubMember).filter(ClubMember.club_id == club_id).count()
 
 
-def _is_member(db: Session, club_id: int, user_id: int) -> ClubMember | None:
+def _is_member(db: Session, club_id: int, user_id: int) -> Optional[ClubMember]:
     return db.query(ClubMember).filter(ClubMember.club_id == club_id, ClubMember.user_id == user_id).first()
 
 
@@ -71,7 +70,7 @@ def _club_brief(c: Club, db: Session, me: User) -> dict:
     }
 
 
-def _season_bounds(d: date) -> tuple[datetime, datetime]:
+def _season_bounds(d: date) -> Tuple[datetime, datetime]:
     return datetime(d.year, 1, 1), datetime(d.year, 12, 31, 23, 59, 59)
 
 
