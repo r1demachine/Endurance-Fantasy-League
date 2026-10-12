@@ -359,8 +359,8 @@ class Duel(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     responded_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
-    pair_low_id = Column(Integer, nullable=True, index=True)
-    pair_high_id = Column(Integer, nullable=True, index=True)
+    pair_low_id = Column(Integer, nullable=False, index=True)
+    pair_high_id = Column(Integer, nullable=False, index=True)
     is_no_activity_draw = Column(Boolean, nullable=False, default=False, server_default="false")
 
     challenger = relationship("User", foreign_keys=[challenger_id])
