@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { authApi, clearAuth } from "@/lib/auth";
 import { refreshUser, clearUserCache } from "@/lib/apiCache";
+import TelegramBind from "@/components/TelegramBind";
 
 type PrivacyState = {
   profile_visibility: "authenticated" | "friends" | "private";
@@ -164,6 +165,8 @@ export default function AccountPrivacy() {
         </div>
 
         {message && <p role="status" className="text-sm font-bold text-[#5866f2]">{message}</p>}
+
+        <TelegramBind />
 
         <div className="border-t-2 border-black/20 pt-5">
           <h3 className="font-display text-lg uppercase text-[#ff4b26]">Удалить аккаунт</h3>
