@@ -279,7 +279,9 @@ class HeartRateSettingsTests(unittest.TestCase):
         }
         token = _encode_preview(payload)
         self.assertEqual(_decode_preview(token)["user_id"], 7)
-        altered = token[:-1] + ("A" if token[-1] != "A" else "B")
+        encoded, signature = token.split(".", 1)
+        tampered_encoded = ("A" if encoded[0] != "A" else "B") + encoded[1:]
+        altered = tampered_encoded + "." + signature
         with self.assertRaises(Exception):
             _decode_preview(altered)
 
