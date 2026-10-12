@@ -5,6 +5,8 @@ import Link from "next/link";
 import { authApi, clearAuth } from "@/lib/auth";
 import { refreshUser, clearUserCache } from "@/lib/apiCache";
 import TelegramBind from "@/components/TelegramBind";
+import { ConfirmDialog, type ConfirmPayload } from "@/components/Modal";
+import { getApiErrorMessage } from "@/components/dialog-utils";
 
 type PrivacyState = {
   profile_visibility: "authenticated" | "friends" | "private";
@@ -21,6 +23,9 @@ export default function AccountPrivacy() {
   const [activityVisibility, setActivityVisibility] = useState<PrivacyState["activity_visibility"]>("friends");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const load = async () => {
     try {
@@ -28,8 +33,8 @@ export default function AccountPrivacy() {
       setSettings(response.data);
       setProfileVisibility(response.data.profile_visibility);
       setActivityVisibility(response.data.activity_visibility);
-    } catch {
-      setMessage("Не удалось загрузить настройки приватности.");
+    } catch (error: unknown) {
+      setMessage(getApiErrorMessage(error, "Не удалось загрузить настройки приватности."));
     }
   };
 
@@ -43,8 +48,8 @@ export default function AccountPrivacy() {
       await load();
       await refreshUser(true);
       setMessage("Согласие сохранено.");
-    } catch (e: any) {
-      setMessage(e?.response?.data?.detail || "Не удалось сохранить согласие.");
+    } catch (error: unknown) {
+      setMessage(getApiErrorMessage(error, "Не удалось сохранить согласие."));
     } finally {
       setBusy(false);
     }
@@ -62,38 +67,25 @@ export default function AccountPrivacy() {
       setActivityVisibility(response.data.activity_visibility);
       await load();
       setMessage("Настройки приватности сохранены.");
-    } catch (e: any) {
-      setMessage(e?.response?.data?.detail || "Не удалось сохранить настройки.");
+    } catch (error: unknown) {
+      setMessage(getApiErrorMessage(error, "Не удалось сохранить настройки."));
     } finally {
       setBusy(false);
     }
   };
 
-  const deleteAccount = async () => {
-    const first = window.confirm(
-      "Удалить аккаунт и все связанные данные без возможности восстановления?"
-    );
-    if (!first) return;
-    const confirmation = window.prompt("Для подтверждения введи DELETE (заглавными буквами):");
-    if (confirmation !== "DELETE") {
-      setMessage("Удаление отменено: подтверждение не совпало.");
-      return;
-    }
-    const password = window.prompt("Введи пароль аккаунта для окончательного удаления:");
-    if (!password) {
-      setMessage("Удаление отменено: нужен пароль.");
-      return;
-    }
-
-    setBusy(true);
+  const deleteAccount = async ({ password, confirmation }: ConfirmPayload) => {
+    setDeleteBusy(true);
+    setDeleteError("");
     try {
-      await authApi.delete("/api/account", { data: { confirmation: "DELETE", password } });
+      await authApi.delete("/api/account", { data: { confirmation, password } });
       clearAuth();
       clearUserCache();
       window.location.assign("/");
-    } catch (e: any) {
-      setMessage(e?.response?.data?.detail || "Не удалось удалить аккаунт.");
-      setBusy(false);
+    } catch (error: unknown) {
+      setDeleteError(getApiErrorMessage(error, "Не удалось удалить аккаунт."));
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -181,14 +173,31 @@ export default function AccountPrivacy() {
           </p>
           <button
             type="button"
-            onClick={deleteAccount}
-            disabled={busy}
+            onClick={() => {
+              setDeleteError("");
+              setDeleteDialogOpen(true);
+            }}
+            disabled={busy || deleteBusy}
             className="mt-3 border-2 border-[#ff4b26] px-5 py-3 text-xs font-bold uppercase tracking-widest text-[#ff4b26] hover:bg-[#ff4b26] hover:text-white disabled:opacity-50"
           >
             Удалить аккаунт и все данные
           </button>
         </div>
       </div>
+      {deleteDialogOpen && (
+        <ConfirmDialog
+          title="Удалить аккаунт?"
+          text="Будут безвозвратно удалены аккаунт и все связанные данные. Для подтверждения введи DELETE и пароль аккаунта."
+          confirmLabel="Удалить аккаунт"
+          danger
+          busy={deleteBusy}
+          error={deleteError}
+          requireDelete
+          requirePassword
+          onClose={() => setDeleteDialogOpen(false)}
+          onConfirm={deleteAccount}
+        />
+      )}
     </section>
   );
 }

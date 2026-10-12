@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { ReactNode, TouchEvent } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { getCachedUser, subscribeUser, refreshUser } from "@/lib/apiCache";
 import { authApi, isAuthenticated } from "@/lib/auth";
@@ -12,6 +12,8 @@ import {
   ResponsiveContainer, AreaChart, Area, ComposedChart, Bar, Line, Legend, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts";
 import XpTooltip from "@/components/XpTooltip";
+import { PauseDialog } from "@/components/Modal";
+import { getApiErrorMessage, parsePauseDate, parsePauseWeeks } from "@/components/dialog-utils";
 
 type Tone = "default" | "yellow" | "orange" | "indigo";
 
@@ -54,7 +56,7 @@ function useIsTouch() {
 
 function WeekBlock({
   weekData, weekOptions, selectedWeekStart, onWeekChange, onPreviousWeek, onNextWeek,
-  canGoPrevious, canGoNext,
+  canGoPrevious, canGoNext, onPauseClick,
 }: {
   weekData: any;
   weekOptions: { week_start: string; label: string }[];
@@ -64,6 +66,7 @@ function WeekBlock({
   onNextWeek: () => void;
   canGoPrevious: boolean;
   canGoNext: boolean;
+  onPauseClick: () => void;
 }) {
   if (!weekData) return null;
   const pct = Math.min(Math.max(weekData.completion_ratio || 0, 0), 150);
@@ -139,14 +142,7 @@ function WeekBlock({
       <div className="mb-4">
         <button
           type="button"
-          onClick={async () => {
-            const w = window.prompt("Пауза на сколько недель? (0 — снять, макс 8)", "0");
-            if (w === null) return;
-            try {
-              await authApi.post("/api/pause", { weeks: parseInt(w, 10) || 0 });
-              await refreshUser(true);
-            } catch {}
-          }}
+          onClick={onPauseClick}
           className="px-3 py-2 border-2 border-black text-[10px] font-bold tracking-widest uppercase hover:bg-[#ffd500] transition-colors"
         >
           ⏸ Пауза (болезнь / отпуск)
@@ -307,6 +303,11 @@ export default function Dashboard() {
   const [friendsBoard, setFriendsBoard] = useState<any[]>([]);
   const [boardsLoaded, setBoardsLoaded] = useState(false);
   const [isAuthed, setIsAuthed] = useState(false);
+  const [pauseDialogOpen, setPauseDialogOpen] = useState(false);
+  const [pauseNow, setPauseNow] = useState(0);
+  const [pauseBusy, setPauseBusy] = useState(false);
+  const [pauseError, setPauseError] = useState("");
+  const [dashboardError, setDashboardError] = useState("");
   const isTouch = useIsTouch();
   const [touchTooltipActive, setTouchTooltipActive] = useState(false);
   const [chartKey, setChartKey] = useState(0);
@@ -397,7 +398,10 @@ export default function Dashboard() {
       setWeekOptions(result.week_options || []);
       if (!selectedWeekStart && result.week?.week_start) setSelectedWeekStart(result.week.week_start);
     }).catch((error) => {
-      if (error.name !== "CanceledError" && error.name !== "AbortError") setWeekActivities([]);
+      if (error.name !== "CanceledError" && error.name !== "AbortError") {
+        setWeekActivities([]);
+        setDashboardError(getApiErrorMessage(error, "Не удалось загрузить данные недели."));
+      }
     }).finally(() => {
       if (!controller.signal.aborted) setWeekLoading(false);
     });
@@ -408,7 +412,7 @@ export default function Dashboard() {
     const controller = new AbortController();
     authApi.get("/api/season-weeks", { signal: controller.signal })
       .then((response) => setSeasonWeeks(response.data.weeks || []))
-      .catch(() => {});
+      .catch((error) => { if (!controller.signal.aborted) setDashboardError(getApiErrorMessage(error, "Не удалось загрузить сезонную статистику.")); });
     return () => controller.abort();
   }, []);
 
@@ -431,19 +435,25 @@ export default function Dashboard() {
         const g = await authApi.get("/api/leaderboard", { params: { scope: "global", limit: 10 } });
         setGlobalBoard(g.data.entries || []);
         setGlobalYourRank(typeof g.data.your_rank === "number" ? g.data.your_rank : null);
-      } catch {}
+      } catch (error: unknown) {
+        setDashboardError(getApiErrorMessage(error, "Не удалось загрузить общий рейтинг."));
+      }
       if (isAuthenticated()) {
         try {
           const f = await authApi.get("/api/leaderboard", { params: { scope: "friends", limit: 10 } });
           setFriendsBoard(f.data.entries || []);
           setFriendsYourRank(typeof f.data.your_rank === "number" ? f.data.your_rank : null);
-        } catch {}
+        } catch (error: unknown) {
+          setDashboardError(getApiErrorMessage(error, "Не удалось загрузить рейтинг друзей."));
+        }
       }
       // Weekly League — публичный, как global
       try {
         const w = await authApi.get("/api/leaderboard", { params: { scope: "weekly" } });
         setWeeklyBoard(w.data);
-      } catch {}
+      } catch (error: unknown) {
+        setDashboardError(getApiErrorMessage(error, "Не удалось загрузить недельную лигу."));
+      }
       setBoardsLoaded(true);
     })();
   }, []);
@@ -496,6 +506,34 @@ export default function Dashboard() {
       setInviteMessage("Copy the link from the address bar");
     }
     setTimeout(() => setInviteMessage(""), 3000);
+  };
+
+  const handlePauseSubmit = async (weeks: number) => {
+    const validWeeks = parsePauseWeeks(weeks);
+    if (validWeeks === null) {
+      setPauseError("Выбери целое число недель от 0 до 8.");
+      return;
+    }
+    const endTimestamp = userData?.user?.paused_until;
+    const parsedPauseEnd = parsePauseDate(typeof endTimestamp === "string" ? endTimestamp : null);
+    const currentlyPaused = Boolean(parsedPauseEnd && parsedPauseEnd.getTime() > Date.now());
+    if (validWeeks === 0 && !currentlyPaused) {
+      setPauseError("Сейчас активной паузы нет.");
+      return;
+    }
+
+    setPauseBusy(true);
+    setPauseError("");
+    try {
+      await authApi.post("/api/pause", { weeks: validWeeks });
+      await refreshUser(true);
+      setWeekData((previous: any) => previous ? { ...previous, paused: validWeeks > 0 } : previous);
+      setPauseDialogOpen(false);
+    } catch (error: unknown) {
+      setPauseError(getApiErrorMessage(error, "Не удалось обновить паузу. Проверь соединение и попробуй ещё раз."));
+    } finally {
+      setPauseBusy(false);
+    }
   };
 
   const rows = leaderboardTab === "global" ? globalBoard : friendsBoard;
@@ -573,6 +611,8 @@ export default function Dashboard() {
           </Link>
         </div>
 
+        {dashboardError && <p role="alert" className="border-2 border-[#ff4b26] bg-white px-4 py-3 text-sm font-bold text-[#a62910]">{dashboardError}</p>}
+
         {/* Статистика */}
         <div className="grid md:grid-cols-3 border-b-2 border-black">
           <div className="md:border-r-2 border-black">
@@ -630,7 +670,21 @@ export default function Dashboard() {
               onNextWeek={() => navigateWeek("next")}
               canGoPrevious={canGoPrevious}
               canGoNext={canGoNext}
+              onPauseClick={() => { setPauseNow(Date.now()); setPauseError(""); setPauseDialogOpen(true); }}
             />
+            <AnimatePresence>
+              {pauseDialogOpen && (
+                <PauseDialog
+                  onClose={() => setPauseDialogOpen(false)}
+                  onSubmit={handlePauseSubmit}
+                  busy={pauseBusy}
+                  error={pauseError}
+                  now={pauseNow}
+                  pauseSetAt={userData?.user?.pause_set_at ?? null}
+                  pausedUntil={userData?.user?.paused_until ?? null}
+                />
+              )}
+            </AnimatePresence>
             <SeasonWeeksChart weeks={seasonWeeks} />
             <EventsFeed events={events} />
             <QuestsBoard quests={quests} />

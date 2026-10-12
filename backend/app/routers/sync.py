@@ -1337,6 +1337,8 @@ async def get_user_profile(
             "intervals_id": user.intervals_id,
             "xp_version": get_settings().XP_ENGINE,
             "privacy_consent_current": bool(user.privacy_consent_version == get_settings().PRIVACY_CONSENT_VERSION and user.privacy_consent_at),
+            "pause_set_at": user.pause_set_at.isoformat() if user.pause_set_at else None,
+            "paused_until": user.paused_until.isoformat() if user.paused_until else None,
         },
         "stats": {
             "day_streak": day_streak,
