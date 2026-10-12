@@ -274,3 +274,96 @@ class LeagueMembership(Base):
     __table_args__ = (
         Index("uq_league_membership", "week_start", "user_id", unique=True),
     )
+
+
+class DuelStatus(str, enum.Enum):
+    PENDING = "pending"
+    ACTIVE = "active"
+    FINISHED = "finished"
+    DECLINED = "declined"
+
+
+class Duel(Base):
+    """Недельный челлендж 1 на 1 между друзьями."""
+    __tablename__ = "duels"
+
+    id = Column(Integer, primary_key=True, index=True)
+    challenger_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    opponent_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    week_start = Column(DateTime, nullable=False, index=True)
+    status = Column(String(20), nullable=False, default=DuelStatus.PENDING.value)
+    challenger_xp = Column(Float, nullable=True)
+    opponent_xp = Column(Float, nullable=True)
+    winner_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    responded_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+
+    challenger = relationship("User", foreign_keys=[challenger_id])
+    opponent = relationship("User", foreign_keys=[opponent_id])
+    winner = relationship("User", foreign_keys=[winner_id])
+
+    __table_args__ = (
+        Index("idx_duel_pair_week", "challenger_id", "opponent_id", "week_start"),
+        Index("idx_duel_status_week", "status", "week_start"),
+    )
+
+
+class Club(Base):
+    __tablename__ = "clubs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(64), nullable=False, index=True)
+    invite_code = Column(String(16), unique=True, nullable=False, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User", foreign_keys=[owner_id])
+    members = relationship("ClubMember", back_populates="club", cascade="all, delete-orphan")
+
+
+class ClubMemberRole(str, enum.Enum):
+    OWNER = "owner"
+    MEMBER = "member"
+
+
+class ClubMember(Base):
+    __tablename__ = "club_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    role = Column(String(20), nullable=False, default=ClubMemberRole.MEMBER.value)
+    joined_at = Column(DateTime, default=datetime.utcnow)
+
+    club = relationship("Club", back_populates="members")
+    user = relationship("User", foreign_keys=[user_id])
+
+    __table_args__ = (
+        Index("uq_club_member", "club_id", "user_id", unique=True),
+    )
+
+
+class ClubJoinRequestStatus(str, enum.Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+
+
+class ClubJoinRequest(Base):
+    __tablename__ = "club_join_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    status = Column(String(20), nullable=False, default=ClubJoinRequestStatus.PENDING.value)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    responded_at = Column(DateTime, nullable=True)
+
+    club = relationship("Club")
+    user = relationship("User", foreign_keys=[user_id])
+
+    __table_args__ = (
+        Index("uq_club_join_pending", "club_id", "user_id", unique=True),
+    )
