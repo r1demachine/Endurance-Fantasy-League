@@ -367,17 +367,626 @@ function FriendsPanel({ version, onOpen }: { version: number; onOpen: (m: "searc
   );
 }
 
-/* ── Заглушка клубов ── */
-function ClubsStub() {
+type ClubSummary = {
+  id: number;
+  name: string;
+  invite_code?: string | null;
+  instant_join?: boolean;
+  owner_id?: number;
+  is_owner?: boolean;
+  is_member?: boolean;
+  member_count: number;
+  my_role?: string | null;
+};
+
+type ClubMember = {
+  id: number;
+  username: string | null;
+  display_name: string;
+  level: number | null;
+  hidden: boolean;
+  role: string;
+  can_be_removed: boolean;
+};
+
+type ClubJoinRequest = {
+  request_id: number;
+  club_id: number;
+  club_name: string;
+  user: { id: number; username: string; display_name: string; level: number };
+};
+
+type ClubRankingRow = {
+  id: number;
+  username: string | null;
+  display_name: string;
+  level: number | null;
+  hidden: boolean;
+  score: number | null;
+  rank: number | null;
+  role: string;
+};
+
+type ClubDetail = {
+  club: ClubSummary;
+  members: ClubMember[];
+  rankings: { weekly: ClubRankingRow[]; seasonal: ClubRankingRow[] };
+};
+
+type ClubConfirmAction =
+  | { kind: "leave"; club: ClubSummary; targetId?: number }
+  | { kind: "delete"; club: ClubSummary }
+  | { kind: "transfer"; club: ClubSummary; targetId: number }
+  | { kind: "kick"; club: ClubSummary; member: ClubMember }
+  | null;
+
+function ClubsPanel() {
+  const [clubs, setClubs] = useState<ClubSummary[]>([]);
+  const [incoming, setIncoming] = useState<ClubJoinRequest[]>([]);
+  const [ownedCount, setOwnedCount] = useState(0);
+  const [membershipCount, setMembershipCount] = useState(0);
+  const [selectedClubId, setSelectedClubId] = useState<number | null>(null);
+  const [detail, setDetail] = useState<ClubDetail | null>(null);
+  const [detailVersion, setDetailVersion] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [detailError, setDetailError] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
+  const [name, setName] = useState("");
+  const [instantJoin, setInstantJoin] = useState(false);
+  const [code, setCode] = useState("");
+  const [joinBusy, setJoinBusy] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const [searchResults, setSearchResults] = useState<{
+    id: number; name: string; member_count: number; is_member: boolean; has_pending_request: boolean;
+  }[]>([]);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [renameDraft, setRenameDraft] = useState("");
+  const [instantJoinDraft, setInstantJoinDraft] = useState(false);
+  const [transferTargetId, setTransferTargetId] = useState("");
+  const [rankTab, setRankTab] = useState<"weekly" | "seasonal">("weekly");
+  const [confirm, setConfirm] = useState<ClubConfirmAction>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [confirmError, setConfirmError] = useState("");
+  const [requestBusyId, setRequestBusyId] = useState<number | null>(null);
+
+  const loadMine = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await authApi.get("/api/clubs/mine");
+      const data = response.data;
+      setClubs(Array.isArray(data.clubs) ? data.clubs : []);
+      setIncoming(Array.isArray(data.incoming_requests) ? data.incoming_requests : []);
+      setOwnedCount(typeof data.owned_count === "number" ? data.owned_count : 0);
+      setMembershipCount(typeof data.membership_count === "number" ? data.membership_count : 0);
+    } catch (loadError: unknown) {
+      setError(getApiErrorMessage(loadError, "Не удалось загрузить клубы."));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadMine();
+  }, [loadMine]);
+
+  useEffect(() => {
+    if (selectedClubId === null) {
+      setDetail(null);
+      setDetailError("");
+      setDetailLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setDetailLoading(true);
+    setDetailError("");
+    (async () => {
+      try {
+        const response = await authApi.get(`/api/clubs/${selectedClubId}`);
+        if (!cancelled) setDetail(response.data);
+      } catch (loadError: unknown) {
+        if (!cancelled) {
+          setDetail(null);
+          setDetailError(getApiErrorMessage(loadError, "Не удалось загрузить состав и рейтинг клуба."));
+        }
+      } finally {
+        if (!cancelled) setDetailLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedClubId, detailVersion]);
+
+  useEffect(() => {
+    if (!detail) return;
+    setRenameDraft(detail.club.name);
+    setInstantJoinDraft(Boolean(detail.club.instant_join));
+    setTransferTargetId("");
+  }, [detail]);
+
+  const refreshAfterAction = async () => {
+    await loadMine();
+    setDetailVersion((version) => version + 1);
+  };
+
+  const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCreateBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await authApi.post("/api/clubs", {
+        name,
+        instant_join: instantJoin,
+      });
+      setMessage(typeof response.data.message === "string" ? response.data.message : "Клуб создан.");
+      setName("");
+      setSelectedClubId(response.data.club?.id ?? null);
+      await loadMine();
+    } catch (actionError: unknown) {
+      setError(getApiErrorMessage(actionError, "Не удалось создать клуб."));
+    } finally {
+      setCreateBusy(false);
+    }
+  };
+
+  const handleJoinCode = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setJoinBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await authApi.post("/api/clubs/join", { code: code.trim().toUpperCase() });
+      setMessage(typeof response.data.message === "string" ? response.data.message : "Код принят.");
+      setCode("");
+      if (response.data.joined && typeof response.data.club?.id === "number") {
+        setSelectedClubId(response.data.club.id);
+      }
+      await loadMine();
+      setDetailVersion((version) => version + 1);
+    } catch (actionError: unknown) {
+      setError(getApiErrorMessage(actionError, "Не удалось вступить по коду."));
+    } finally {
+      setJoinBusy(false);
+    }
+  };
+
+  const search = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (searchText.trim().length < 2) {
+      setSearchError("Для поиска введи минимум 2 символа.");
+      return;
+    }
+    setSearchBusy(true);
+    setSearchError("");
+    try {
+      const response = await authApi.get("/api/clubs/search", { params: { q: searchText.trim() } });
+      setSearchResults(Array.isArray(response.data.results) ? response.data.results : []);
+    } catch (searchFailure: unknown) {
+      setSearchError(getApiErrorMessage(searchFailure, "Не удалось найти клубы."));
+    } finally {
+      setSearchBusy(false);
+    }
+  };
+
+  const requestJoin = async (clubId: number) => {
+    setBusy(`request-${clubId}`);
+    setError("");
+    setMessage("");
+    try {
+      const response = await authApi.post("/api/clubs/request", { club_id: clubId });
+      setMessage(typeof response.data.message === "string" ? response.data.message : "Заявка отправлена.");
+      await search({ preventDefault() {} } as React.FormEvent<HTMLFormElement>);
+      await loadMine();
+    } catch (actionError: unknown) {
+      setError(getApiErrorMessage(actionError, "Не удалось отправить заявку."));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const respondJoinRequest = async (requestId: number, accept: boolean) => {
+    setRequestBusyId(requestId);
+    setError("");
+    setMessage("");
+    try {
+      const response = await authApi.post("/api/clubs/requests/respond", {
+        request_id: requestId,
+        accept,
+      });
+      setMessage(typeof response.data.message === "string" ? response.data.message : "Заявка обработана.");
+      await refreshAfterAction();
+      if (searchText.trim().length >= 2) {
+        const result = await authApi.get("/api/clubs/search", { params: { q: searchText.trim() } });
+        setSearchResults(Array.isArray(result.data.results) ? result.data.results : []);
+      }
+    } catch (actionError: unknown) {
+      setError(getApiErrorMessage(actionError, "Не удалось обработать заявку."));
+    } finally {
+      setRequestBusyId(null);
+    }
+  };
+
+  const saveClubSettings = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!detail) return;
+    setBusy("settings");
+    setError("");
+    setMessage("");
+    try {
+      const response = await authApi.put(`/api/clubs/${detail.club.id}`, {
+        name: renameDraft,
+        instant_join: instantJoinDraft,
+      });
+      setMessage(typeof response.data.message === "string" ? response.data.message : "Настройки сохранены.");
+      await refreshAfterAction();
+    } catch (actionError: unknown) {
+      setError(getApiErrorMessage(actionError, "Не удалось сохранить настройки клуба."));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const copyInviteCode = async (inviteCode: string) => {
+    setError("");
+    try {
+      await navigator.clipboard.writeText(inviteCode);
+      setMessage("Код вступления скопирован.");
+    } catch {
+      setMessage(`Не удалось скопировать автоматически. Код: ${inviteCode}`);
+    }
+  };
+
+  const actOnConfirm = async () => {
+    if (!confirm) return;
+    setConfirmBusy(true);
+    setConfirmError("");
+    setError("");
+    setMessage("");
+    try {
+      if (confirm.kind === "delete") {
+        const response = await authApi.delete(`/api/clubs/${confirm.club.id}`);
+        setMessage(typeof response.data.message === "string" ? response.data.message : "Клуб удалён.");
+        setSelectedClubId(null);
+      } else if (confirm.kind === "leave") {
+        const response = await authApi.post(`/api/clubs/${confirm.club.id}/leave`,
+          confirm.targetId ? { transfer_to_user_id: confirm.targetId } : {});
+        setMessage(typeof response.data.message === "string" ? response.data.message : "Ты вышел из клуба.");
+        if (selectedClubId === confirm.club.id) setSelectedClubId(null);
+      } else if (confirm.kind === "transfer") {
+        const response = await authApi.post(`/api/clubs/${confirm.club.id}/transfer-owner`, {
+          user_id: confirm.targetId,
+        });
+        setMessage(typeof response.data.message === "string" ? response.data.message : "Владелец изменён.");
+      } else {
+        const response = await authApi.post(`/api/clubs/${confirm.club.id}/kick`, {
+          user_id: confirm.member.id,
+        });
+        setMessage(typeof response.data.message === "string" ? response.data.message : "Участник исключён.");
+      }
+      setConfirm(null);
+      await refreshAfterAction();
+      if (searchText.trim().length >= 2) {
+        const result = await authApi.get("/api/clubs/search", { params: { q: searchText.trim() } });
+        setSearchResults(Array.isArray(result.data.results) ? result.data.results : []);
+      }
+    } catch (actionError: unknown) {
+      setConfirmError(getApiErrorMessage(actionError, "Не удалось выполнить действие. Обнови данные и попробуй ещё раз."));
+    } finally {
+      setConfirmBusy(false);
+    }
+  };
+
+  const confirmationProps = (() => {
+    if (!confirm) return null;
+    if (confirm.kind === "delete") return {
+      title: "Удалить клуб?",
+      text: `Клуб «${confirm.club.name}», его состав и заявки будут удалены без возможности восстановления.`,
+      confirmLabel: "Удалить клуб",
+    };
+    if (confirm.kind === "leave") return {
+      title: confirm.targetId ? "Передать клуб и выйти?" : "Выйти из клуба?",
+      text: confirm.targetId
+        ? `Владение клубом «${confirm.club.name}» перейдёт выбранному участнику, после чего ты покинешь клуб.`
+        : `Ты покинешь клуб «${confirm.club.name}». Вернуться можно будет по коду или заявке.`,
+      confirmLabel: confirm.targetId ? "Передать и выйти" : "Выйти",
+    };
+    if (confirm.kind === "transfer") return {
+      title: "Передать владельца?",
+      text: `Выбранный участник станет владельцем клуба «${confirm.club.name}». Ты останешься участником.`,
+      confirmLabel: "Передать владельца",
+    };
+    return {
+      title: "Исключить участника?",
+      text: `Участник «${confirm.member.display_name}» будет удалён из клуба «${confirm.club.name}».`,
+      confirmLabel: "Исключить",
+    };
+  })();
+
+  const canCreate = ownedCount < 3 && membershipCount < 10;
+  const rankingRows = detail?.rankings?.[rankTab] ?? [];
+
   return (
-    <div className="p-5 md:p-6">
-      <div className="border-2 border-dashed border-black/40 bg-white px-4 py-8 text-center">
-        <p className="font-display uppercase text-3xl md:text-4xl">Clubs</p>
-        <p className="text-[10px] font-bold tracking-widest uppercase text-[#666] mt-2">coming soon 🚧</p>
-        <p className="text-sm text-[#666] mt-4 max-w-sm mx-auto">
-          Создавай свой вело-клуб, зови друзей и соревнуйтесь командным рейтингом — в следующем обновлении.
-        </p>
+    <div className="p-4 md:p-6 space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-display uppercase text-2xl md:text-3xl">Клубы</h2>
+          <p className="mt-1 text-[10px] font-bold tracking-widest uppercase text-[#666]">
+            Владение: {ownedCount}/3 · Членство: {membershipCount}/10
+          </p>
+        </div>
+        <button type="button" onClick={() => void loadMine()} disabled={loading} className="border-2 border-black bg-white px-3 py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-[#ffd500] disabled:opacity-50">
+          {loading ? "Загружаю…" : "Обновить"}
+        </button>
       </div>
+
+      {error && (
+        <div role="alert" className="border-2 border-[#ff4b26] bg-[#ff4b26]/10 p-3 text-sm font-bold text-[#a62910]">
+          <p>{error}</p>
+          <button type="button" onClick={() => void loadMine()} className="mt-2 underline">Повторить загрузку</button>
+        </div>
+      )}
+      {message && <p role="status" className="border-l-4 border-[#16a34a] bg-white px-3 py-2 text-sm font-bold text-[#166534]">{message}</p>}
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        <form onSubmit={handleCreate} className="border-2 border-black bg-white p-4 space-y-3">
+          <h3 className="font-display uppercase text-xl">Создать клуб</h3>
+          <p className="text-xs text-[#666]">Можно владеть максимум тремя клубами и состоять максимум в десяти.</p>
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            minLength={2}
+            maxLength={40}
+            required
+            placeholder="Название клуба (2–40 символов)"
+            className="w-full border-2 border-black px-3 py-3 text-sm font-bold"
+          />
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" checked={instantJoin} onChange={(event) => setInstantJoin(event.target.checked)} className="mt-1" />
+            <span>Мгновенное вступление по коду. Если выключено — вступление только после одобрения заявки владельцем.</span>
+          </label>
+          {ownedCount >= 3 && <p className="text-sm font-bold text-[#a62910]">Лимит владения — 3 клуба.</p>}
+          {membershipCount >= 10 && <p className="text-sm font-bold text-[#a62910]">Сначала выйди из одного из клубов, чтобы создать новый.</p>}
+          <button type="submit" disabled={createBusy || !canCreate} className="w-full border-2 border-black bg-[#ffd500] px-4 py-3 text-[10px] font-bold uppercase tracking-widest hover:bg-black hover:text-white disabled:opacity-50">
+            {createBusy ? "Создаю…" : "Создать клуб"}
+          </button>
+        </form>
+
+        <div className="space-y-4">
+          <form onSubmit={handleJoinCode} className="border-2 border-black bg-white p-4 space-y-3">
+            <h3 className="font-display uppercase text-xl">Вступить по коду</h3>
+            <p className="text-xs text-[#666]">Код состоит из 12 символов Base32.</p>
+            <input
+              value={code}
+              onChange={(event) => setCode(event.target.value.toUpperCase())}
+              minLength={12}
+              maxLength={12}
+              required
+              pattern="[A-Z2-7]{12}"
+              placeholder="КОД ВСТУПЛЕНИЯ"
+              className="w-full border-2 border-black px-3 py-3 font-mono text-sm uppercase tracking-widest"
+            />
+            <button type="submit" disabled={joinBusy || code.trim().length !== 12 || membershipCount >= 10} className="w-full border-2 border-black bg-white px-4 py-3 text-[10px] font-bold uppercase tracking-widest hover:bg-[#ffd500] disabled:opacity-50">
+              {joinBusy ? "Проверяю…" : "Вступить / отправить заявку"}
+            </button>
+          </form>
+
+          <form onSubmit={search} className="border-2 border-black bg-white p-4 space-y-3">
+            <h3 className="font-display uppercase text-xl">Найти клуб</h3>
+            <div className="flex gap-2">
+              <input value={searchText} onChange={(event) => setSearchText(event.target.value)} minLength={2} maxLength={40} placeholder="Название клуба" className="min-w-0 flex-1 border-2 border-black px-3 py-2 text-sm" />
+              <button type="submit" disabled={searchBusy || searchText.trim().length < 2} className="border-2 border-black bg-[#ffd500] px-3 py-2 text-[10px] font-bold uppercase disabled:opacity-50">
+                {searchBusy ? "…" : "Поиск"}
+              </button>
+            </div>
+            {searchError && (
+              <div role="alert" className="text-sm font-bold text-[#a62910]">
+                <p>{searchError}</p>
+                <button type="button" onClick={(event) => { event.preventDefault(); void search({ preventDefault() {} } as React.FormEvent<HTMLFormElement>); }} className="underline">Повторить поиск</button>
+              </div>
+            )}
+            {searchResults.length === 0 && !searchBusy && !searchError && (
+              <p className="text-xs text-[#777]">{searchText.trim().length >= 2 ? "Клубы не найдены." : "Введи минимум 2 символа для поиска."}</p>
+            )}
+            {searchResults.map((result) => (
+              <div key={result.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-black/15 pt-3">
+                <div>
+                  <p className="font-bold">{result.name}</p>
+                  <p className="text-[10px] text-[#666]">{result.member_count}/30 участников</p>
+                </div>
+                {result.is_member ? (
+                  <span className="text-[10px] font-bold uppercase text-[#166534]">Участник</span>
+                ) : result.has_pending_request ? (
+                  <span className="text-[10px] font-bold uppercase text-[#666]">Заявка отправлена</span>
+                ) : (
+                  <button type="button" onClick={() => void requestJoin(result.id)} disabled={busy === `request-${result.id}` || membershipCount >= 10} className="border-2 border-black bg-white px-3 py-2 text-[10px] font-bold uppercase hover:bg-[#ffd500] disabled:opacity-50">
+                    {busy === `request-${result.id}` ? "Отправляю…" : "Вступить / заявка"}
+                  </button>
+                )}
+              </div>
+            ))}
+          </form>
+        </div>
+      </div>
+
+      {incoming.length > 0 && (
+        <section className="border-2 border-black bg-white p-4 space-y-3">
+          <h3 className="font-display uppercase text-xl">Входящие заявки · {incoming.length}</h3>
+          {incoming.map((request) => (
+            <div key={request.request_id} className="flex flex-wrap items-center justify-between gap-3 border-t border-black/15 pt-3">
+              <div>
+                <p className="font-bold">{request.user.display_name} <span className="font-normal text-[#666]">@{request.user.username}</span></p>
+                <p className="text-xs text-[#666]">В клуб «{request.club_name}» · уровень {request.user.level}</p>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" disabled={requestBusyId === request.request_id} onClick={() => void respondJoinRequest(request.request_id, true)} className="border-2 border-black bg-[#ffd500] px-3 py-2 text-[10px] font-bold uppercase disabled:opacity-50">Принять</button>
+                <button type="button" disabled={requestBusyId === request.request_id} onClick={() => void respondJoinRequest(request.request_id, false)} className="border-2 border-black bg-white px-3 py-2 text-[10px] font-bold uppercase hover:bg-[#ff4b26] hover:text-white disabled:opacity-50">Отклонить</button>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
+      <section className="space-y-3">
+        <h3 className="font-display uppercase text-xl">Мои клубы</h3>
+        {loading ? (
+          <p className="border-2 border-black bg-white p-4 text-sm text-[#666]">Загружаю клубы…</p>
+        ) : clubs.length === 0 ? (
+          <div className="border-2 border-dashed border-black/40 bg-white p-6 text-center">
+            <p className="font-bold">Ты пока не состоишь ни в одном клубе.</p>
+            <p className="mt-1 text-sm text-[#666]">Создай клуб, найди существующий или вступи по приглашению.</p>
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-3">
+            {clubs.map((club) => (
+              <button key={club.id} type="button" onClick={() => setSelectedClubId(club.id)} className={`border-2 border-black p-4 text-left transition-colors ${selectedClubId === club.id ? "bg-[#ffd500]" : "bg-white hover:bg-[#ffd500]/50"}`}>
+                <span className="flex items-center justify-between gap-2">
+                  <span className="font-display uppercase text-lg">{club.name}</span>
+                  {club.is_owner && <span className="text-[9px] font-bold uppercase tracking-widest">Владелец</span>}
+                </span>
+                <span className="mt-1 block text-[10px] font-bold uppercase tracking-widest text-[#666]">{club.member_count}/30 участников</span>
+                {club.invite_code && (
+                  <span className="mt-2 block font-mono text-xs tracking-widest">{club.invite_code}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {selectedClubId !== null && (
+        <section className="border-2 border-black bg-white">
+          {detailLoading ? (
+            <p className="p-4 text-sm text-[#666]">Загружаю клуб…</p>
+          ) : detailError ? (
+            <div role="alert" className="p-4 text-sm font-bold text-[#a62910]">
+              <p>{detailError}</p>
+              <button type="button" onClick={() => setDetailVersion((version) => version + 1)} className="mt-2 underline">Повторить</button>
+            </div>
+          ) : detail ? (
+            <>
+              <div className="border-b-2 border-black bg-[#171a38] p-4 text-white">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-display uppercase text-2xl">{detail.club.name}</h3>
+                    <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-white/70">{detail.club.member_count}/30 участников</p>
+                  </div>
+                  <button type="button" onClick={() => setSelectedClubId(null)} className="border-2 border-white px-3 py-2 text-[10px] font-bold uppercase hover:bg-white hover:text-black">Закрыть</button>
+                </div>
+                {detail.club.invite_code && (
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <span className="font-mono text-lg tracking-[0.18em]">{detail.club.invite_code}</span>
+                    <button type="button" onClick={() => void copyInviteCode(detail.club.invite_code!)} className="border-2 border-white px-3 py-2 text-[10px] font-bold uppercase hover:bg-white hover:text-black">Копировать код</button>
+                  </div>
+                )}
+              </div>
+
+              {detail.club.is_owner && (
+                <form onSubmit={saveClubSettings} className="border-b-2 border-black p-4 space-y-3">
+                  <h4 className="font-display uppercase text-lg">Настройки клуба</h4>
+                  <input value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} minLength={2} maxLength={40} required className="w-full border-2 border-black px-3 py-2 text-sm font-bold" aria-label="Название клуба" />
+                  <label className="flex items-start gap-2 text-sm">
+                    <input type="checkbox" checked={instantJoinDraft} onChange={(event) => setInstantJoinDraft(event.target.checked)} className="mt-1" />
+                    <span>Разрешить мгновенное вступление по коду без одобрения заявки</span>
+                  </label>
+                  <button type="submit" disabled={busy === "settings"} className="border-2 border-black bg-[#ffd500] px-4 py-2 text-[10px] font-bold uppercase disabled:opacity-50">
+                    {busy === "settings" ? "Сохраняю…" : "Сохранить"}
+                  </button>
+                </form>
+              )}
+
+              <div className="border-b-2 border-black p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h4 className="font-display uppercase text-lg">Рейтинг</h4>
+                  <div className="flex border-2 border-black">
+                    <button type="button" onClick={() => setRankTab("weekly")} className={`px-3 py-2 text-[10px] font-bold uppercase ${rankTab === "weekly" ? "bg-[#ffd500]" : "bg-white"}`}>Неделя</button>
+                    <button type="button" onClick={() => setRankTab("seasonal")} className={`border-l-2 border-black px-3 py-2 text-[10px] font-bold uppercase ${rankTab === "seasonal" ? "bg-[#ffd500]" : "bg-white"}`}>Сезон</button>
+                  </div>
+                </div>
+                {rankingRows.length === 0 ? (
+                  <p className="mt-3 text-sm text-[#666]">Пока нет данных рейтинга.</p>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {rankingRows.map((row, index) => (
+                      <div key={row.id} className="grid grid-cols-[2rem_1fr_auto] items-center gap-3 border-t border-black/10 py-2">
+                        <span className="font-display text-lg text-[#666]">{row.rank ?? "—"}</span>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold">{row.display_name}</p>
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-[#777]">{row.hidden ? "Профиль скрыт" : row.username ? `@${row.username}` : row.role}</p>
+                        </div>
+                        <span className="font-display text-lg">{row.hidden || row.score === null ? "Скрыто" : Math.round(row.score)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="border-b-2 border-black p-4 space-y-3">
+                <h4 className="font-display uppercase text-lg">Участники · {detail.members.length}</h4>
+                {detail.members.map((member) => (
+                  <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 border-t border-black/10 pt-3">
+                    <div>
+                      <p className="font-bold">{member.display_name} {member.role === "owner" && <span className="text-[9px] uppercase tracking-widest text-[#5866f2]">Владелец</span>}</p>
+                      <p className="text-[10px] text-[#666]">{member.hidden ? "Профиль скрыт" : member.username ? `@${member.username}` : ""}</p>
+                    </div>
+                    {member.can_be_removed && (
+                      <button type="button" onClick={() => { setConfirmError(""); setConfirm({ kind: "kick", club: detail.club, member }); }} className="border-2 border-[#ff4b26] px-3 py-2 text-[10px] font-bold uppercase text-[#ff4b26] hover:bg-[#ff4b26] hover:text-white">Исключить</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-4 space-y-3">
+                {detail.club.is_owner && detail.members.filter((member) => member.id !== detail.club.owner_id).length > 0 && (
+                  <div className="border-2 border-black/15 p-3 space-y-2">
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#666]">Передать владение</label>
+                    <select value={transferTargetId} onChange={(event) => setTransferTargetId(event.target.value)} className="w-full border-2 border-black bg-white px-3 py-2 text-sm">
+                      <option value="">Выбери участника</option>
+                      {detail.members.filter((member) => member.id !== detail.club.owner_id).map((member) => (
+                        <option key={member.id} value={member.id}>{member.hidden ? `Участник #${member.id}` : member.display_name}</option>
+                      ))}
+                    </select>
+                    <button type="button" disabled={!transferTargetId} onClick={() => { setConfirmError(""); setConfirm({ kind: "transfer", club: detail.club, targetId: Number(transferTargetId) }); }} className="border-2 border-black bg-[#ffd500] px-3 py-2 text-[10px] font-bold uppercase disabled:opacity-50">Передать владельца</button>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busy === "leave" || (detail.club.is_owner && !transferTargetId)}
+                    onClick={() => { setConfirmError(""); setConfirm({ kind: "leave", club: detail.club, targetId: detail.club.is_owner ? Number(transferTargetId) : undefined }); }}
+                    className="border-2 border-black bg-white px-4 py-3 text-[10px] font-bold uppercase hover:bg-[#ffd500] disabled:opacity-50"
+                  >
+                    {detail.club.is_owner ? "Передать и выйти" : "Выйти из клуба"}
+                  </button>
+                  {detail.club.is_owner && (
+                    <button type="button" onClick={() => { setConfirmError(""); setConfirm({ kind: "delete", club: detail.club }); }} className="border-2 border-[#ff4b26] px-4 py-3 text-[10px] font-bold uppercase text-[#ff4b26] hover:bg-[#ff4b26] hover:text-white">Удалить клуб</button>
+                  )}
+                </div>
+                {detail.club.is_owner && !transferTargetId && detail.members.some((member) => member.id !== detail.club.owner_id) && (
+                  <p className="text-xs text-[#666]">Чтобы выйти и сохранить клуб, сначала выбери нового владельца. Иначе используй «Удалить клуб».</p>
+                )}
+              </div>
+            </>
+          ) : null}
+        </section>
+      )}
+
+      {confirm && confirmationProps && (
+        <ConfirmDialog
+          title={confirmationProps.title}
+          text={confirmationProps.text}
+          confirmLabel={confirmationProps.confirmLabel}
+          busy={confirmBusy}
+          error={confirmError}
+          onClose={() => { if (!confirmBusy) { setConfirm(null); setConfirmError(""); } }}
+          onConfirm={actOnConfirm}
+        />
+      )}
     </div>
   );
 }
@@ -431,7 +1040,7 @@ export default function SocialHub() {
             </button>
           </div>
 
-          {tab === "friends" ? <FriendsPanel version={version} onOpen={setModal} /> : <ClubsStub />}
+          {tab === "friends" ? <FriendsPanel version={version} onOpen={setModal} /> : <ClubsPanel />}
         </div>
       </div>
 
