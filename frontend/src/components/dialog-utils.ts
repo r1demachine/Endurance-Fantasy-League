@@ -61,7 +61,7 @@ export function formatPauseDate(value: string | null, locale = "ru-RU"): string 
 type FocusableElement = { focus: () => void };
 interface DialogLike {
   querySelectorAll: (selector: string) => ArrayLike<FocusableElement>;
-  contains: (element: unknown) => boolean;
+  contains: (element: Node | null) => boolean;
   focus: () => void;
 }
 
@@ -72,7 +72,7 @@ export function handleDialogKeyDown(
     closeOnEscape: boolean;
     preventClose: boolean;
     onClose: () => void;
-    activeElement: unknown;
+    activeElement: Node | null;
   },
 ): "closed" | "focused-dialog" | "focused-last" | "focused-first" | "ignored" {
   const { dialog, closeOnEscape, preventClose, onClose, activeElement } = options;
