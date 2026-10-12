@@ -145,13 +145,58 @@ try:
                     created_at TIMESTAMP,
                     updated_at TIMESTAMP,
                     responded_at TIMESTAMP,
-                    finished_at TIMESTAMP
+                    finished_at TIMESTAMP,
+                    pair_low_id INTEGER,
+                    pair_high_id INTEGER,
+                    is_no_activity_draw BOOLEAN NOT NULL DEFAULT FALSE
                 )
             """))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_duels_challenger ON duels(challenger_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_duels_opponent ON duels(opponent_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_duels_week ON duels(week_start)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_duels_status_week ON duels(status, week_start)"))
+
+        duel_columns = {col["name"] for col in inspect(engine).get_columns("duels")}
+        if "pair_low_id" not in duel_columns:
+            conn.execute(text("ALTER TABLE duels ADD COLUMN pair_low_id INTEGER"))
+        if "pair_high_id" not in duel_columns:
+            conn.execute(text("ALTER TABLE duels ADD COLUMN pair_high_id INTEGER"))
+        if "is_no_activity_draw" not in duel_columns:
+            conn.execute(text("ALTER TABLE duels ADD COLUMN is_no_activity_draw BOOLEAN NOT NULL DEFAULT FALSE"))
+        conn.execute(text("""
+            UPDATE duels
+            SET pair_low_id = LEAST(challenger_id, opponent_id),
+                pair_high_id = GREATEST(challenger_id, opponent_id)
+            WHERE pair_low_id IS NULL OR pair_high_id IS NULL
+        """))
+        conn.execute(text("""
+            WITH ranked AS (
+                SELECT id, ROW_NUMBER() OVER (
+                    PARTITION BY pair_low_id, pair_high_id, week_start
+                    ORDER BY created_at NULLS LAST, id
+                ) AS pair_rank
+                FROM duels
+                WHERE status IN ('pending', 'active')
+            )
+            UPDATE duels AS d
+            SET status = 'declined',
+                responded_at = COALESCE(d.responded_at, CURRENT_TIMESTAMP)
+            FROM ranked AS r
+            WHERE d.id = r.id AND r.pair_rank > 1
+        """))
+        conn.execute(text("""
+            UPDATE duels
+            SET is_no_activity_draw = TRUE
+            WHERE status = 'finished'
+              AND winner_id IS NULL
+              AND COALESCE(challenger_xp, 0) = 0
+              AND COALESCE(opponent_xp, 0) = 0
+        """))
+        conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_duel_pair_week_active
+            ON duels(pair_low_id, pair_high_id, week_start)
+            WHERE status IN ('pending', 'active')
+        """))
 
         # ── clubs ──
         if "clubs" not in tables:
@@ -161,11 +206,16 @@ try:
                     name VARCHAR(64) NOT NULL,
                     invite_code VARCHAR(16) NOT NULL UNIQUE,
                     owner_id INTEGER NOT NULL REFERENCES users(id),
+                    instant_join BOOLEAN NOT NULL DEFAULT FALSE,
                     created_at TIMESTAMP
                 )
             """))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_clubs_name ON clubs(name)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_clubs_invite ON clubs(invite_code)"))
+
+        club_columns = {col["name"] for col in inspect(engine).get_columns("clubs")}
+        if "instant_join" not in club_columns:
+            conn.execute(text("ALTER TABLE clubs ADD COLUMN instant_join BOOLEAN NOT NULL DEFAULT FALSE"))
 
         if "club_members" not in tables:
             conn.execute(text("""
@@ -177,9 +227,9 @@ try:
                     joined_at TIMESTAMP
                 )
             """))
-            conn.execute(text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_club_member ON club_members(club_id, user_id)"
-            ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_club_member ON club_members(club_id, user_id)"
+        ))
 
         if "club_join_requests" not in tables:
             conn.execute(text("""
@@ -192,9 +242,48 @@ try:
                     responded_at TIMESTAMP
                 )
             """))
-            conn.execute(text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_club_join_pending ON club_join_requests(club_id, user_id)"
-            ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_club_join_pending ON club_join_requests(club_id, user_id)"
+        ))
+
+        # Create attempt audit table on existing installations too.
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS club_join_attempts (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                code_digest VARCHAR(64) NOT NULL,
+                succeeded BOOLEAN NOT NULL DEFAULT FALSE,
+                attempted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_club_join_attempt_user_time
+            ON club_join_attempts(user_id, attempted_at)
+        """))
+
+        # Normalize legacy club names before enforcing owner-scoped, case-insensitive uniqueness.
+        conn.execute(text("""
+            UPDATE clubs
+            SET name = LEFT(regexp_replace(trim(name), '\\s+', ' ', 'g'), 40)
+            WHERE name IS DISTINCT FROM LEFT(regexp_replace(trim(name), '\\s+', ' ', 'g'), 40)
+        """))
+        conn.execute(text("""
+            WITH duplicate_names AS (
+                SELECT id, ROW_NUMBER() OVER (
+                    PARTITION BY owner_id, lower(name)
+                    ORDER BY id
+                ) AS duplicate_rank
+                FROM clubs
+            )
+            UPDATE clubs AS c
+            SET name = LEFT(c.name, 30) || ' #' || c.id
+            FROM duplicate_names AS d
+            WHERE c.id = d.id AND d.duplicate_rank > 1
+        """))
+        conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_club_owner_name_lower
+            ON clubs(owner_id, lower(name))
+        """))
 
     print("✅ Auto-migration complete (users + activities + weekly_summaries + notifications + duels + clubs + telegram)")
 except Exception as e:
