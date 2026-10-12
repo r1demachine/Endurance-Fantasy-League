@@ -74,15 +74,20 @@ export default function AccountPrivacy() {
       "Удалить аккаунт и все связанные данные без возможности восстановления?"
     );
     if (!first) return;
-    const confirmation = window.prompt('Для подтверждения введи DELETE (заглавными буквами):');
+    const confirmation = window.prompt("Для подтверждения введи DELETE (заглавными буквами):");
     if (confirmation !== "DELETE") {
       setMessage("Удаление отменено: подтверждение не совпало.");
+      return;
+    }
+    const password = window.prompt("Введи пароль аккаунта для окончательного удаления:");
+    if (!password) {
+      setMessage("Удаление отменено: нужен пароль.");
       return;
     }
 
     setBusy(true);
     try {
-      await authApi.delete("/api/account", { data: { confirmation: "DELETE" } });
+      await authApi.delete("/api/account", { data: { confirmation: "DELETE", password } });
       clearAuth();
       clearUserCache();
       window.location.assign("/");
