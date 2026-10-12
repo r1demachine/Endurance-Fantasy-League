@@ -213,8 +213,8 @@ try:
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS clubs (
                     id SERIAL PRIMARY KEY,
-                    name VARCHAR(64) NOT NULL,
-                    invite_code VARCHAR(16) NOT NULL UNIQUE,
+                    name VARCHAR(40) NOT NULL,
+                    invite_code VARCHAR(12) NOT NULL UNIQUE,
                     owner_id INTEGER NOT NULL REFERENCES users(id),
                     instant_join BOOLEAN NOT NULL DEFAULT FALSE,
                     created_at TIMESTAMP
@@ -309,170 +309,12 @@ try:
                 FROM clubs
             )
             UPDATE clubs AS c
-            SET name = LEFT(c.name, 30) || ' #' || c.id
+            SET name = LEFT(c.name, 27) || ' #' || c.id::text
             FROM duplicate_names AS d
             WHERE c.id = d.id AND d.duplicate_rank > 1
         """))
-        conn.execute(text("""
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_club_owner_name_lower
-            ON clubs(owner_id, lower(name))
-        """))
-
-    print("✅ Auto-migration complete (users + activities + weekly_summaries + notifications + duels + clubs + telegram)")
-except Exception as e:
-    print(f"❌ Critical database migration failure: {type(e).__name__}: {e}")
-    raise RuntimeError(
-        "Critical database migration failed; application startup aborted."
-    ) from e
-
-settings = get_settings()
-_is_prod = settings.APP_ENV == "production"
-
-app = FastAPI(
-    title="Fantasy League for Endurance Athletes",
-    description="API для геймифицированной спортивной платформы (Intervals.icu)",
-    version="0.2.0",
-    docs_url=None if _is_prod else "/docs",
-    redoc_url=None if _is_prod else "/redoc",
-    openapi_url=None if _is_prod else "/openapi.json",
-)
-
-@app.exception_handler(RequestValidationError)
-async def _request_validation_error_handler(request: Request, exc: RequestValidationError):
-    # Keep FastAPI's normal 422 validation contract elsewhere, but make bad sync dates a client 400.
-    if request.url.path == "/api/sync" and sync._has_invalid_since_query(exc.errors()):
-        return JSONResponse(
-            status_code=400,
-            content={"detail": "Параметр since должен быть датой в формате YYYY-MM-DD."},
-        )
-    return await request_validation_exception_handler(request, exc)
-
-
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        origin.strip().rstrip("/")
-        for origin in settings.CORS_ORIGINS.split(",")
-        if origin.strip()
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.include_router(sync.router)
-app.include_router(auth.router)
-app.include_router(intervals_key.router)
-app.include_router(friends.router)
-app.include_router(notifications.router)
-app.include_router(admin.router)
-app.include_router(privacy.router)
-app.include_router(upload.router)
-app.include_router(duels.router)
-app.include_router(clubs.router)
-app.include_router(telegram.router)
-
-@app.on_event("startup")
-async def _init_broker():
-    from .broker import init_broker
-    await init_broker()
-
-@app.get("/")
-async def root():
-    return {
-        "message": "Fantasy League API is running!",
-        "version": "0.2.0",
-        "data_source": "Intervals.icu (per-user)",
-    }
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
-
-            ORDER BY id
-        """)).fetchall()
-        for (club_id,) in invalid_invites:
-            for _ in range(32):
-                code = "".join(secrets.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567") for _ in range(12))
-                collision = conn.execute(
-                    text("SELECT 1 FROM clubs WHERE invite_code = :code LIMIT 1"),
-                    {"code": code},
-                ).first()
-                if not collision:
-                    conn.execute(
-                        text("UPDATE clubs SET invite_code = :code WHERE id = :club_id"),
-                        {"code": code, "club_id": club_id},
-                    )
-                    break
-            else:
-                raise RuntimeError("Could not rotate a legacy club invite code")
-
-        if "club_members" not in tables:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS club_members (
-                    id SERIAL PRIMARY KEY,
-                    club_id INTEGER NOT NULL REFERENCES clubs(id),
-                    user_id INTEGER NOT NULL REFERENCES users(id),
-                    role VARCHAR(20) NOT NULL DEFAULT 'member',
-                    joined_at TIMESTAMP
-                )
-            """))
-        conn.execute(text(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_club_member ON club_members(club_id, user_id)"
-        ))
-
-        if "club_join_requests" not in tables:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS club_join_requests (
-                    id SERIAL PRIMARY KEY,
-                    club_id INTEGER NOT NULL REFERENCES clubs(id),
-                    user_id INTEGER NOT NULL REFERENCES users(id),
-                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
-                    created_at TIMESTAMP,
-                    responded_at TIMESTAMP
-                )
-            """))
-        conn.execute(text(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_club_join_pending ON club_join_requests(club_id, user_id)"
-        ))
-
-        # Create attempt audit table on existing installations too.
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS club_join_attempts (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id),
-                code_digest VARCHAR(64) NOT NULL,
-                succeeded BOOLEAN NOT NULL DEFAULT FALSE,
-                attempted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-        """))
-        conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_club_join_attempt_user_time
-            ON club_join_attempts(user_id, attempted_at)
-        """))
-
-        # Normalize legacy club names before enforcing owner-scoped, case-insensitive uniqueness.
-        conn.execute(text("""
-            UPDATE clubs
-            SET name = LEFT(regexp_replace(trim(name), '[[:space:]]+', ' ', 'g'), 40)
-            WHERE name IS DISTINCT FROM LEFT(regexp_replace(trim(name), '[[:space:]]+', ' ', 'g'), 40)
-        """))
-        conn.execute(text("""
-            WITH duplicate_names AS (
-                SELECT id, ROW_NUMBER() OVER (
-                    PARTITION BY owner_id, lower(name)
-                    ORDER BY id
-                ) AS duplicate_rank
-                FROM clubs
-            )
-            UPDATE clubs AS c
-            SET name = LEFT(c.name, 30) || ' #' || c.id
-            FROM duplicate_names AS d
-            WHERE c.id = d.id AND d.duplicate_rank > 1
-        """))
+        conn.execute(text("ALTER TABLE clubs ALTER COLUMN name TYPE VARCHAR(40)"))
+        conn.execute(text("ALTER TABLE clubs ALTER COLUMN invite_code TYPE VARCHAR(12)"))
         conn.execute(text("""
             CREATE UNIQUE INDEX IF NOT EXISTS uq_club_owner_name_lower
             ON clubs(owner_id, lower(name))
