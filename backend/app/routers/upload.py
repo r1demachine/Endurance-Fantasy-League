@@ -9,15 +9,20 @@ import hashlib
 import hmac
 import io
 import json
+import multiprocessing
+import re
 import secrets
-import xml.etree.ElementTree as ET
+from defusedxml import ElementTree as ET
+from defusedxml.common import DefusedXmlException
 from datetime import datetime, timedelta, timezone
 from math import asin, cos, exp, radians, sin, sqrt
 from pathlib import Path
 from statistics import mean
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile
+from starlette.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -25,7 +30,7 @@ from ..auth import decode_access_token_claims
 from ..config import get_settings
 from ..database import get_db
 from ..dependencies import get_current_user, require_privacy_consent
-from ..models import Activity, User
+from ..models import Activity, HeartRateSettingsHistory, User
 from ..rate_limit import get_client_address, limiter
 
 router = APIRouter(prefix="/api", tags=["Activity uploads"])
@@ -37,6 +42,9 @@ UPLOAD_SOURCE = "UPLOAD_SITE"
 ALLOWED_EXTENSIONS = {".fit", ".gpx", ".tcx"}
 FALLBACK_LTHR = 153.0  # 85% от условного HRmax 180; только для грубой оценки.
 HARD_ZONE_MIN_SECONDS = 300
+MAX_ACTIVITY_SAMPLES = 25000
+MAX_PARALLEL_PARSERS = 2
+_PARSE_SEMAPHORE = asyncio.Semaphore(MAX_PARALLEL_PARSERS)
 
 
 class UnsupportedActivityFile(ValueError):
@@ -51,6 +59,7 @@ class HeartRateSettingsUpdate(BaseModel):
     lthr: int | None = Field(default=None, ge=80, le=220)
     max_hr: int | None = Field(default=None, ge=100, le=240)
     resting_hr: int | None = Field(default=None, ge=30, le=100)
+    timezone_name: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class ConfirmUploadInput(BaseModel):
@@ -84,6 +93,43 @@ def _parse_iso_datetime(value: Any) -> datetime | None:
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except (TypeError, ValueError):
         return None
+
+
+def _user_zone(name: str | None) -> ZoneInfo:
+    try:
+        return ZoneInfo(name or "UTC")
+    except (ZoneInfoNotFoundError, TypeError, ValueError) as exc:
+        raise InvalidActivityFile("Неизвестный часовой пояс пользователя.") from exc
+
+
+def _local_to_utc_naive(value: datetime, zone: ZoneInfo) -> datetime:
+    if value.tzinfo is not None:
+        value = value.astimezone(zone).replace(tzinfo=None)
+    return value.replace(tzinfo=zone).astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _sample_time_utc_naive(value: datetime, zone: ZoneInfo) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=zone).astimezone(timezone.utc).replace(tzinfo=None)
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _decode_xml_utf8(data: bytes) -> str:
+    try:
+        content = data.decode("utf-8-sig", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise InvalidActivityFile("GPX/TCX должны быть закодированы в UTF-8.") from exc
+    declaration = re.match(r"""\s*<\?xml\s+[^?]*encoding\s*=\s*['"]([^'"]+)['"][^?]*\?>""", content, re.IGNORECASE)
+    if declaration and declaration.group(1).lower().replace("_", "-") not in {"utf-8", "utf8"}:
+        raise InvalidActivityFile("Поддерживается только кодировка UTF-8.")
+    return content
+
+
+def _secure_xml_root(content: str):
+    try:
+        return ET.fromstring(content, forbid_dtd=True, forbid_entities=True, forbid_external=True)
+    except (ET.ParseError, DefusedXmlException, ValueError) as exc:
+        raise InvalidActivityFile("XML-файл некорректен или содержит запрещённые DTD/ENTITY.") from exc
 
 
 def _number(value: Any) -> float | None:
@@ -174,15 +220,30 @@ def _finalise_file_metrics(
     lthr: int | None,
     user_max_hr: int | None,
     resting_hr: int | None = None,
+    start_local: datetime | None = None,
+    user_timezone: str | None = "UTC",
 ) -> dict:
-    times = [_parse_iso_datetime(s.get("time")) for s in samples]
-    times = [t for t in times if t is not None]
-    if start is None and times:
-        start = min(times)
-    start_utc = _utc_naive(start)
-    if start_utc is None:
+    zone = _user_zone(user_timezone)
+    raw_times = [_parse_iso_datetime(sample.get("time")) for sample in samples]
+    raw_times = [value for value in raw_times if value is not None]
+    if start is None and raw_times:
+        start = min(raw_times)
+    if start is None:
         raise InvalidActivityFile("В файле не найдено время начала тренировки.")
 
+    if start_local is not None:
+        start_date_local = start_local.replace(tzinfo=None)
+        start_utc = _utc_naive(start) if start.tzinfo is not None else _local_to_utc_naive(start_date_local, zone)
+    elif start.tzinfo is None:
+        start_date_local = start
+        start_utc = _local_to_utc_naive(start, zone)
+    else:
+        start_utc = _utc_naive(start)
+        start_date_local = start.astimezone(zone).replace(tzinfo=None) if start.utcoffset() == timedelta(0) else start.replace(tzinfo=None)
+
+    if start_utc is None:
+        raise InvalidActivityFile("В файле не найдено время начала тренировки.")
+    times = [_sample_time_utc_naive(value, zone) for value in raw_times]
     measured_elapsed = max(0.0, (max(times) - min(times)).total_seconds()) if len(times) >= 2 else None
     moving = _number(moving_time) or measured_elapsed
     elapsed = _number(elapsed_time) or measured_elapsed or moving
@@ -190,6 +251,15 @@ def _finalise_file_metrics(
         raise InvalidActivityFile("Не удалось определить длительность тренировки.")
     if moving > 7 * 24 * 3600:
         raise InvalidActivityFile("Длительность тренировки выглядит некорректной.")
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    if start_utc > now_utc:
+        raise InvalidActivityFile("Начало тренировки находится в будущем.")
+    if start_utc < now_utc - timedelta(days=30):
+        raise InvalidActivityFile("Можно загружать тренировки не старше 30 дней.")
+    if measured_elapsed is None or measured_elapsed <= 0:
+        raise InvalidActivityFile("Недостаточно временных точек трека для проверки длительности.")
+    if float(moving) > measured_elapsed * 1.2:
+        raise InvalidActivityFile("Длительность превышает охват временных меток более чем на 20%.")
 
     distance_m = _number(distance) or _track_distance(samples)
     elevation_m = _number(elevation_gain)
@@ -224,7 +294,7 @@ def _finalise_file_metrics(
         sample_time = _parse_iso_datetime(sample.get("time"))
         sample_hr = _number(sample.get("hr"))
         if sample_time is not None and sample_hr is not None and 25 <= sample_hr <= 240:
-            ordered_samples.append((sample_time, sample_hr))
+            ordered_samples.append((_sample_time_utc_naive(sample_time, zone), sample_hr))
     ordered_samples.sort(key=lambda item: item[0])
 
     observed_max_hr = max(valid_hrs) if valid_hrs else max_hr
@@ -264,8 +334,9 @@ def _finalise_file_metrics(
             hr_stress_seconds += _hr_weight(hr_a) * seconds
             covered_seconds += seconds
 
-    enough_hr_stream = covered_seconds >= min(float(moving) * 0.5, 300.0)
-    if threshold_weight > 0 and enough_hr_stream:
+    if covered_seconds < float(moving) * 0.5:
+        raise InvalidActivityFile("Для загрузки нужен реальный поток пульса с покрытием не менее 50% длительности.")
+    if threshold_weight > 0:
         hr_tss = (hr_stress_seconds / (threshold_weight * 3600.0)) * 100.0
         if resting_hr is None:
             load_method = "hrss_estimated_resting"
@@ -275,16 +346,8 @@ def _finalise_file_metrics(
             load_method = "hrss_estimated_max"
         else:
             load_method = "hrss"
-    elif threshold_weight > 0 and avg_hr is not None:
-        # Sparse GPX/TCX HR samples: apply average HR to moving time rather
-        # than falsely counting the unrecorded intervals as zero stress.
-        hr_tss = (_hr_weight(float(avg_hr)) / threshold_weight) * (float(moving) / 3600.0) * 100.0
-        load_method = "hrss_estimated_average_hr"
     else:
-        # No usable HR: retain an explicit, low-confidence sport-duration estimate.
-        fallback_intensity = _sport_if(sport_type)
-        hr_tss = (float(moving) / 3600.0) * fallback_intensity ** 2 * 100.0
-        load_method = "duration_sport_estimate"
+        raise InvalidActivityFile("Нет достаточного потока пульса для надёжного расчёта нагрузки.")
 
     hr_tss = max(0.0, hr_tss)
     intensity = min(1.5, max(0.3, sqrt(hr_tss / max(float(moving) / 3600.0 * 100.0, 1e-9))))
@@ -345,6 +408,7 @@ def _finalise_file_metrics(
         }.get(sport_type, "Загруженная тренировка"),
         "sport_type": sport_type,
         "start_date": start_utc.isoformat(),
+        "start_date_local": start_date_local.isoformat(),
         "moving_time": int(round(moving)),
         "elapsed_time": int(round(elapsed or moving)),
         "distance": round(distance_m, 2),
@@ -359,7 +423,7 @@ def _finalise_file_metrics(
     }
 
 
-def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None, resting_hr: int | None = None) -> dict:
+def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None, resting_hr: int | None = None, user_timezone: str | None = "UTC") -> dict:
     from fitparse import FitFile
 
     try:
@@ -371,6 +435,8 @@ def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
         session = sessions[0] if sessions else {}
         samples = []
         for message in fit.get_messages("record"):
+            if len(samples) >= MAX_ACTIVITY_SAMPLES:
+                raise InvalidActivityFile("В файле слишком много точек (лимит 25 000).")
             record = {field.name: field.value for field in message}
             samples.append({
                 "time": record.get("timestamp"),
@@ -379,6 +445,7 @@ def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
                 "distance": _number(record.get("distance")),
             })
         activity_start = _parse_iso_datetime(session.get("start_time"))
+        local_start = _parse_iso_datetime(session.get("local_timestamp"))
         if activity_start is None:
             activity_start = min(
                 (t for t in (_parse_iso_datetime(s.get("time")) for s in samples) if t is not None),
@@ -389,6 +456,8 @@ def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
             distance = max((_number(s.get("distance")) or 0.0 for s in samples), default=0.0)
         return _finalise_file_metrics(
             start=activity_start,
+            start_local=local_start,
+            user_timezone=user_timezone,
             moving_time=_number(session.get("total_timer_time")),
             elapsed_time=_number(session.get("total_elapsed_time")),
             distance=distance,
@@ -400,6 +469,7 @@ def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
             lthr=lthr,
             user_max_hr=user_max_hr,
             resting_hr=resting_hr,
+            user_timezone=user_timezone,
         )
     except (InvalidActivityFile, UnsupportedActivityFile):
         raise
@@ -407,18 +477,17 @@ def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
         raise InvalidActivityFile("FIT-файл повреждён или не содержит тренировку.") from exc
 
 
-def _parse_gpx(data: bytes, lthr: int | None, user_max_hr: int | None, resting_hr: int | None = None) -> dict:
-    if b"<!DOCTYPE" in data.upper() or b"<!ENTITY" in data.upper():
-        raise InvalidActivityFile("GPX с DTD/ENTITY не поддерживается.")
-    try:
-        root = ET.fromstring(data)
-    except ET.ParseError as exc:
-        raise InvalidActivityFile("GPX-файл содержит некорректный XML.") from exc
+def _parse_gpx(data: bytes, lthr: int | None, user_max_hr: int | None, resting_hr: int | None = None, user_timezone: str | None = "UTC") -> dict:
+    xml_text = _decode_xml_utf8(data)
+    root = _secure_xml_root(xml_text)
     if _local_name(root.tag).lower() != "gpx":
         raise UnsupportedActivityFile("Расширение .gpx не соответствует содержимому файла.")
     try:
+        point_count = sum(1 for node in root.iter() if _local_name(node.tag).lower() in {"trkpt", "rtept"})
+        if point_count > MAX_ACTIVITY_SAMPLES:
+            raise InvalidActivityFile("В файле слишком много точек (лимит 25 000).")
         import gpxpy
-        gpx = gpxpy.parse(data.decode("utf-8-sig"))
+        gpx = gpxpy.parse(xml_text)
         samples = []
         for track in gpx.tracks:
             for segment in track.segments:
@@ -434,7 +503,8 @@ def _parse_gpx(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
                     "ele": point.elevation, "lat": point.latitude, "lon": point.longitude,
                 })
         return _finalise_file_metrics(
-            start=None, moving_time=None, elapsed_time=None, distance=None,
+            start=None, start_local=None, user_timezone=user_timezone,
+            moving_time=None, elapsed_time=None, distance=None,
             elevation_gain=None, average_hr=None, maximum_hr=None,
             sport_type="WORKOUT", samples=samples, lthr=lthr, user_max_hr=user_max_hr,
             resting_hr=resting_hr,
@@ -445,13 +515,9 @@ def _parse_gpx(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
         raise InvalidActivityFile("GPX-файл повреждён или не содержит трек тренировки.") from exc
 
 
-def _parse_tcx(data: bytes, lthr: int | None, user_max_hr: int | None, resting_hr: int | None = None) -> dict:
-    if b"<!DOCTYPE" in data.upper() or b"<!ENTITY" in data.upper():
-        raise InvalidActivityFile("TCX с DTD/ENTITY не поддерживается.")
-    try:
-        root = ET.fromstring(data)
-    except ET.ParseError as exc:
-        raise InvalidActivityFile("TCX-файл содержит некорректный XML.") from exc
+def _parse_tcx(data: bytes, lthr: int | None, user_max_hr: int | None, resting_hr: int | None = None, user_timezone: str | None = "UTC") -> dict:
+    xml_text = _decode_xml_utf8(data)
+    root = _secure_xml_root(xml_text)
     if _local_name(root.tag).lower() != "trainingcenterdatabase":
         raise UnsupportedActivityFile("Расширение .tcx не соответствует содержимому файла.")
 
@@ -461,6 +527,9 @@ def _parse_tcx(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
     start = _parse_iso_datetime(_direct_child_text(activity, "Id"))
     sport = _normalise_sport(activity.attrib.get("Sport"))
     laps = [node for node in activity.iter() if _local_name(node.tag) == "Lap"]
+    point_count = sum(1 for node in root.iter() if _local_name(node.tag) == "Trackpoint")
+    if point_count > MAX_ACTIVITY_SAMPLES:
+        raise InvalidActivityFile("В файле слишком много точек (лимит 25 000).")
     samples = []
     lap_distances = []
     lap_times = []
@@ -494,33 +563,109 @@ def _parse_tcx(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
                 "distance": _number(_tag_text(node, "DistanceMeters")),
                 "lat": lat, "lon": lon,
             })
+        if len(samples) + len(lap_samples) > MAX_ACTIVITY_SAMPLES:
+            raise InvalidActivityFile("В файле слишком много точек (лимит 25 000).")
         samples.extend(lap_samples)
         total_ascent += _elevation_gain(lap_samples)
 
     fallback_distance = sum(lap_distances) if lap_distances else _track_distance(samples)
     fallback_elapsed = sum(lap_times) if lap_times else None
     return _finalise_file_metrics(
-        start=start, moving_time=fallback_elapsed, elapsed_time=fallback_elapsed,
+        start=start, start_local=None, user_timezone=user_timezone,
+        moving_time=fallback_elapsed, elapsed_time=fallback_elapsed,
         distance=fallback_distance, elevation_gain=total_ascent,
         average_hr=None, maximum_hr=None, sport_type=sport,
         samples=samples, lthr=lthr, user_max_hr=user_max_hr, resting_hr=resting_hr,
+        user_timezone=user_timezone,
     )
 
 
-def _parse_activity_file(data: bytes, extension: str, lthr: int | None, user_max_hr: int | None, resting_hr: int | None = None) -> dict:
+def _parse_activity_file(
+    data: bytes,
+    extension: str,
+    lthr: int | None,
+    user_max_hr: int | None,
+    resting_hr: int | None = None,
+    user_timezone: str | None = "UTC",
+) -> dict:
     extension = extension.lower()
     if extension not in ALLOWED_EXTENSIONS:
         raise UnsupportedActivityFile("Поддерживаются только файлы .fit, .gpx и .tcx.")
     if len(data) < 12:
         raise InvalidActivityFile("Файл слишком маленький или повреждён.")
     if extension == ".fit":
-        # FIT signature is bytes 8..11. Other binary formats are never unpacked.
         if data[8:12] != b".FIT":
             raise UnsupportedActivityFile("Расширение .fit не соответствует содержимому файла.")
-        return _parse_fit(data, lthr, user_max_hr, resting_hr)
+        return _parse_fit(data, lthr, user_max_hr, resting_hr, user_timezone)
     if extension == ".gpx":
-        return _parse_gpx(data, lthr, user_max_hr, resting_hr)
-    return _parse_tcx(data, lthr, user_max_hr, resting_hr)
+        return _parse_gpx(data, lthr, user_max_hr, resting_hr, user_timezone)
+    return _parse_tcx(data, lthr, user_max_hr, resting_hr, user_timezone)
+
+
+def _activity_parser_process(send_conn, data, extension, lthr, max_hr, resting_hr, user_timezone):
+    """Child process lets the parent kill a parser that exceeds its deadline."""
+    try:
+        send_conn.send(("ok", _parse_activity_file(data, extension, lthr, max_hr, resting_hr, user_timezone)))
+    except UnsupportedActivityFile as exc:
+        send_conn.send(("unsupported", str(exc)))
+    except InvalidActivityFile as exc:
+        send_conn.send(("invalid", str(exc)))
+    except BaseException:
+        try:
+            send_conn.send(("invalid", "Не удалось прочитать файл тренировки."))
+        except Exception:
+            pass
+    finally:
+        send_conn.close()
+
+
+def _parse_activity_file_hard_timeout(data, extension, lthr, max_hr, resting_hr, user_timezone):
+    context = multiprocessing.get_context("spawn")
+    recv_conn, send_conn = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_activity_parser_process,
+        args=(send_conn, data, extension, lthr, max_hr, resting_hr, user_timezone),
+        daemon=True,
+    )
+    try:
+        process.start()
+        send_conn.close()
+        process.join(PARSE_TIMEOUT_SECONDS)
+        if process.is_alive():
+            process.terminate()
+            process.join(1)
+            if process.is_alive():
+                process.kill()
+                process.join(1)
+            raise TimeoutError("Разбор файла занял слишком много времени.")
+        if not recv_conn.poll(0.2):
+            raise InvalidActivityFile("Парсер завершился без результата.")
+        status, payload = recv_conn.recv()
+        if status == "unsupported":
+            raise UnsupportedActivityFile(payload)
+        if status == "invalid":
+            raise InvalidActivityFile(payload)
+        if status != "ok" or not isinstance(payload, dict):
+            raise InvalidActivityFile("Результат парсера повреждён.")
+        return payload
+    finally:
+        recv_conn.close()
+        try:
+            send_conn.close()
+        except Exception:
+            pass
+        if process.is_alive():
+            process.terminate()
+            process.join(1)
+        process.close()
+
+
+async def _parse_activity_file_bounded(data, extension, lthr, max_hr, resting_hr, user_timezone):
+    async with _PARSE_SEMAPHORE:
+        return await asyncio.to_thread(
+            _parse_activity_file_hard_timeout,
+            data, extension, lthr, max_hr, resting_hr, user_timezone,
+        )
 
 
 def _encode_preview(payload: dict) -> str:
