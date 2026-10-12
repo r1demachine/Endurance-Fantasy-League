@@ -243,7 +243,7 @@ class ActivityFileParsingTests(unittest.TestCase):
             user_max_hr=175,
         )
         self.assertEqual(parsed["auto_zone_updates"]["max_hr"], 180)
-        self.assertEqual(parsed["auto_zone_updates"]["lthr"], 175)
+        self.assertEqual(parsed["auto_zone_updates"]["lthr"], 174)
 
 
 class HeartRateSettingsTests(unittest.TestCase):

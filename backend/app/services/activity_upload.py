@@ -49,18 +49,21 @@ def _apply_auto_hr_updates(db: Session, user: User, updates: dict) -> None:
     next_resting = user.resting_hr
     proposed_max = updates.get("max_hr")
     proposed_lthr = updates.get("lthr")
+
     if isinstance(proposed_max, int) and user.max_hr is not None and user.max_hr < proposed_max <= 240:
         next_max = proposed_max
     if isinstance(proposed_lthr, int) and user.lthr is not None and user.lthr < proposed_lthr <= 220:
         next_lthr = proposed_lthr
 
-    if next_resting is None or next_lthr is None or next_max is None:
-        return
-    if not (next_resting < next_lthr < next_max):
-        return
-    if not (0.75 * next_max <= next_lthr <= 0.97 * next_max):
-        return
     if (next_lthr, next_max, next_resting) == (user.lthr, user.max_hr, user.resting_hr):
+        return
+
+    # Validate every relationship that can be checked with currently configured values.
+    # A missing resting HR does not block a verified max-HR update.
+    if next_lthr is not None and next_max is not None:
+        if not (next_lthr < next_max and 0.75 * next_max <= next_lthr <= 0.97 * next_max):
+            return
+    if next_resting is not None and next_lthr is not None and not next_resting < next_lthr:
         return
 
     user.lthr = next_lthr
@@ -73,7 +76,6 @@ def _apply_auto_hr_updates(db: Session, user: User, updates: dict) -> None:
         max_hr=next_max,
         resting_hr=next_resting,
     ))
-
 
 def _valid_float(value, default=0.0) -> float:
     try:

@@ -284,7 +284,7 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
 
     by_day: dict[_date, list] = defaultdict(list)
     for a in acts:
-        by_day[a.start_date.date() if a.start_date else _date.today()].append(a)
+        by_day[(a.start_date_local or a.start_date).date() if (a.start_date_local or a.start_date) else _date.today()].append(a)
 
     # медианы по спорту — один раз
     sorted_by_sport: dict[str, list[float]] = {}
@@ -833,10 +833,10 @@ async def sync_activities(
         if not _has_real_data(parsed):
             skipped_empty += 1
             continue
-        act_date = parsed["start_date"].strftime("%Y-%m-%d")
+        act_date = (parsed.get("start_date_local") or parsed["start_date"]).strftime("%Y-%m-%d")
         sleep_secs = sleep_by_date.get(act_date)
         if sleep_secs is None:
-            prev = (parsed["start_date"] - timedelta(days=1)).strftime("%Y-%m-%d")
+            prev = ((parsed.get("start_date_local") or parsed["start_date"]) - timedelta(days=1)).strftime("%Y-%m-%d")
             sleep_secs = sleep_by_date.get(prev)
         from ..services.activity_dedupe import UPLOAD_SOURCES, find_matching_activity
         uploaded_match = find_matching_activity(
@@ -966,7 +966,7 @@ async def get_user_profile(
     all_activities = db.query(Activity).filter(Activity.user_id == user.id).all()
     today = datetime.utcnow().date()
     
-    dates = sorted({a.start_date.date() for a in all_activities if a.start_date}, reverse=True)
+    dates = sorted({(a.start_date_local or a.start_date).date() for a in all_activities if (a.start_date_local or a.start_date)}, reverse=True)
     day_streak = 0
     if dates and (today - dates[0]).days <= 1:
         day_streak = 1
@@ -979,7 +979,7 @@ async def get_user_profile(
     def week_start(d):
         return d - timedelta(days=d.weekday())
     
-    weeks = sorted({week_start(a.start_date.date()) for a in all_activities if a.start_date}, reverse=True)
+    weeks = sorted({week_start((a.start_date_local or a.start_date).date()) for a in all_activities if (a.start_date_local or a.start_date)}, reverse=True)
     this_week = week_start(today)
     week_streak = 0
     if weeks and (this_week - weeks[0]).days <= 7:
@@ -990,7 +990,7 @@ async def get_user_profile(
             else:
                 break
     
-    week_seconds = sum(a.moving_time or 0 for a in all_activities if a.start_date and week_start(a.start_date.date()) == this_week)
+    week_seconds = sum(a.moving_time or 0 for a in all_activities if (a.start_date_local or a.start_date) and week_start((a.start_date_local or a.start_date).date()) == this_week)
     week_hours = round(week_seconds / 3600, 1)
     
     season_year = today.year if today.month >= 9 else today.year - 1

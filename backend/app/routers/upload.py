@@ -15,7 +15,7 @@ import secrets
 from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
 from datetime import datetime, timedelta, timezone
-from math import asin, cos, exp, radians, sin, sqrt
+from math import asin, ceil, cos, exp, floor, radians, sin, sqrt
 from pathlib import Path
 from statistics import mean
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -395,6 +395,10 @@ def _finalise_file_metrics(
             if len(hour_hrs) >= 2:
                 candidate_lthr = int(round(mean(hour_hrs)))
                 effective_max = next_max_hr or user_max_hr
+                if effective_max is not None:
+                    min_allowed = int(ceil(0.75 * effective_max))
+                    max_allowed = int(floor(0.97 * effective_max))
+                    candidate_lthr = min(max_allowed, max(min_allowed, candidate_lthr))
                 if candidate_lthr > lthr and (effective_max is None or candidate_lthr < effective_max):
                     auto_zone_updates["lthr"] = candidate_lthr
                     break
@@ -438,14 +442,23 @@ def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
             if len(samples) >= MAX_ACTIVITY_SAMPLES:
                 raise InvalidActivityFile("В файле слишком много точек (лимит 25 000).")
             record = {field.name: field.value for field in message}
+            record_time = record.get("timestamp")
+            if isinstance(record_time, datetime) and record_time.tzinfo is None:
+                record_time = record_time.replace(tzinfo=timezone.utc)
             samples.append({
-                "time": record.get("timestamp"),
+                "time": record_time,
                 "hr": _number(record.get("heart_rate")),
                 "ele": _number(record.get("altitude")),
                 "distance": _number(record.get("distance")),
             })
         activity_start = _parse_iso_datetime(session.get("start_time"))
         local_start = _parse_iso_datetime(session.get("local_timestamp"))
+        if activity_start is not None and activity_start.tzinfo is None:
+            activity_start = activity_start.replace(tzinfo=timezone.utc)
+        if activity_start is None and local_start is not None:
+            # FIT local_timestamp is a wall-clock value; _finalise converts it
+            # to UTC using the user's configured IANA timezone.
+            activity_start = local_start
         if activity_start is None:
             activity_start = min(
                 (t for t in (_parse_iso_datetime(s.get("time")) for s in samples) if t is not None),
@@ -468,6 +481,7 @@ def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
             lthr=lthr,
             user_max_hr=user_max_hr,
             resting_hr=resting_hr,
+            user_timezone=user_timezone,
         )
     except (InvalidActivityFile, UnsupportedActivityFile):
         raise
@@ -736,11 +750,13 @@ def update_heart_rate_settings(
     except (ZoneInfoNotFoundError, TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail="Укажи корректный IANA часовой пояс, например Europe/Stockholm.") from exc
 
-    if next_resting_hr is not None and next_lthr is not None and next_max_hr is not None:
-        if not (next_resting_hr < next_lthr < next_max_hr):
-            raise HTTPException(status_code=422, detail="Требуется resting HR < LTHR < max HR.")
+    if next_lthr is not None and next_max_hr is not None:
+        if not next_lthr < next_max_hr:
+            raise HTTPException(status_code=422, detail="LTHR должен быть ниже максимального пульса.")
         if not (0.75 * next_max_hr <= next_lthr <= 0.97 * next_max_hr):
             raise HTTPException(status_code=422, detail="LTHR должен составлять 75–97% от max HR.")
+    if next_resting_hr is not None and next_lthr is not None and not next_resting_hr < next_lthr:
+        raise HTTPException(status_code=422, detail="Пульс в покое должен быть ниже LTHR.")
 
     hr_changed = (
         next_lthr != current.lthr

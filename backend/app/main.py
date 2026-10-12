@@ -105,7 +105,7 @@ try:
                 conn.execute(text("ALTER TABLE activities ADD COLUMN source VARCHAR(32) NOT NULL DEFAULT 'INTERVALS'"))
             if "start_date_local" not in acols:
                 conn.execute(text("ALTER TABLE activities ADD COLUMN start_date_local TIMESTAMP"))
-            conn.execute(text("UPDATE activities SET start_date_local = start_date WHERE start_date_local IS NULL AND start_date IS NOT NULL"))
+            conn.execute(text("UPDATE activities AS a SET start_date_local = (a.start_date AT TIME ZONE 'UTC') AT TIME ZONE COALESCE(u.timezone_name, 'UTC') FROM users AS u WHERE a.user_id = u.id AND a.start_date_local IS NULL AND a.start_date IS NOT NULL"))
             if "hard_secs" not in acols:
                 conn.execute(text("ALTER TABLE activities ADD COLUMN hard_secs INTEGER NOT NULL DEFAULT 0"))
             if "is_indoor" not in acols:
