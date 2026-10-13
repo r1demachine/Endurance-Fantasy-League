@@ -1357,6 +1357,7 @@ async def get_user_profile(
         )
         week_data = {
             "week_start": this_week_start.isoformat(),
+            "is_current_week": True,
             "actual_load": 0, "target_load": fallback_target, "completion_ratio": 0,
             "training_days": 0, "effort_xp": 0, "goal_xp": 0,
             "consistency_xp": 0, "quality_xp": 0, "recovery_xp": 0,
@@ -1366,6 +1367,7 @@ async def get_user_profile(
     else:
         week_data = {
             "week_start": this_week_start.isoformat(),
+            "is_current_week": True,
             "actual_load": round(current_summary.actual_load or 0, 1),
             "target_load": round(current_summary.target_load or 0, 1),
             "completion_ratio": round((current_summary.completion_ratio or 0) * 100, 1),
@@ -1755,6 +1757,8 @@ def get_weekly_summary(
         if membership is not None:
             week["division"] = membership.division
             week["division_source"] = membership.division_source
+
+    week["is_current_week"] = selected_start == current_start
 
     event_rows = (
         db.query(XPEvent)
