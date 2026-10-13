@@ -1,10 +1,19 @@
-"""Удаление аккаунта: дуэли, клубы, заявка + пароль."""
+"""Account deletion cleans user-owned tables and enforces a rate limit."""
+import ast
 import unittest
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from app.routers.privacy import _cleanup_social_for_user, DeleteAccountInput, delete_account
+from app.database import Base
+from app.routers.privacy import (
+    _USER_FK_TABLES_CLEANED_EXPLICITLY,
+    _cleanup_remaining_user_fk_rows,
+    _cleanup_social_for_user,
+    DeleteAccountInput,
+    delete_account,
+)
 from app.models import ClubMemberRole
 
 
@@ -47,6 +56,90 @@ class CleanupSocialTests(unittest.TestCase):
         _cleanup_social_for_user(db, uid)
         db.delete.assert_called()
 
+    def test_dynamic_cleanup_covers_every_users_fk_table(self):
+        users_table_name = "users"
+        all_user_fk_tables = {
+            table.name
+            for table in Base.metadata.tables.values()
+            if any(
+                fk.column.table.name == users_table_name and fk.column.name == "id"
+                for column in table.columns
+                for fk in column.foreign_keys
+            )
+        }
+        self.assertIn("sync_progress", all_user_fk_tables)
+        self.assertIn("heart_rate_settings_history", all_user_fk_tables)
+
+        # Verify every table declared "explicitly cleaned" is referenced by
+        # the account cleanup routines, rather than trusting that set alone.
+        privacy_path = Path(__file__).resolve().parents[1] / "app" / "routers" / "privacy.py"
+        privacy_source = privacy_path.read_text(encoding="utf-8")
+        privacy_module = ast.parse(privacy_source, filename=str(privacy_path))
+        cleanup_functions = {
+            node.name: node
+            for node in privacy_module.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name in {"_cleanup_social_for_user", "delete_account"}
+        }
+        queried_models = {
+            node.args[0].id
+            for function in cleanup_functions.values()
+            for node in ast.walk(function)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "query"
+            and node.args
+            and isinstance(node.args[0], ast.Name)
+        }
+        mapped_tables = {
+            mapper.class_.__name__: mapper.local_table.name
+            for mapper in Base.registry.mappers
+        }
+        explicitly_referenced_fk_tables = {
+            mapped_tables[model_name]
+            for model_name in queried_models
+            if model_name in mapped_tables and mapped_tables[model_name] in all_user_fk_tables
+        }
+        self.assertEqual(
+            _USER_FK_TABLES_CLEANED_EXPLICITLY,
+            explicitly_referenced_fk_tables,
+        )
+
+        db = MagicMock()
+        cleaned = _cleanup_remaining_user_fk_rows(db, 987)
+        executed = {
+            call.args[0].table.name
+            for call in db.execute.call_args_list
+        }
+
+        # Domain-specific tables are cleaned by _cleanup_social_for_user and
+        # the explicit delete statements in delete_account.
+        self.assertEqual(cleaned, executed)
+        self.assertEqual(
+            all_user_fk_tables,
+            _USER_FK_TABLES_CLEANED_EXPLICITLY | executed,
+        )
+        self.assertIn("sync_progress", executed)
+        self.assertIn("heart_rate_settings_history", executed)
+
+    def test_account_delete_endpoint_has_rate_limit(self):
+        source_path = Path(__file__).resolve().parents[1] / "app" / "routers" / "privacy.py"
+        module = ast.parse(source_path.read_text(encoding="utf-8"))
+        endpoint = next(
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == "delete_account"
+        )
+        rate_limits = [
+            decorator.args[0].value
+            for decorator in endpoint.decorator_list
+            if isinstance(decorator, ast.Call)
+            and isinstance(decorator.func, ast.Attribute)
+            and decorator.func.attr == "limit"
+            and decorator.args
+            and isinstance(decorator.args[0], ast.Constant)
+        ]
+        self.assertIn("5/hour", rate_limits)
+
     def test_delete_account_requires_password(self):
         user = SimpleNamespace(id=1, password_hash="x", api_key_encrypted=None, intervals_id=None)
         data = DeleteAccountInput(confirmation="DELETE", password="wrong")
@@ -54,7 +147,7 @@ class CleanupSocialTests(unittest.TestCase):
         with patch("app.routers.privacy.verify_password", return_value=False):
             from fastapi import HTTPException
             with self.assertRaises(HTTPException) as ctx:
-                delete_account(data, user, db)
+                delete_account.__wrapped__(MagicMock(), data, user, db)
             self.assertEqual(ctx.exception.status_code, 403)
 
     def test_delete_account_happy_path_commits(self):
@@ -70,7 +163,7 @@ class CleanupSocialTests(unittest.TestCase):
         q.all.return_value = []
         with patch("app.routers.privacy.verify_password", return_value=True):
             with patch("app.routers.privacy._cleanup_social_for_user") as clean:
-                result = delete_account(data, user, db)
+                result = delete_account.__wrapped__(MagicMock(), data, user, db)
                 clean.assert_called_once()
                 db.delete.assert_called_once_with(user)
                 db.commit.assert_called_once()

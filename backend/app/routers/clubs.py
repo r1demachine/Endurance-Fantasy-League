@@ -192,7 +192,7 @@ def _club_brief(c: Club, db: Session, me: User) -> dict:
     return {
         "id": c.id,
         "name": c.name,
-        "invite_code": c.invite_code if (mem or c.owner_id == me.id) else None,
+        "invite_code": c.invite_code if c.owner_id == me.id else None,
         "instant_join": bool(c.instant_join),
         "owner_id": c.owner_id,
         "is_owner": c.owner_id == me.id,
@@ -485,6 +485,7 @@ def search_clubs(
             "name": club.name,
             "member_count": _member_count(db, club.id),
             "is_member": _is_member(db, club.id, current.id) is not None,
+            "instant_join": bool(club.instant_join),
             "has_pending_request": db.query(ClubJoinRequest).filter(
                 ClubJoinRequest.club_id == club.id,
                 ClubJoinRequest.user_id == current.id,
@@ -513,13 +514,13 @@ async def request_join(
         raise HTTPException(status_code=409, detail=f"Клуб заполнен (максимум {MAX_MEMBERS} участников).")
 
     if club.instant_join:
-        _check_user_capacity_and_add_member(db, club, current.id, as_owner=False)
-        try:
-            db.commit()
-        except IntegrityError:
-            _handle_integrity_error(db, "Не удалось вступить: состав клуба изменился. Обнови страницу.")
-        await notify_user(db, club.owner_id, "club_join", f"{current.display_name} вступил(а) в клуб «{club.name}»")
-        return {"message": f"Ты вступил(а) в клуб «{club.name}»", "joined": True}
+        # Public search reveals only the club ID, never the invitation secret.
+        # Instant-join clubs must be entered through POST /join with that secret.
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Для мгновенного вступления нужен код приглашения. Введи его в форме «Вступить по коду».",
+        )
 
     existing = db.query(ClubJoinRequest).filter(
         ClubJoinRequest.club_id == club.id,

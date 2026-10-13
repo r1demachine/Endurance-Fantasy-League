@@ -441,7 +441,7 @@ function ClubsPanel() {
   const [joinBusy, setJoinBusy] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState<{
-    id: number; name: string; member_count: number; is_member: boolean; has_pending_request: boolean;
+    id: number; name: string; member_count: number; is_member: boolean; has_pending_request: boolean; instant_join: boolean;
   }[]>([]);
   const [searchBusy, setSearchBusy] = useState(false);
   const [searchError, setSearchError] = useState("");
@@ -805,9 +805,11 @@ function ClubsPanel() {
                   <span className="text-[10px] font-bold uppercase text-[#166534]">Участник</span>
                 ) : result.has_pending_request ? (
                   <span className="text-[10px] font-bold uppercase text-[#666]">Заявка отправлена</span>
+                ) : result.instant_join ? (
+                  <span className="text-right text-[10px] font-bold uppercase text-[#666]">Нужен код<br />из приглашения</span>
                 ) : (
                   <button type="button" onClick={() => void requestJoin(result.id)} disabled={busy === `request-${result.id}` || membershipCount >= 10} className="border-2 border-black bg-white px-3 py-2 text-[10px] font-bold uppercase hover:bg-[#ffd500] disabled:opacity-50">
-                    {busy === `request-${result.id}` ? "Отправляю…" : "Вступить / заявка"}
+                    {busy === `request-${result.id}` ? "Отправляю…" : "Подать заявку"}
                   </button>
                 )}
               </div>

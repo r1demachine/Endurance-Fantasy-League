@@ -1,8 +1,11 @@
 """Unit tests for club name/invite rules and duel pair normalization."""
 import ast
+import asyncio
 import os
 from pathlib import Path
 import unittest
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from cryptography.fernet import Fernet
 
@@ -14,7 +17,7 @@ os.environ.setdefault("REDIS_URL", "")
 from pydantic import ValidationError
 
 from app.models import Club, Duel
-from app.routers.clubs import _member_brief
+from app.routers.clubs import _club_brief, _member_brief, request_join, ClubIdIn
 from app.routers.clubs import (
     CreateClubIn,
     JoinCodeIn,
@@ -98,6 +101,50 @@ class ClubPrivacyTests(unittest.TestCase):
         self.assertTrue(row["hidden"])
         self.assertEqual(row["display_name"], "Скрыто")
 
+class ClubInvitePrivacyTests(unittest.TestCase):
+    def test_invite_code_is_visible_only_to_owner(self):
+        club = SimpleNamespace(
+            id=11,
+            name="North Shore",
+            owner_id=7,
+            invite_code="ABCDEFGH2345",
+            instant_join=True,
+            created_at=None,
+        )
+        db = MagicMock()
+        with patch("app.routers.clubs._is_member", return_value=SimpleNamespace(role="member")):
+            with patch("app.routers.clubs._member_count", return_value=2):
+                owner_view = _club_brief(club, db, SimpleNamespace(id=7))
+                member_view = _club_brief(club, db, SimpleNamespace(id=8))
+
+        self.assertEqual(owner_view["invite_code"], "ABCDEFGH2345")
+        self.assertIsNone(member_view["invite_code"])
+
+    def test_instant_join_cannot_be_bypassed_by_public_club_id(self):
+        async def run_test():
+            db = MagicMock()
+            request = MagicMock()
+            current = SimpleNamespace(id=8, display_name="Runner")
+            club = SimpleNamespace(
+                id=11, owner_id=7, name="North Shore", instant_join=True
+            )
+            with patch("app.routers.clubs._lock_user"):
+                with patch("app.routers.clubs._lock_club", return_value=club):
+                    with patch("app.routers.clubs._is_member", return_value=None):
+                        with patch("app.routers.clubs._ensure_membership_capacity"):
+                            with patch("app.routers.clubs._member_count", return_value=2):
+                                from fastapi import HTTPException
+                                with self.assertRaises(HTTPException) as ctx:
+                                    await request_join.__wrapped__(
+                                        request, ClubIdIn(club_id=11), current, db
+                                    )
+            self.assertEqual(ctx.exception.status_code, 409)
+            self.assertIn("код приглашения", ctx.exception.detail.lower())
+            db.rollback.assert_called_once()
+
+        asyncio.run(run_test())
+
+
 class DuelRulesTests(unittest.TestCase):
     def test_username_normalization_strips_at_sign_before_pattern_check(self):
         challenge = ChallengeIn(username="  @Alice_Rider ")
@@ -115,6 +162,21 @@ class DuelRulesTests(unittest.TestCase):
         self.assertEqual(source.count("settings = get_settings()"), 1)
         self.assertEqual(source.count('@app.get("/health")'), 1)
         self.assertEqual(source.count("CREATE TABLE IF NOT EXISTS club_join_attempts"), 1)
+
+    def test_xp_recalculation_retries_past_open_duels_in_separate_session(self):
+        sync_path = Path(__file__).resolve().parents[1] / "app" / "routers" / "sync.py"
+        source = sync_path.read_text(encoding="utf-8")
+        module = ast.parse(source, filename=str(sync_path))
+        recalculate = next(
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_recalculate_user_xp_v6"
+        )
+        body = ast.get_source_segment(source, recalculate)
+        self.assertIn("retry_db = SessionLocal()", body)
+        self.assertIn('Duel.status.in_(["pending", "active"])', body)
+        self.assertIn("finalize_duels_for_week(retry_db, duel_week_start.date())", body)
+        self.assertIn("retry_db.close()", body)
 
     def test_database_metadata_has_required_unique_indexes(self):
         club_index = next(i for i in Club.__table__.indexes if i.name == "uq_club_owner_name_lower")

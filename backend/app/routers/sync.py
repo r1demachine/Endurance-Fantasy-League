@@ -377,6 +377,8 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         if e.event_type in ("quest", "achievement"):
             quest_by_week[e.week_start] = quest_by_week.get(e.week_start, 0.0) + e.amount
 
+    generated_quality_consistency_keys: set[str] = set()
+
     def upsert_event(key, etype, amount, ws, dt, title):
         ev = events_by_key.get(key)
         if amount <= 0:
@@ -384,6 +386,8 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
                 db.delete(ev)
                 events_by_key.pop(key, None)
             return
+        if etype in {"consistency", "quality_hard", "quality_long"}:
+            generated_quality_consistency_keys.add(key)
         if ev is not None:
             ev.amount = round_xp(amount)
             ev.title = title
@@ -477,7 +481,22 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         summ.paused = bool(paused)
         summ.finalized = finalized
 
-    # 6) лиги: закрываем завершённые недели без лиги
+    # Remove regularity/quality events that no longer correspond to the current
+    # activity history (for example, an Intervals update makes a workout
+    # non-qualifying). Only v6-generated event types are reconciled here.
+    for event in all_events:
+        if event.event_type not in {"consistency", "quality_hard", "quality_long"}:
+            continue
+        event_week = X6.week_start(event.week_start.date()) if event.week_start else None
+        if (
+            event_week is not None
+            and event_week >= activation_ws
+            and event.event_key not in generated_quality_consistency_keys
+        ):
+            db.delete(event)
+            events_by_key.pop(event.event_key, None)
+
+    # 6) lиги: финализация идемпотентна; повторно обрабатываем незавершённые недели.
     for ws in all_weeks:
         if ws < this_week:
             _close_league_week(db, ws, allow_week_notifications=allow_week_notifications)
@@ -487,6 +506,37 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
     acts_sum = round_xp(sum(a.xp_earned or 0 for a in acts))
     user.total_xp = round_xp(float(user.legacy_xp_offset or 0) + acts_sum + events_sum)
     user.level = level_from_xp(user.total_xp)
+
+    # Retry any past pending/active duel weeks even when their dates fall
+    # outside this user's activity timeline (for example, a 0:0 week with no
+    # workouts). Failed finalization therefore cannot strand duels permanently.
+    from ..models import Duel
+    this_week_dt = datetime.combine(this_week, datetime.min.time())
+    retry_db = SessionLocal()
+    try:
+        open_duel_weeks = (
+            retry_db.query(Duel.week_start)
+            .filter(
+                Duel.week_start < this_week_dt,
+                Duel.status.in_(["pending", "active"]),
+            )
+            .distinct()
+            .order_by(Duel.week_start.asc())
+            .all()
+        )
+        for (duel_week_start,) in open_duel_weeks:
+            if duel_week_start is None:
+                continue
+            try:
+                from .duels import finalize_duels_for_week
+                finalize_duels_for_week(retry_db, duel_week_start.date())
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    "Unfinished duel retry failed for "
+                    f"{duel_week_start.date()}: {type(exc).__name__}"
+                )
+    finally:
+        retry_db.close()
 
 
 def _is_paused_week(user: User, ws: _date) -> bool:
@@ -554,8 +604,27 @@ def _close_league_week(
     from ..models import LeagueWeek, LeagueMembership
 
     ws_dt = datetime.combine(week_start_d, datetime.min.time())
-    if db.query(LeagueWeek).filter(LeagueWeek.week_start == ws_dt).first():
-        return False
+    existing_week = db.query(LeagueWeek).filter(LeagueWeek.week_start == ws_dt).first()
+    if existing_week:
+        # Retry idempotent side effects for a week whose league row was already
+        # committed before duel finalization or Telegram delivery failed.
+        try:
+            from ..models import Duel
+            has_open_duels = db.query(Duel.id).filter(
+                Duel.week_start == ws_dt,
+                Duel.status.in_(["pending", "active"]),
+            ).first() is not None
+            if has_open_duels:
+                from .duels import finalize_duels_for_week
+                finalize_duels_for_week(db, week_start_d)
+        except Exception as exc:  # noqa: BLE001
+            print(f"finalize_duels_for_week retry failed: {type(exc).__name__}")
+        try:
+            from ..services.telegram_week import notify_week_results
+            notify_week_results(db, week_start_d)
+        except Exception as exc:  # noqa: BLE001
+            print(f"telegram week notify retry failed: {type(exc).__name__}")
+        return existing_week.status == "closed"
     summaries = (
         db.query(WeeklySummary)
         .filter(WeeklySummary.week_start == ws_dt, WeeklySummary.finalized == True)  # noqa: E712
@@ -622,23 +691,21 @@ def _close_league_week(
                 entry["summ"].division_source = entry["source"]
 
     db.commit()
-    if not formed:
-        return False
 
-    # These side effects run once, immediately after this week actually forms.
+    # Finalize duels even if the league itself did not meet the minimum size.
     try:
         from .duels import finalize_duels_for_week
         finalize_duels_for_week(db, week_start_d)
     except Exception as exc:  # noqa: BLE001
         print(f"finalize_duels_for_week failed: {type(exc).__name__}")
 
-    if allow_week_notifications:
-        try:
-            from ..services.telegram_week import notify_week_results
-            notify_week_results(db, week_start_d)
-        except Exception as exc:  # noqa: BLE001
-            print(f"telegram week notify failed: {type(exc).__name__}")
-    return True
+    try:
+        from ..services.telegram_week import notify_week_results
+        notify_week_results(db, week_start_d)
+    except Exception as exc:  # noqa: BLE001
+        print(f"telegram week notify failed: {type(exc).__name__}")
+
+    return bool(formed)
 
 def _has_invalid_since_query(errors: list[dict]) -> bool:
     """Identify malformed since query parameters for the route's HTTP 400 contract."""
@@ -1790,133 +1857,222 @@ from ..services.leaderboard_privacy import (
     profile_visible_on_leaderboard as _profile_visible_on_leaderboard,
 )
 
+def _user_divisions_for_week(
+    db: Session, user_ids: list[int], week_start_d: _date
+) -> dict[int, tuple[Optional[str], str]]:
+    """Resolve leaderboard divisions in a small fixed number of aggregate queries."""
+    from ..services import xp_v6 as X6
+    from ..models import Wellness, WeeklySummary
+
+    if not user_ids:
+        return {}
+
+    week_end_d = week_start_d + timedelta(days=7)
+    divisions: dict[int, tuple[Optional[str], str]] = {
+        user_id: (None, "provisional") for user_id in user_ids
+    }
+
+    ctl_rows = (
+        db.query(Wellness.user_id, func.avg(Wellness.ctl))
+        .filter(
+            Wellness.user_id.in_(user_ids),
+            Wellness.date >= week_start_d.isoformat(),
+            Wellness.date < week_end_d.isoformat(),
+            Wellness.ctl.isnot(None),
+            Wellness.ctl > 0,
+        )
+        .group_by(Wellness.user_id)
+        .all()
+    )
+    ctl_user_ids: set[int] = set()
+    for user_id, avg_ctl in ctl_rows:
+        if avg_ctl is None or float(avg_ctl) <= 0:
+            continue
+        ctl_user_ids.add(user_id)
+        divisions[user_id] = (
+            X6.division_name(X6.division_index_from_ctl(float(avg_ctl))),
+            "ctl",
+        )
+
+    fallback_ids = [user_id for user_id in user_ids if user_id not in ctl_user_ids]
+    if not fallback_ids:
+        return divisions
+
+    count_rows = (
+        db.query(WeeklySummary.user_id, func.count(WeeklySummary.user_id))
+        .filter(
+            WeeklySummary.user_id.in_(fallback_ids),
+            WeeklySummary.finalized.is_(True),
+        )
+        .group_by(WeeklySummary.user_id)
+        .all()
+    )
+    eligible_ids = [
+        user_id for user_id, count in count_rows if int(count or 0) >= 3
+    ]
+    if not eligible_ids:
+        return divisions
+
+    ranked_loads = (
+        db.query(
+            WeeklySummary.user_id.label("user_id"),
+            WeeklySummary.actual_load.label("actual_load"),
+            func.row_number().over(
+                partition_by=WeeklySummary.user_id,
+                order_by=WeeklySummary.week_start.desc(),
+            ).label("row_num"),
+        )
+        .filter(
+            WeeklySummary.user_id.in_(eligible_ids),
+            WeeklySummary.finalized.is_(True),
+        )
+        .subquery()
+    )
+    load_rows = (
+        db.query(
+            ranked_loads.c.user_id,
+            func.avg(func.coalesce(ranked_loads.c.actual_load, 0.0)),
+        )
+        .filter(ranked_loads.c.row_num <= 12)
+        .group_by(ranked_loads.c.user_id)
+        .all()
+    )
+    for user_id, avg_load in load_rows:
+        divisions[user_id] = (
+            X6.division_name(X6.division_index_from_load(float(avg_load or 0))),
+            "load_fallback",
+        )
+    return divisions
+
+
 @router.get("/leaderboard")
 async def leaderboard(
     scope: str = Query("global", regex="^(global|friends|weekly)$"),
-    limit: int = Query(50, ge=1, le=100),
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer),
+    limit: int = Query(10, ge=1, le=10),
+    current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Рейтинг: global — все (публично), friends — только принятые друзья (авторизация)."""
-    current: Optional[User] = None
-    if credentials is not None:
-        claims = decode_access_token_claims(credentials.credentials)
-        if claims is not None:
-            uid, token_version = claims
-            candidate = db.get(User, uid)
-            if candidate is not None and int(candidate.token_version or 0) == token_version:
-                current = candidate
+    """Authenticated leaderboards; visibility filtering and top-10 selection run in SQL."""
+    from ..services import xp_v6 as X6
+    from ..models import LeagueWeek, WeeklySummary
 
-    # ── Weekly League (текущая неделя, live-борд по дивизионам) ──
+    friend_ids = _viewer_friend_ids(db, current)
+    visible_ids = friend_ids | {current.id}
+    visible_filter = or_(
+        User.profile_visibility.is_(None),
+        User.profile_visibility == "authenticated",
+        and_(
+            User.profile_visibility == "friends",
+            User.id.in_(visible_ids),
+        ),
+        and_(
+            User.profile_visibility == "private",
+            User.id == current.id,
+        ),
+    )
+    rank_expr = func.coalesce(User.total_xp, 0.0)
+
+    def _rank_before_user(scope_filter):
+        score = float(current.total_xp or 0)
+        ahead = (
+            db.query(func.count(User.id))
+            .filter(
+                scope_filter,
+                or_(
+                    rank_expr > score,
+                    and_(rank_expr == score, User.id < current.id),
+                ),
+            )
+            .scalar()
+        )
+        return int(ahead or 0) + 1
+
     if scope == "weekly":
-        from ..services import xp_v6 as X6
-        from ..models import LeagueWeek, WeeklySummary
         today = _user_local_today(current)
         this_ws_d = X6.week_start(today)
         this_ws = datetime.combine(this_ws_d, datetime.min.time())
-        sums = (
-            db.query(WeeklySummary)
-            .filter(WeeklySummary.week_start == this_ws)
+        rows = (
+            db.query(WeeklySummary, User)
+            .join(User, User.id == WeeklySummary.user_id)
+            .filter(WeeklySummary.week_start == this_ws, visible_filter)
+            .order_by(
+                func.coalesce(WeeklySummary.league_score, 0.0).desc(),
+                User.id.asc(),
+            )
+            .limit(limit)
             .all()
         )
+        divisions_by_user = _user_divisions_for_week(
+            db, [user.id for _summary, user in rows], this_ws_d
+        )
         entries = []
-        friend_ids = _viewer_friend_ids(db, current)
-        for s in sums:
-            u = db.get(User, s.user_id)
-            if not u:
-                continue
-            if not _profile_visible_on_leaderboard(u, current, friend_ids):
-                continue
-            div, src = _user_division(db, u, this_ws_d, s.actual_load or 0)
+        for summary, user in rows:
+            div, source = divisions_by_user.get(user.id, (None, "provisional"))
             entries.append({
-                "id": u.id,
-                "username": u.username,
-                "display_name": u.display_name,
-                "level": u.level,
-                "score": round(s.league_score or 0, 1),
+                "id": user.id,
+                "username": user.username,
+                "display_name": user.display_name,
+                "level": user.level,
+                "score": round(summary.league_score or 0, 1),
                 "division": div,
-                "division_source": src,
-                "is_you": current is not None and current.id == u.id,
+                "division_source": source,
+                "is_you": user.id == current.id,
             })
-        order = {name: i for i, name in enumerate(X6.DIVISION_NAMES)}
-        order["Open"] = len(order)
-        order[None] = len(order) + 1
-        entries.sort(key=lambda e: (order.get(e["division"], 99), -e["score"]))
-        per_div: dict = {}
-        for e in entries:
-            per_div[e["division"]] = per_div.get(e["division"], 0) + 1
-            e["rank"] = per_div[e["division"]]
-        last_lw = (
+        division_order = {name: i for i, name in enumerate(X6.DIVISION_NAMES)}
+        division_order["Open"] = len(division_order)
+        division_order[None] = len(division_order) + 1
+        entries.sort(key=lambda entry: (
+            division_order.get(entry["division"], 99),
+            -entry["score"],
+            entry["id"],
+        ))
+        per_division: dict = {}
+        for entry in entries:
+            div = entry["division"]
+            per_division[div] = per_division.get(div, 0) + 1
+            entry["rank"] = per_division[div]
+
+        last_week = (
             db.query(LeagueWeek)
             .order_by(LeagueWeek.week_start.desc())
             .first()
         )
-        your_rank = next((entry["rank"] for entry in entries if entry["is_you"]), None)
         return {
             "scope": "weekly",
-            "your_rank": your_rank,
+            "your_rank": next(
+                (entry["rank"] for entry in entries if entry["is_you"]), None
+            ),
             "week": this_ws_d.isoformat(),
             "formed": len(entries) >= X6.MIN_LEAGUE_SIZE,
             "min_size": X6.MIN_LEAGUE_SIZE,
-            "last_closed": last_lw.week_start.strftime("%d.%m") if last_lw else None,
+            "last_closed": last_week.week_start.strftime("%d.%m") if last_week else None,
             "entries": entries,
         }
 
-    your_rank = None
-    rank_expr = func.coalesce(User.total_xp, 0.0)
-
     if scope == "global":
-        friend_ids = _viewer_friend_ids(db, current)
-        candidates = (
+        users = (
             db.query(User)
+            .filter(visible_filter)
             .order_by(rank_expr.desc(), User.id.asc())
+            .limit(limit)
             .all()
         )
-        users = [
-            u for u in candidates
-            if _profile_visible_on_leaderboard(u, current, friend_ids)
-        ][:limit]
-        if current is not None and _profile_visible_on_leaderboard(current, current, friend_ids):
-            visible_ids = [
-                u.id for u in candidates
-                if _profile_visible_on_leaderboard(u, current, friend_ids)
-            ]
-            try:
-                your_rank = visible_ids.index(current.id) + 1
-            except ValueError:
-                your_rank = None
-
+        your_rank = _rank_before_user(visible_filter)
     else:
-        if current is None:
-            raise HTTPException(status_code=401, detail="Friends-рейтинг доступен после входа")
-        # друзья = accepted с обеих сторон; нет друзей → пустой рейтинг
-        from ..models import Friendship, FriendshipStatus
-        friend_ids_rows = (
-            db.query(Friendship.to_user_id)
-            .filter(
-                Friendship.from_user_id == current.id,
-                Friendship.status == FriendshipStatus.ACCEPTED,
-            )
-            .union(
-                db.query(Friendship.from_user_id).filter(
-                    Friendship.to_user_id == current.id,
-                    Friendship.status == FriendshipStatus.ACCEPTED,
-                )
-            )
-            .all()
-        )
-        friend_ids = {r[0] for r in friend_ids_rows}
         if not friend_ids:
             return {"scope": scope, "entries": [], "your_rank": None}
-        friend_ids.add(current.id)
-        all_friend_users = (
+        friend_scope_filter = and_(
+            visible_filter,
+            User.id.in_(visible_ids),
+        )
+        users = (
             db.query(User)
-            .filter(User.id.in_(friend_ids))
+            .filter(friend_scope_filter)
             .order_by(rank_expr.desc(), User.id.asc())
+            .limit(limit)
             .all()
         )
-        your_rank = next((idx + 1 for idx, user in enumerate(all_friend_users) if user.id == current.id), None)
-        users = all_friend_users[:limit]
+        your_rank = _rank_before_user(friend_scope_filter)
 
     return {
         "scope": scope,
@@ -1924,14 +2080,14 @@ async def leaderboard(
         "entries": [
             {
                 "rank": i + 1,
-                "id": u.id,
-                "display_name": u.display_name,
-                "username": u.username,
-                "level": u.level,
-                "total_xp": round(float(u.total_xp or 0), 2),
-                "is_you": current is not None and u.id == current.id,
+                "id": user.id,
+                "display_name": user.display_name,
+                "username": user.username,
+                "level": user.level,
+                "total_xp": round(float(user.total_xp or 0), 2),
+                "is_you": user.id == current.id,
             }
-            for i, u in enumerate(users)
+            for i, user in enumerate(users)
         ],
     }
 

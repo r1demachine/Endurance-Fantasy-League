@@ -3,12 +3,14 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import logging
 import secrets
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -16,7 +18,7 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..database import get_db
 from ..dependencies import get_current_user
-from ..models import TelegramLinkAttempt, TelegramWebhookUpdate, User
+from ..models import TelegramLinkAttempt, TelegramWebhookUpdate, User, WeeklySummary
 from ..rate_limit import limiter
 from ..services.telegram import (
     TelegramFileTooLarge,
@@ -26,6 +28,7 @@ from ..services.telegram import (
 )
 from ..services.activity_upload import create_activity_from_upload
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/telegram", tags=["Telegram"])
 
 LINK_TTL_MINUTES = 15
@@ -68,6 +71,26 @@ def _latest_completed_week_start(today: date | None = None) -> date:
     today = today or date.today()
     current_week_start = today - timedelta(days=today.weekday())
     return current_week_start - timedelta(days=7)
+
+
+def _advance_week_marker_on_link(db: Session, user: User) -> None:
+    """Suppress historical backfill but keep a not-yet-finalized latest week eligible."""
+    last_completed = _latest_completed_week_start()
+    week_datetime = datetime.combine(last_completed, datetime.min.time())
+    latest_summary = db.query(WeeklySummary).filter(
+        WeeklySummary.user_id == user.id,
+        WeeklySummary.week_start == week_datetime,
+    ).first()
+    summary_finalized = bool(latest_summary and latest_summary.finalized)
+    marker_target = last_completed if summary_finalized else last_completed - timedelta(days=7)
+    current_marker = user.telegram_last_notified_week
+
+    if current_marker is None or current_marker < marker_target:
+        user.telegram_last_notified_week = marker_target
+    elif not summary_finalized and current_marker >= last_completed:
+        # Older deployments advanced this marker at link time even without a
+        # finalized summary, which made the eventual result impossible to send.
+        user.telegram_last_notified_week = marker_target
 
 
 def _record_failed_link_attempt(db: Session, chat_id: str) -> int:
@@ -169,6 +192,18 @@ def _check_secret(header_value: Optional[str]) -> None:
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
+def _unmark_update_processed(db: Session, update_id: int) -> None:
+    """Release a webhook claim after handler failure so Telegram can retry it."""
+    try:
+        db.query(TelegramWebhookUpdate).filter(
+            TelegramWebhookUpdate.update_id == update_id
+        ).delete(synchronize_session=False)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to release Telegram webhook claim update_id=%s", update_id)
+
+
 def _mark_update_processed(db: Session, update_id: Any) -> bool:
     if isinstance(update_id, bool) or not isinstance(update_id, int) or update_id < 0:
         raise HTTPException(status_code=400, detail="Invalid or missing update_id")
@@ -201,30 +236,38 @@ async def telegram_webhook(
         raise HTTPException(status_code=400, detail="Invalid JSON") from exc
     if not isinstance(update, dict):
         raise HTTPException(status_code=400, detail="Invalid update")
-    if not _mark_update_processed(db, update.get("update_id")):
+    update_id = update.get("update_id")
+    # The SQLAlchemy session and claim operation are synchronous; keep the DB
+    # call off the ASGI event loop.
+    if not await run_in_threadpool(_mark_update_processed, db, update_id):
         return {"ok": True, "duplicate": True}
 
-    # Do not process edited_message; it is a separate update from Telegram.
-    message = update.get("message")
-    if not isinstance(message, dict):
-        return {"ok": True}
-    chat = message.get("chat") or {}
-    chat_id = str(chat.get("id") or "")
-    chat_type = str(chat.get("type") or "")
-    if not chat_id:
-        return {"ok": True}
+    try:
+        # Do not process edited_message; it is a separate update from Telegram.
+        message = update.get("message")
+        if not isinstance(message, dict):
+            return {"ok": True}
+        chat = message.get("chat") or {}
+        chat_id = str(chat.get("id") or "")
+        chat_type = str(chat.get("type") or "")
+        if not chat_id:
+            return {"ok": True}
 
-    text = (message.get("text") or "").strip()
-    document = message.get("document")
-    if text.startswith("/"):
-        await _handle_command(db, chat_id, text, chat_type)
+        text = (message.get("text") or "").strip()
+        document = message.get("document")
+        if text.startswith("/"):
+            await _handle_command(db, chat_id, text, chat_type)
+            return {"ok": True}
+        if document:
+            await _handle_document(db, chat_id, document)
+            return {"ok": True}
+        if text:
+            await send_message(chat_id, HELP_TEXT)
         return {"ok": True}
-    if document:
-        await _handle_document(db, chat_id, document)
-        return {"ok": True}
-    if text:
-        await send_message(chat_id, HELP_TEXT)
-    return {"ok": True}
+    except Exception:
+        await run_in_threadpool(db.rollback)
+        await run_in_threadpool(_unmark_update_processed, db, update_id)
+        raise
 
 
 async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str = "private") -> None:
@@ -236,7 +279,9 @@ async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str =
         return
 
     if command == "/status":
-        user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+        user = await run_in_threadpool(
+            lambda: db.query(User).filter(User.telegram_chat_id == chat_id).first()
+        )
         if not user:
             await send_message(chat_id, "Аккаунт не привязан. Получи код в профиле на сайте и отправь /link КОД.")
             return
@@ -249,31 +294,36 @@ async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str =
         return
 
     if command == "/stop":
-        user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+        user = await run_in_threadpool(
+            lambda: db.query(User).filter(User.telegram_chat_id == chat_id).first()
+        )
         if user:
-            _unlink_user(user)
-            db.commit()
+            await run_in_threadpool(_unlink_user, user)
+            await run_in_threadpool(db.commit)
         await send_message(chat_id, "Привязка удалена, уведомления выключены. Чтобы снова связать — новый /link КОД из профиля.")
         return
 
     if command == "/notify":
-        user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+        user = await run_in_threadpool(
+            lambda: db.query(User).filter(User.telegram_chat_id == chat_id).first()
+        )
         if not user:
             await send_message(chat_id, "Сначала привяжи аккаунт: /link КОД из профиля на сайте.")
             return
         if len(parts) < 2 or parts[1].lower() not in {"on", "off"}:
             await send_message(chat_id, "Используй /notify on или /notify off.")
             return
-        user.telegram_notify = parts[1].lower() == "on"
-        db.commit()
-        await send_message(chat_id, "Уведомления включены." if user.telegram_notify else "Уведомления отключены.")
+        enabled = parts[1].lower() == "on"
+        await run_in_threadpool(setattr, user, "telegram_notify", enabled)
+        await run_in_threadpool(db.commit)
+        await send_message(chat_id, "Уведомления включены." if enabled else "Уведомления отключены.")
         return
 
     if command == "/link":
         if chat_type != "private":
             await send_message(chat_id, "Для безопасности /link можно использовать только в личном чате с ботом.")
             return
-        if _failed_link_attempts(db, chat_id) >= LINK_RATE_LIMIT:
+        if await run_in_threadpool(_failed_link_attempts, db, chat_id) >= LINK_RATE_LIMIT:
             await send_message(chat_id, "Слишком много неверных кодов. Попробуй через 15 минут.")
             return
         if len(parts) < 2:
@@ -282,20 +332,20 @@ async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str =
 
         code = parts[1].strip().upper()
         now = datetime.utcnow()
-        user = db.query(User).filter(
+        user = await run_in_threadpool(lambda: db.query(User).filter(
             User.telegram_link_code == _hash_link_code(code),
             User.telegram_link_expires.isnot(None),
             User.telegram_link_expires > now,
-        ).first()
+        ).first())
         if not user:
-            _record_failed_link_attempt(db, chat_id)
+            await run_in_threadpool(_record_failed_link_attempt, db, chat_id)
             await send_message(chat_id, "Код неверный или истёк. Сгенерируй новый в профиле на сайте.")
             return
 
-        other_owner = db.query(User).filter(
+        other_owner = await run_in_threadpool(lambda: db.query(User).filter(
             User.telegram_chat_id == chat_id,
             User.id != user.id,
-        ).first()
+        ).first())
         if other_owner:
             await send_message(
                 chat_id,
@@ -303,15 +353,17 @@ async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str =
             )
             return
 
-        old_chat_id = user.telegram_chat_id if user.telegram_chat_id and user.telegram_chat_id != chat_id else None
-        user.telegram_chat_id = chat_id
-        user.telegram_notify = False  # consent must be given separately
-        user.telegram_link_code = None
-        user.telegram_link_expires = None
-        last_completed = _latest_completed_week_start()
-        if user.telegram_last_notified_week is None or user.telegram_last_notified_week < last_completed:
-            user.telegram_last_notified_week = last_completed
-        db.commit()
+        def _save_link():
+            old = user.telegram_chat_id if user.telegram_chat_id and user.telegram_chat_id != chat_id else None
+            user.telegram_chat_id = chat_id
+            user.telegram_notify = False  # consent must be given separately
+            user.telegram_link_code = None
+            user.telegram_link_expires = None
+            _advance_week_marker_on_link(db, user)
+            db.commit()
+            return old, user.username
+
+        old_chat_id, username = await run_in_threadpool(_save_link)
 
         if old_chat_id:
             await send_message(
@@ -320,7 +372,7 @@ async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str =
             )
         await send_message(
             chat_id,
-            f"Готово! Привязан аккаунт @{user.username}.\n"
+            f"Готово! Привязан аккаунт @{username}.\n"
             "Уведомления пока выключены — включи их командой /notify on.\n"
             "Можно присылать .fit / .gpx / .tcx.\n"
             "/stop — отвязать.",
@@ -331,7 +383,9 @@ async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str =
 
 
 async def _handle_document(db: Session, chat_id: str, document: dict) -> None:
-    user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+    user = await run_in_threadpool(
+        lambda: db.query(User).filter(User.telegram_chat_id == chat_id).first()
+    )
     if not user:
         await send_message(chat_id, "Сначала привяжи аккаунт: /link КОД из профиля на сайте.")
         return
@@ -392,7 +446,8 @@ async def _handle_document(db: Session, chat_id: str, document: dict) -> None:
 
     before_xp = float(user.total_xp or 0)
     file_sha256 = hashlib.sha256(content).hexdigest()
-    status, activity, reason = create_activity_from_upload(
+    status, activity, reason = await run_in_threadpool(
+        create_activity_from_upload,
         db,
         user,
         parsed,
@@ -407,7 +462,6 @@ async def _handle_document(db: Session, chat_id: str, document: dict) -> None:
         return
 
     from ..services.xp import round_xp
-    db.refresh(user)
     gained = round_xp(float(user.total_xp or 0) - before_xp)
     minutes = round((activity.moving_time or 0) / 60)
     started = activity.start_date.strftime("%d.%m.%Y %H:%M") if activity.start_date else "дата неизвестна"

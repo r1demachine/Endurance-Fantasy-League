@@ -26,8 +26,10 @@ def notify_week_results(db: Session, week_start_d: date) -> int:
         return 0
 
     last_completed = latest_completed_week_start()
-    current_week_start = last_completed + timedelta(days=7)
-    if week_start_d != last_completed or week_start_d < current_week_start - timedelta(days=7):
+    # A user's weekly summary may be finalized after the league row already
+    # exists. Permit delivery for any completed week, not just the most recent
+    # one; the per-user marker below keeps sequential backfills idempotent.
+    if week_start_d > last_completed:
         return 0
 
     week_datetime = datetime.combine(week_start_d, datetime.min.time())
