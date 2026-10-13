@@ -26,7 +26,9 @@ jobs:
         run: npm ci
       - name: Run dialog logic and render tests
         run: npm test
-      - name: Lint shared modal and dialog utilities
-        run: npm run lint -- src/components/Modal.tsx src/components/dialog-utils.ts
+      - name: Lint frontend
+        run: npm run lint
+      - name: Type-check frontend
+        run: npx tsc --noEmit
       - name: Build frontend
         run: npm run build
