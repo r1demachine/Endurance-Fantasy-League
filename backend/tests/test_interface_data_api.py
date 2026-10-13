@@ -493,6 +493,16 @@ class InterfaceDataApiTests(unittest.TestCase):
         )
         for day, secs, score in good_sleep_days:
             self.add_sleep(day, secs=secs, score=score)
+        # Current week also has enough load for live goal XP and good sleep data.
+        current_activity_1 = self.add_activity(
+            "current-week-workout-1", stamp=datetime(2026, 10, 20, 9, 0),
+            tss=40, moving_time=60 * 60,
+        )
+        current_activity_2 = self.add_activity(
+            "current-week-workout-2", stamp=datetime(2026, 10, 22, 9, 0),
+            tss=40, moving_time=60 * 60,
+        )
+        self.add_sleep(date(2026, 10, 20), secs=7 * 3600, score=90)
         self.db.commit()
 
         with (
@@ -552,15 +562,30 @@ class InterfaceDataApiTests(unittest.TestCase):
                     XPEvent.user_id == self.user.id,
                     XPEvent.event_type == "activity_bonus",
                 ).count(),
-                5,
+                7,
             )
             self.assertEqual(
                 self.db.query(XPEvent).filter(
                     XPEvent.user_id == self.user.id,
                     XPEvent.event_type == "sleep_bonus",
                 ).count(),
-                5,
+                6,
             )
+
+            current_payload = sync_router.get_weekly_summary(
+                week_start=date(2026, 10, 19), current=self.user, db=self.db,
+            )
+            current_week = current_payload["week"]
+            self.assertEqual(current_week["state"], "in_progress")
+            self.assertGreater(current_week["goal_xp"], 0)
+            self.assertGreater(current_week["recovery_xp"], 0)
+            current_components = sum(
+                current_week[field] for field in (
+                    "effort_xp", "goal_xp", "consistency_xp",
+                    "quality_xp", "recovery_xp", "quest_xp",
+                )
+            )
+            self.assertAlmostEqual(current_week["total_xp"], current_components, places=1)
 
     def test_manual_workouts_do_not_qualify_for_weekly_long_or_intensity_quests(self):
         self.add_activity(
