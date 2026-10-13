@@ -152,7 +152,7 @@ export default function YearWeeksChart({ selectedWeekStart, onWeekChange }: Prop
           <p className="py-8 text-sm text-[#666]">Нет данных за выбранный год.</p>
         ) : (
           <>
-            <div className="overflow-x-auto overscroll-x-contain pb-2">
+            <div className="overflow-x-auto overscroll-x-contain px-1 pb-2 pt-2">
               <div className="min-w-[980px] lg:min-w-0">
                 <div
                   className="grid h-52 items-end gap-[3px] border-b-2 border-black/20 pb-1"
@@ -174,7 +174,7 @@ export default function YearWeeksChart({ selectedWeekStart, onWeekChange }: Prop
                         aria-describedby={selected ? "selected-year-week" : undefined}
                         title={label}
                         onClick={() => onWeekChange(week.week_start)}
-                        className={`relative flex h-full min-w-0 flex-col justify-end rounded-t-sm outline-none transition-opacity focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-[#171a38] focus-visible:ring-offset-2 ${week.is_future ? "opacity-30" : "opacity-100"} ${selected ? "ring-2 ring-[#5866f2] ring-offset-1" : ""} ${week.is_current ? "border-t-2 border-black" : ""}`}
+                        className={`relative flex h-full min-w-0 flex-col justify-end rounded-t-sm outline-none transition-opacity focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-[#171a38] focus-visible:ring-offset-2 ${week.is_future ? "opacity-30" : "opacity-100"} ${selected && week.is_current ? "ring-2 ring-[#5866f2] ring-offset-1 outline outline-2 outline-black outline-offset-2" : selected ? "ring-2 ring-[#5866f2] ring-offset-1" : week.is_current ? "ring-2 ring-black ring-offset-1" : ""}`}
                       >
                         <span className="flex min-h-0 flex-1 items-end justify-center">
                           <span className="block w-full rounded-t-[2px] border border-black/10" style={barStyle(week, height)} />
