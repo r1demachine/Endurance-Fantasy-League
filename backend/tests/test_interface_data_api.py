@@ -167,6 +167,23 @@ class InterfaceDataApiTests(unittest.TestCase):
         self.assertEqual(future_row["actual_load"], 0)
         self.assertEqual(future_row["target_load"], 0)
 
+    def test_weekly_summary_allows_selecting_a_future_week_as_empty(self):
+        current_day = date(2026, 10, 14)
+        future_week = date(2026, 10, 19)
+        with patch("app.routers.sync._user_local_today", return_value=current_day):
+            payload = sync_router.get_weekly_summary(
+                week_start=future_week,
+                current=self.user,
+                db=self.db,
+            )
+
+        self.assertEqual(payload["week"]["week_start"], future_week.isoformat())
+        self.assertEqual(payload["week"]["state"], "no_data")
+        self.assertEqual(payload["week"]["total_xp"], 0)
+        self.assertFalse(payload["week"]["is_current_week"])
+        self.assertEqual(payload["activities"], [])
+        self.assertEqual(payload["events"], [])
+
     def test_activity_xp_breakdown_caps_daily_tss_scopes_bonuses_and_matches_summary(self):
         manual = self.add_activity(
             "manual-xp", stamp=datetime(2026, 10, 13, 8, 0), tss=150,

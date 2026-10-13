@@ -1,3 +1,5 @@
+import { formatWeekRange } from "@/lib/format";
+
 export default function WeekBlock({
   weekData, weekOptions, selectedWeekStart, onWeekChange, onPreviousWeek, onNextWeek,
   canGoPrevious, canGoNext, onPauseClick, onDeloadAction, deloadBusy, deloadError,
@@ -24,7 +26,10 @@ export default function WeekBlock({
     <div className="border-b-2 border-black bg-white p-4 md:p-6">
       <div className="flex flex-col gap-3 mb-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h3 className="font-display uppercase text-xl md:text-2xl">Твоя неделя</h3>
+          <div>
+            <h3 className="font-display uppercase text-xl md:text-2xl">Твоя неделя</h3>
+            <p className="mt-1 text-xs text-[#666]">{formatWeekRange(selectedWeekStart)}</p>
+          </div>
           <div className="flex items-center gap-2">
             {isInProgress && <span className="px-2 py-1 bg-[#ffd500] text-[10px] font-bold tracking-widest uppercase">В процессе</span>}
             {weekData.is_deload && (
@@ -39,7 +44,7 @@ export default function WeekBlock({
         <div className="flex items-center gap-2">
           <button type="button" aria-label="Предыдущая неделя" disabled={!canGoPrevious} onClick={onPreviousWeek} className="w-9 h-9 border-2 border-black font-bold disabled:opacity-30 hover:bg-[#ffd500] transition-colors">←</button>
           <select value={selectedWeekStart} onChange={(e) => onWeekChange(e.target.value)} aria-label="Выбрать неделю" className="min-w-0 flex-1 max-w-[300px] border-2 border-black bg-white px-3 py-2 text-sm font-bold">
-            {weekOptions.map((option) => <option key={option.week_start} value={option.week_start}>{option.label}</option>)}
+            {weekOptions.map((option) => <option key={option.week_start} value={option.week_start}>{formatWeekRange(option.week_start)}</option>)}
           </select>
           <button type="button" aria-label="Следующая неделя" disabled={!canGoNext} onClick={onNextWeek} className="w-9 h-9 border-2 border-black font-bold disabled:opacity-30 hover:bg-[#ffd500] transition-colors">→</button>
         </div>
