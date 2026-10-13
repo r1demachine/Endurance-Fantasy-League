@@ -16,7 +16,7 @@ from ..services.intervals import calculate_xp, _month_ranges
 from ..config import get_settings
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from typing import Optional
+from typing import Optional, Literal
 
 from ..rate_limit import limiter
 
@@ -1648,8 +1648,80 @@ def get_season_weeks(current: User = Depends(get_current_user), db: Session = De
     return {"season_start": season_start.isoformat(), "weeks": weeks}
 
 
+class TrainingDataDeleteIn(BaseModel):
+    scope: Literal["intervals", "uploads"] = Field(
+        ...,
+        description="Delete only Intervals.icu workouts or workouts uploaded through FIT/GPX/TCX.",
+    )
+
+
+@router.delete("/training-data")
+@limiter.limit("5/hour")
+async def delete_training_data_source(
+    request: Request,
+    payload: TrainingDataDeleteIn,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete one source's data, then rebuild derived XP, quests, weeks and league rows."""
+    before_xp = float(current.total_xp or 0)
+    xp_engine = get_settings().XP_ENGINE
+
+    # If this is the user's first v6 recalculation, establish the migration offset
+    # before removing rows, so the removed workouts can still reduce total XP.
+    if xp_engine == "v6" and current.xp_migrated_at is None:
+        _recalculate_user_xp_v6(db, current)
+        db.flush()
+
+    if payload.scope == "intervals":
+        deleted_activities = db.query(Activity).filter(
+            Activity.user_id == current.id,
+            Activity.source == "INTERVALS",
+        ).delete(synchronize_session=False)
+        deleted_wellness = db.query(Wellness).filter(
+            Wellness.user_id == current.id,
+        ).delete(synchronize_session=False)
+        source_label = "Intervals.icu"
+    else:
+        from ..services.activity_dedupe import UPLOAD_SOURCES
+        deleted_activities = db.query(Activity).filter(
+            Activity.user_id == current.id,
+            Activity.source.in_(UPLOAD_SOURCES),
+        ).delete(synchronize_session=False)
+        deleted_wellness = 0
+        source_label = "FIT/GPX/TCX"
+
+    # Drop derived records and rebuild them from the activities/wellness that remain.
+    db.query(XPEvent).filter(XPEvent.user_id == current.id).delete(synchronize_session=False)
+    db.query(WeeklySummary).filter(WeeklySummary.user_id == current.id).delete(synchronize_session=False)
+    db.query(LeagueMembership).filter(LeagueMembership.user_id == current.id).delete(synchronize_session=False)
+
+    if xp_engine == "v6":
+        # First pass rebuilds weekly summaries/events; second pass evaluates
+        # lifetime achievements that depend on the rebuilt summaries.
+        _recalculate_user_xp_v6(db, current)
+        _recalculate_user_xp_v6(db, current)
+    else:
+        _recalculate_user_xp(db, current)
+
+    db.commit()
+    db.refresh(current)
+    after_xp = float(current.total_xp or 0)
+    return {
+        "scope": payload.scope,
+        "message": f"Удалены данные источника {source_label}; XP пересчитан по оставшимся данным.",
+        "deleted_activities": int(deleted_activities or 0),
+        "deleted_wellness": int(deleted_wellness or 0),
+        "total_xp": round_xp(after_xp),
+        "xp_change": round_xp(after_xp - before_xp),
+        "level": current.level,
+    }
+
+
 @router.delete("/reset")
+@limiter.limit("5/hour")
 async def reset_all_data(
+    request: Request,
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):

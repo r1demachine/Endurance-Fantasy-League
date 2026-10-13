@@ -21,6 +21,7 @@ export interface ModalProps {
   closeOnBackdrop?: boolean;
   closeOnEscape?: boolean;
   preventClose?: boolean;
+  variant?: "default" | "settings";
 }
 
 export function Modal({
@@ -31,7 +32,9 @@ export function Modal({
   closeOnBackdrop = true,
   closeOnEscape = true,
   preventClose = false,
+  variant = "default",
 }: ModalProps) {
+  const isSettings = variant === "settings";
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousActiveRef = useRef<HTMLElement | null>(null);
@@ -62,6 +65,9 @@ export function Modal({
     });
 
     const onKeyDown = (event: KeyboardEvent) => {
+      // Only the top-most dialog handles Escape and Tab when ConfirmDialog is nested.
+      const dialogs = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]'));
+      if (!dialog || dialogs[dialogs.length - 1] !== dialog) return;
       handleDialogKeyDown(event, {
         dialog,
         closeOnEscape: closeOnEscapeRef.current,
@@ -85,7 +91,9 @@ export function Modal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4"
+      className={isSettings
+        ? "fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-0 sm:p-2 md:p-3"
+        : "fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4"}
       onClick={(event) => {
         if (shouldCloseFromBackdrop(
           event.target === event.currentTarget,
@@ -104,7 +112,9 @@ export function Modal({
         animate={{ y: 0, scale: 1 }}
         exit={{ y: 28, scale: 0.97 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
-        className="flex max-h-[80vh] w-full max-w-md flex-col border-2 border-black bg-[#f4f4f0] shadow-[6px_6px_0_rgba(0,0,0,0.45)]"
+        className={isSettings
+          ? "flex h-[100dvh] max-h-[100dvh] w-full max-w-none flex-col border-0 border-black bg-[#f4f4f0] shadow-none sm:border-2 sm:shadow-[6px_6px_0_rgba(0,0,0,0.45)] md:h-[92vh] md:max-h-[92vh] md:w-[96vw] md:max-w-[1600px]"
+          : "flex max-h-[80vh] w-full max-w-md flex-col border-2 border-black bg-[#f4f4f0] shadow-[6px_6px_0_rgba(0,0,0,0.45)]"}
       >
         <div className="flex items-center justify-between gap-3 border-b-2 border-black bg-[#5866f2] px-4 py-3 text-white">
           <h2 id={titleId} className="font-display text-xl uppercase leading-none">{title}</h2>
@@ -118,7 +128,7 @@ export function Modal({
             {closeLabel}
           </button>
         </div>
-        <div className="overflow-y-auto p-4">{children}</div>
+        <div className={isSettings ? "flex min-h-0 flex-1 overflow-hidden p-0" : "overflow-y-auto p-4"}>{children}</div>
       </motion.div>
     </motion.div>
   );
@@ -139,6 +149,7 @@ export interface ConfirmDialogProps {
   requireDelete?: boolean;
   requirePassword?: boolean;
   passwordLabel?: string;
+  confirmDelaySeconds?: number;
   onClose: () => void;
   onConfirm: (values: ConfirmPayload) => void | Promise<void>;
 }
@@ -153,12 +164,26 @@ export function ConfirmDialog({
   requireDelete = false,
   requirePassword = false,
   passwordLabel = "Пароль аккаунта",
+  confirmDelaySeconds,
   onClose,
   onConfirm,
 }: ConfirmDialogProps) {
   const [confirmation, setConfirmation] = useState("");
   const [password, setPassword] = useState("");
   const [internalError, setInternalError] = useState("");
+  const delaySeconds = confirmDelaySeconds ?? (danger ? 3 : 0);
+  const [remainingSeconds, setRemainingSeconds] = useState(delaySeconds);
+
+  useEffect(() => {
+    if (delaySeconds <= 0) return;
+    const deadline = Date.now() + delaySeconds * 1000;
+    const timer = window.setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setRemainingSeconds(remaining);
+      if (remaining === 0) window.clearInterval(timer);
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [delaySeconds]);
 
   const payload = buildConfirmPayload(
     { confirmation, password },
@@ -224,6 +249,11 @@ export function ConfirmDialog({
             {error || internalError}
           </p>
         )}
+        {delaySeconds > 0 && remainingSeconds > 0 && (
+          <p aria-live="polite" className="border-l-4 border-[#ff4b26] bg-[#ff4b26]/10 px-3 py-2 text-sm text-[#7f1d1d]">
+            Прочитай предупреждение перед продолжением. Подтверждение станет доступно через {remainingSeconds} с.
+          </p>
+        )}
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button
             type="button"
@@ -235,13 +265,13 @@ export function ConfirmDialog({
           </button>
           <button
             type="submit"
-            disabled={busy || !payload}
+            disabled={busy || !payload || remainingSeconds > 0}
             className={(danger
               ? "border-2 border-[#ff4b26] bg-[#ff4b26] text-white hover:bg-black"
               : "border-2 border-black bg-[#ffd500] text-[#111] hover:bg-black hover:text-white") +
               " px-4 py-3 text-[10px] font-bold uppercase tracking-widest transition-colors disabled:cursor-not-allowed disabled:opacity-50"}
           >
-            {busy ? "Выполняется..." : confirmLabel}
+            {busy ? "Выполняется..." : remainingSeconds > 0 ? `Подождите ${remainingSeconds} с…` : confirmLabel}
           </button>
         </div>
       </form>

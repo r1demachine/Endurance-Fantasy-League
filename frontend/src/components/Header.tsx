@@ -16,10 +16,10 @@ export default function Header() {
   const isHome = pathname === "/";
 
   const links = [
-    { href: "/dashboard", label: "Главная" },
-    { href: "/training", label: "Тренировки" },
-    { href: "/compete", label: "Соревнования" },
-    { href: "/profile", label: "Профиль" },
+    { href: "/dashboard", label: "Главная", emoji: "🏠" },
+    { href: "/training", label: "Тренировки", emoji: "🚴" },
+    { href: "/compete", label: "Соревнования", emoji: "🏆" },
+    { href: "/profile", label: "Профиль", emoji: "👤" },
   ];
 
   const isLinkActive = (href: string) =>
@@ -85,11 +85,14 @@ export default function Header() {
             <Link
               key={link.href}
               href={link.href}
-              className={`flex-1 px-2 py-4 flex items-center justify-center text-[10px] font-bold tracking-widest uppercase border-r-2 border-black transition-colors ${
+              aria-label={link.label}
+              title={link.label}
+              className={`flex-1 min-w-0 px-2 py-3 sm:py-4 flex items-center justify-center border-r-2 border-black transition-colors ${
                 isActive ? "bg-[#5866f2] text-white" : "active:bg-black active:text-white"
               }`}
             >
-              {link.label}
+              <span aria-hidden="true" className="text-xl leading-none">{link.emoji}</span>
+              <span className="sr-only">{link.label}</span>
             </Link>
           );
         })}

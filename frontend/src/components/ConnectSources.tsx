@@ -27,10 +27,12 @@ export default function ConnectSources({
   hasKey,
   athleteId,
   onMessage,
+  allowDisconnectAction = true,
 }: {
   hasKey: boolean;
   athleteId: string | null;
   onMessage: (m: ConnectMessage) => void;
+  allowDisconnectAction?: boolean;
 }) {
   const [expanded, setExpanded] = useState<Source["id"] | null>(null);
   const [apiKey, setApiKey] = useState("");
@@ -294,14 +296,16 @@ export default function ConnectSources({
                       >
                         Update key 🔑
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => { setDisconnectError(""); setDisconnectDialogOpen(true); }}
-                        disabled={disconnecting || syncing}
-                        className="w-full px-4 py-2 border-2 border-[#ff4b26] text-[#ff4b26] text-[10px] font-bold tracking-widest uppercase hover:bg-[#ff4b26] hover:text-white transition-colors disabled:opacity-50"
-                      >
-                        {disconnecting ? "Removing..." : "Unlink Intervals + delete imported data"}
-                      </button>
+                      {allowDisconnectAction && (
+                        <button
+                          type="button"
+                          onClick={() => { setDisconnectError(""); setDisconnectDialogOpen(true); }}
+                          disabled={disconnecting || syncing}
+                          className="w-full px-4 py-2 border-2 border-[#ff4b26] text-[#ff4b26] text-[10px] font-bold tracking-widest uppercase hover:bg-[#ff4b26] hover:text-white transition-colors disabled:opacity-50"
+                        >
+                          {disconnecting ? "Removing..." : "Unlink Intervals + delete imported data"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -386,7 +390,7 @@ export default function ConnectSources({
         {disconnectDialogOpen && (
           <ConfirmDialog
             title="Отвязать Intervals?"
-            text="Будут удалены API-ключ, импортированные тренировки, данные сна и пульса, XP-события и недельные сводки. Аккаунт и друзья останутся."
+            text="Будут удалены API-ключ, все тренировки и wellness пользователя, XP-события и недельные сводки. Серверный endpoint также удаляет тренировки, загруженные из FIT/GPX/TCX. Аккаунт и друзья останутся."
             confirmLabel="Отвязать и удалить данные"
             danger
             busy={disconnecting}

@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import User, Activity, Wellness, WeeklySummary, XPEvent, LeagueMembership
+from ..models import User
 from ..dependencies import get_current_user
 from ..auth import encrypt_secret, decrypt_secret
 from ..config import get_settings
@@ -107,33 +107,21 @@ def disconnect_key(
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Отвязать Intervals и удалить ключ вместе с импортированными данными источника."""
-    user_id = current.id
-    deleted_activities = db.query(Activity).filter(
-        Activity.user_id == user_id
-    ).delete(synchronize_session=False)
-    deleted_wellness = db.query(Wellness).filter(
-        Wellness.user_id == user_id
-    ).delete(synchronize_session=False)
-    db.query(XPEvent).filter(XPEvent.user_id == user_id).delete(synchronize_session=False)
-    db.query(WeeklySummary).filter(WeeklySummary.user_id == user_id).delete(synchronize_session=False)
-    db.query(LeagueMembership).filter(LeagueMembership.user_id == user_id).delete(synchronize_session=False)
-
+    """Отвязать Intervals: удалить только ключ и ID спортсмена, сохранив историю и XP."""
+    had_connection = bool(current.api_key_encrypted or current.intervals_id)
     current.intervals_id = None
     current.api_key_encrypted = None
     current.firstname = None
     current.lastname = None
-    current.legacy_xp_offset = 0.0
-    current.xp_migrated_at = None
-    current.division_current = None
-    current.division_placed_at = None
-    current.total_xp = 0.0
-    current.level = 1
     db.commit()
     return {
-        "message": "Intervals отвязан; API-ключ и импортированные тренировки, wellness и связанные XP удалены",
-        "deleted_activities": deleted_activities,
-        "deleted_wellness": deleted_wellness,
+        "message": (
+            "Intervals отвязан. Все тренировки, wellness и опыт сохранены."
+            if had_connection
+            else "Intervals уже был отвязан; история и опыт сохранены."
+        ),
+        "disconnected": had_connection,
+        "data_preserved": True,
     }
 
 

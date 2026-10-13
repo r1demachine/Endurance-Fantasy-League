@@ -42,6 +42,15 @@ class LoginIn(BaseModel):
         return value.strip().lower() if isinstance(value, str) else value
 
 
+class DisplayNameUpdate(BaseModel):
+    display_name: str = Field(..., min_length=2, max_length=50)
+
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def normalize_display_name(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -119,6 +128,21 @@ def logout(current: User = Depends(get_current_user), db: Session = Depends(get_
     current.token_version = int(current.token_version or 0) + 1
     db.commit()
     return {"message": "Выход выполнен; все активные сессии отозваны"}
+
+
+@router.patch("/me")
+@limiter.limit("10/minute")
+def update_me(
+    request: Request,
+    data: DisplayNameUpdate,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update the user's editable display name; username remains immutable."""
+    current.display_name = data.display_name
+    db.commit()
+    db.refresh(current)
+    return _user_payload(current)
 
 
 @router.get("/me")
