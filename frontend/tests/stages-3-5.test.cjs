@@ -34,7 +34,7 @@ test("weekly league is its own container before the Global/Friends rating", () =
   assert.match(rating, /label: "Global"/);
   assert.match(rating, /label: "Друзья"/);
   assert.doesNotMatch(rating, /label: "Weekly"|scope === "weekly"|entry\.division|entry\.score/);
-  assert.match(rating, /const params: \{ scope: Scope; limit: number \}/);
+  assert.match(rating, /params: \{ scope: requestedScope, limit: 10 \}/);
   assert.match(rating, /"Рейтинг пока пуст\."/);
   assert.match(rating, /<Skeleton label="Загружаем рейтинг"/);
   assert.match(rating, /<ErrorState message=\{errors\[scope\]/);
