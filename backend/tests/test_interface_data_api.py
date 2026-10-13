@@ -19,7 +19,6 @@ os.environ.setdefault("JWT_SECRET", "unit-test-jwt-secret-value-longer-than-32-c
 os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
 os.environ.setdefault("REDIS_URL", "")
 
-from app.config import Settings
 from app.database import Base
 from app.models import Activity, User, Wellness, WeeklySummary, XPEvent
 from app.routers import sync as sync_router
@@ -309,93 +308,105 @@ class InterfaceDataApiTests(unittest.TestCase):
         self.assertEqual(yearly["start_date"], "2026-01-01")
         self.assertEqual(seasonal["start_date"], "2026-09-01")
 
-    def test_quest_activation_default_starts_on_january_first_2026(self):
-        self.assertEqual(
-            Settings.model_fields["XP_QUESTS_ACTIVATION_DATE"].default,
-            date(2026, 1, 1),
+    def test_achievement_progress_uses_full_history_without_xp_events_or_activation_cutoff(self):
+        # These records predate the recent sync/activation settings but remain valid history.
+        self.add_summary(
+            date(2025, 12, 29), training_days=3, ratio=1.0, finalized=True,
         )
-
-    def test_quest_progress_and_awards_ignore_data_before_calendar_year_cutoff(self):
-        activation = date(2026, 1, 1)
-        old_summary = self.add_summary(
-            date(2025, 12, 29), training_days=7, ratio=1.5, finalized=True,
+        self.add_sleep(date(2025, 12, 29), secs=8 * 3600, score=None)
+        self.add_sleep(date(2025, 12, 30), secs=7 * 3600, score=None)
+        self.add_sleep(date(2025, 12, 31), secs=None, score=90)
+        self.add_activity(
+            "history-ride-1", stamp=datetime(2025, 12, 29, 8, 0), tss=30,
+            distance=20000, moving_time=3600, indoor=True,
         )
-        old_sleep = self.add_sleep(date(2025, 12, 31), secs=8 * 3600, score=100)
-        old_activity = self.add_activity(
-            "pre-calendar-year-ride",
-            stamp=datetime(2025, 12, 30, 8, 0),
-            distance=80000,
-            moving_time=7200,
-            indoor=True,
+        self.add_activity(
+            "history-ride-2", stamp=datetime(2025, 12, 30, 8, 0), tss=30,
+            distance=20000, moving_time=3000,
+        )
+        self.add_activity(
+            "history-ride-3", stamp=datetime(2025, 12, 31, 8, 0), tss=30,
+            distance=15000, moving_time=2400,
         )
         self.db.commit()
 
-        fake_settings = SimpleNamespace(XP_QUESTS_ACTIVATION_DATE=activation)
-        with patch("app.services.quests.get_settings", return_value=fake_settings), patch(
-            "app.services.quests._user_local_today", return_value=date(2026, 10, 14)
-        ):
+        with patch("app.services.quests._user_local_today", return_value=date(2026, 10, 14)):
             payload = sync_router.get_quests(current=self.user, db=self.db)
-            granted = quest_service.grant_quests(
-                self.db, self.user, [old_activity], [old_summary],
-            )
-            self.db.commit()
+            quests = {quest["slug"]: quest for quest in payload}
 
-        quests = {quest["slug"]: quest for quest in payload}
-        self.assertEqual(quests["first_three_day_week"]["progress"]["current"], 0)
-        self.assertEqual(quests["goal_met"]["progress"]["current"], 0)
-        self.assertEqual(quests["first_50km_ride_week"]["progress"]["current"], 0)
-        self.assertEqual(quests["sleep_connected"]["progress"]["current"], 0)
-        self.assertEqual(granted, 0)
-        self.assertEqual(
-            self.db.query(XPEvent)
-            .filter(XPEvent.user_id == self.user.id, XPEvent.event_type == "quest")
-            .count(),
-            0,
+            # Status/progress must come from the underlying records, even before XPEvents exist.
+            self.assertEqual(quests["first_three_day_week"]["progress"]["current"], 3)
+            self.assertEqual(quests["first_three_day_week"]["status"], "earned")
+            self.assertEqual(quests["goal_met"]["progress"]["current"], 100)
+            self.assertEqual(quests["goal_met"]["status"], "earned")
+            self.assertEqual(quests["first_50km_ride_week"]["progress"]["current"], 50)
+            self.assertEqual(quests["first_50km_ride_week"]["status"], "earned")
+            self.assertEqual(quests["sleep_connected"]["progress"]["current"], 3)
+            self.assertEqual(quests["sleep_connected"]["status"], "earned")
+
+            activities = self.db.query(Activity).filter(Activity.user_id == self.user.id).all()
+            summaries = self.db.query(WeeklySummary).filter(WeeklySummary.user_id == self.user.id).all()
+            granted = quest_service.grant_quests(self.db, self.user, activities, summaries)
+            self.db.commit()
+            self.assertGreaterEqual(granted, 4)
+
+            # A repeated sync/recalculation is idempotent and cannot pay the same achievements twice.
+            granted_again = quest_service.grant_quests(self.db, self.user, activities, summaries)
+            self.db.commit()
+            self.assertEqual(granted_again, 0)
+
+        self.assertIsNotNone(
+            self.db.query(XPEvent).filter(
+                XPEvent.user_id == self.user.id,
+                XPEvent.event_key == "quest:sleep_connected:lifetime",
+            ).first()
         )
 
     def test_quests_progress_and_sleep_duration_fulfill_three_nights(self):
-        activation = date(2026, 1, 1)
-        summary = self.add_summary(
+        self.add_summary(
             date(2026, 10, 12), training_days=3, ratio=0.90, finalized=True,
         )
-        self.add_sleep(date(2026, 10, 10), secs=8 * 3600, score=None)
-        self.add_sleep(date(2026, 10, 11), secs=7 * 3600, score=None)
-        self.add_sleep(date(2026, 10, 12), secs=6 * 3600, score=None)
+        self.add_sleep(date(2026, 10, 12), secs=8 * 3600, score=None)
+        self.add_sleep(date(2026, 10, 13), secs=7 * 3600, score=None)
+        self.add_sleep(date(2026, 10, 14), secs=6 * 3600, score=None)
         self.add_activity(
-            "progress-ride-1", stamp=datetime(2026, 10, 13, 8, 0), distance=20000,
-            moving_time=3600, indoor=True,
+            "progress-ride-1", stamp=datetime(2026, 10, 12, 8, 0), tss=30,
+            distance=20000, moving_time=3600, indoor=True,
         )
         self.add_activity(
-            "progress-ride-2", stamp=datetime(2026, 10, 13, 9, 0), distance=20000,
-            moving_time=2400,
+            "progress-ride-2", stamp=datetime(2026, 10, 13, 9, 0), tss=30,
+            distance=20000, moving_time=2400,
         )
         self.add_activity(
-            "progress-ride-3", stamp=datetime(2026, 10, 13, 10, 0), distance=15000,
-            moving_time=1800,
+            "progress-ride-3", stamp=datetime(2026, 10, 14, 10, 0), tss=30,
+            distance=15000, moving_time=1800,
         )
         self.db.commit()
 
-        fake_settings = SimpleNamespace(XP_QUESTS_ACTIVATION_DATE=activation)
-        with patch("app.services.quests.get_settings", return_value=fake_settings), patch(
-            "app.services.quests._user_local_today", return_value=date(2026, 10, 14)
-        ):
+        with patch("app.services.quests._user_local_today", return_value=date(2026, 10, 14)):
             payload = sync_router.get_quests(current=self.user, db=self.db)
-            quest_service.grant_quests(self.db, self.user, [], [])
+            quests = {quest["slug"]: quest for quest in payload}
+            self.assertEqual(quests["first_three_day_week"]["progress"]["current"], 3)
+            self.assertEqual(quests["first_three_day_week"]["status"], "earned")
+            self.assertEqual(quests["goal_met"]["progress"]["current"], 90)
+            self.assertEqual(quests["goal_streak_3"]["progress"]["current"], 0)
+            self.assertEqual(quests["first_50km_ride_week"]["progress"]["current"], 50)
+            self.assertEqual(quests["sleep_connected"]["progress"]["current"], 3)
+            self.assertEqual(len(quests["sleep_connected"]["progress"]["steps"]), 3)
+            self.assertTrue(all(step["filled"] for step in quests["sleep_connected"]["progress"]["steps"]))
+            self.assertEqual(quests["trainer_week"]["progress"]["current"], 1)
+            self.assertEqual(quests["trainer_week"]["status"], "earned")
+            self.assertTrue(quests["trainer_week"]["progress"]["season_active"])
+            self.assertIsNone(quests["power_record_20m"]["progress"])
+            self.assertTrue(quests["power_record_20m"]["progress_reason"])
+
+            activities = self.db.query(Activity).filter(Activity.user_id == self.user.id).all()
+            summaries = self.db.query(WeeklySummary).filter(WeeklySummary.user_id == self.user.id).all()
+            quest_service.grant_quests(self.db, self.user, activities, summaries)
+            self.db.commit()
+            self.assertEqual(quest_service.grant_quests(self.db, self.user, activities, summaries), 0)
             self.db.commit()
 
-        quests = {quest["slug"]: quest for quest in payload}
-        self.assertEqual(quests["first_three_day_week"]["progress"]["current"], 3)
-        self.assertEqual(quests["goal_met"]["progress"]["current"], 90)
-        self.assertEqual(quests["goal_streak_3"]["progress"]["current"], 0)
-        self.assertEqual(quests["first_50km_ride_week"]["progress"]["current"], 50)
-        self.assertEqual(quests["sleep_connected"]["progress"]["current"], 3)
-        self.assertEqual(len(quests["sleep_connected"]["progress"]["steps"]), 3)
-        self.assertTrue(all(step["filled"] for step in quests["sleep_connected"]["progress"]["steps"]))
-        self.assertEqual(quests["trainer_week"]["progress"]["current"], 1)
-        self.assertEqual(quests["trainer_week"]["status"], "earned")
-        self.assertTrue(quests["trainer_week"]["progress"]["season_active"])
-        self.assertIsNone(quests["power_record_20m"]["progress"])
-        self.assertTrue(quests["power_record_20m"]["progress_reason"])
         sleep_event = self.db.query(XPEvent).filter(
             XPEvent.user_id == self.user.id,
             XPEvent.event_key == "quest:sleep_connected:lifetime",
