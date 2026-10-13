@@ -431,7 +431,7 @@ def quest_states(db, user) -> list:
             for summary in all_summaries
         ),
         "goal_streak_3": goal_streak >= 3,
-        "first_50km_ride_week": any(distance >= 50_000 for distance in ride_km_by_week.values()),
+        "first_50km_ride_week": any(distance >= 50.0 for distance in ride_km_by_week.values()),
         "record_duration": duration_progress >= 100.0,
         "sleep_connected": night_count >= 3,
         "trainer_week": trainer_qualifies,
