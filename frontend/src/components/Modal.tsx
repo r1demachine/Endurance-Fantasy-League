@@ -175,7 +175,6 @@ export function ConfirmDialog({
   const [remainingSeconds, setRemainingSeconds] = useState(delaySeconds);
 
   useEffect(() => {
-    setRemainingSeconds(delaySeconds);
     if (delaySeconds <= 0) return;
     const deadline = Date.now() + delaySeconds * 1000;
     const timer = window.setInterval(() => {
