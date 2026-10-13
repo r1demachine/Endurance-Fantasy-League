@@ -163,6 +163,21 @@ class DuelRulesTests(unittest.TestCase):
         self.assertEqual(source.count('@app.get("/health")'), 1)
         self.assertEqual(source.count("CREATE TABLE IF NOT EXISTS club_join_attempts"), 1)
 
+    def test_xp_recalculation_retries_past_open_duels_in_separate_session(self):
+        sync_path = Path(__file__).resolve().parents[1] / "app" / "routers" / "sync.py"
+        source = sync_path.read_text(encoding="utf-8")
+        module = ast.parse(source, filename=str(sync_path))
+        recalculate = next(
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_recalculate_user_xp_v6"
+        )
+        body = ast.get_source_segment(source, recalculate)
+        self.assertIn("retry_db = SessionLocal()", body)
+        self.assertIn('Duel.status.in_(["pending", "active"])', body)
+        self.assertIn("finalize_duels_for_week(retry_db, duel_week_start.date())", body)
+        self.assertIn("retry_db.close()", body)
+
     def test_database_metadata_has_required_unique_indexes(self):
         club_index = next(i for i in Club.__table__.indexes if i.name == "uq_club_owner_name_lower")
         self.assertTrue(club_index.unique)
