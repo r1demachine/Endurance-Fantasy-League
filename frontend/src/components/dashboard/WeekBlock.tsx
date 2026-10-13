@@ -154,7 +154,7 @@ export default function WeekBlock({
           { label: "Регулярность", value: weekData.consistency_xp, color: "text-[#5866f2]" },
           { label: "Качество", value: weekData.quality_xp, color: "text-[#ffd500]" },
           { label: "Восстановление", value: weekData.recovery_xp, color: "text-[#0ea5e9]" },
-          { label: "Квесты", value: weekData.quest_xp, color: "text-[#a855f7]" },
+          { label: "Квесты и бонусы", value: weekData.quest_xp, color: "text-[#a855f7]" },
         ].map((item) => (
           <div key={item.label} className="border border-black/10 p-2">
             <p className="text-[9px] font-bold tracking-widest uppercase text-[#666]">
@@ -164,6 +164,9 @@ export default function WeekBlock({
           </div>
         ))}
       </div>
+      <p className="mt-2 text-[10px] leading-relaxed text-[#666]">
+        «Квесты и бонусы» включают награды за недельные достижения, +12 XP за каждую не ручную тренировку от 45 минут и +6 XP за каждую ночь со сном от 6 часов или sleep score от 60.
+      </p>
 
       {isReady && (
         <div className="mt-4 pt-4 border-t border-black/10 flex items-center justify-between">
