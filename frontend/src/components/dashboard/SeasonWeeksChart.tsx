@@ -2,7 +2,7 @@ import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Toolti
 import { Label, SectionTitle } from "@/components/ui";
 import EmptyState from "@/components/ui/EmptyState";
 
-function SeasonWeeksChart({ weeks }: { weeks: any[] }) {
+export default function SeasonWeeksChart({ weeks }: { weeks: any[] }) {
   return (
     <div className="border-b-2 border-black">
       <div className="grid md:grid-cols-[200px_1fr]">
