@@ -509,10 +509,11 @@ def grant_quests(db, user, acts, summaries) -> int:
         .all()
     )
     removed_old_lifetime_event = False
-    for event in old_lifetime_events:
-        if event.date is not None and event.date.date() < LIFETIME_QUESTS_ACTIVATION_DATE:
-            db.delete(event)
-            removed_old_lifetime_event = True
+    if today >= LIFETIME_QUESTS_ACTIVATION_DATE:
+        for event in old_lifetime_events:
+            if event.date is not None and event.date.date() < LIFETIME_QUESTS_ACTIVATION_DATE:
+                db.delete(event)
+                removed_old_lifetime_event = True
     if removed_old_lifetime_event:
         db.flush()
 
@@ -747,7 +748,7 @@ def quest_states(db, user, selected_week: date | None = None) -> list:
         "first_three_day_week": best_training_days >= 3,
         "goal_met": any(
             summary.finalized and float(summary.completion_ratio or 0.0) >= 1.0
-            for summary in all_summaries
+            for summary in lifetime_summaries
         ),
         "goal_streak_3": goal_streak >= 3,
         "first_50km_ride_week": any(distance >= 50.0 for distance in ride_km_by_week.values()),
