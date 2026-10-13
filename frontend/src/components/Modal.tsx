@@ -23,6 +23,7 @@ export interface ModalProps {
   closeOnEscape?: boolean;
   preventClose?: boolean;
   variant?: "default" | "settings";
+  portalToBody?: boolean;
 }
 
 export function Modal({
@@ -34,6 +35,7 @@ export function Modal({
   closeOnEscape = true,
   preventClose = false,
   variant = "default",
+  portalToBody = variant === "settings",
 }: ModalProps) {
   const isSettings = variant === "settings";
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
@@ -51,11 +53,11 @@ export function Modal({
   }, [onClose, closeOnEscape, preventClose]);
 
   useEffect(() => {
-    setPortalRoot(document.body);
-  }, []);
+    if (portalToBody) setPortalRoot(document.body);
+  }, [portalToBody]);
 
   useEffect(() => {
-    if (!portalRoot) return;
+    if (portalToBody && !portalRoot) return;
 
     const previousOverflow = document.body.style.overflow;
     previousActiveRef.current = document.activeElement instanceof HTMLElement
@@ -92,7 +94,7 @@ export function Modal({
       document.body.style.overflow = previousOverflow;
       if (previousActiveRef.current?.isConnected) previousActiveRef.current.focus();
     };
-  }, [portalRoot]);
+  }, [portalRoot, portalToBody]);
 
   const modalContent = (
     <motion.div
@@ -141,9 +143,10 @@ export function Modal({
     </motion.div>
   );
 
-  // Keep server-rendered dialog markup stable for hydration and SSR consumers.
-  // Once mounted in the browser, move the same modal tree into document.body.
-  return portalRoot ? createPortal(modalContent, portalRoot) : modalContent;
+  // Only dialogs with portalToBody enabled are moved outside transformed page containers.
+  // Settings uses this by default; other dialogs preserve their existing inline behavior.
+  if (!portalToBody) return modalContent;
+  return portalRoot ? createPortal(modalContent, portalRoot) : null;
 }
 
 export interface ConfirmPayload {
