@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Tabs, Skeleton } from "@/components/ui";
 import RatingPanel from "@/components/compete/RatingPanel";
 import DuelsPanel from "@/components/compete/DuelsPanel";
@@ -17,23 +17,22 @@ function isCompeteTab(value: string | null): value is CompeteTab {
   return value === "rating" || value === "duels" || value === "teams";
 }
 
-export default function CompetePage() {
+function CompeteContent() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<CompeteTab>("rating");
-  const [visitedTabs, setVisitedTabs] = useState<Partial<Record<CompeteTab, boolean>>>({});
-  const [initialized, setInitialized] = useState(false);
+  const searchParams = useSearchParams();
+  const queryTab = searchParams.get("tab");
+  const activeTab: CompeteTab = isCompeteTab(queryTab) ? queryTab : "rating";
+  const [visitedTabs, setVisitedTabs] = useState<Partial<Record<CompeteTab, boolean>>>({ rating: true });
 
+  // The URL is the single source of truth for the selected competition tab.
+  // This keeps the visible tab in sync with navigation, back/forward, and App Router updates.
   useEffect(() => {
-    const queryTab = new URLSearchParams(window.location.search).get("tab");
-    const initialTab: CompeteTab = isCompeteTab(queryTab) ? queryTab : "rating";
-    setActiveTab(initialTab);
-    setVisitedTabs({ [initialTab]: true });
-    setInitialized(true);
-    if (!isCompeteTab(queryTab)) router.replace(`/compete?tab=${initialTab}`, { scroll: false });
-  }, [router]);
+    if (!isCompeteTab(queryTab)) {
+      router.replace("/compete?tab=rating", { scroll: false });
+    }
+  }, [queryTab, router]);
 
   const changeTab = (tab: CompeteTab) => {
-    setActiveTab(tab);
     setVisitedTabs((previous) => ({ ...previous, [tab]: true }));
     router.replace(`/compete?tab=${tab}`, { scroll: false });
   };
@@ -60,23 +59,43 @@ export default function CompetePage() {
           items={tabs.map((tab) => ({ ...tab, className: tab.value === "teams" ? "border-r-0" : "" }))}
         />
 
-        {!initialized ? (
-          <div className="p-5 md:p-8"><Skeleton label="Открываем соревнования" rows={4} /></div>
-        ) : (
-          <>
-            {visitedTabs.rating && <div hidden={activeTab !== "rating"}><RatingPanel /></div>}
-            {visitedTabs.duels && <div hidden={activeTab !== "duels"}><DuelsPanel /></div>}
-            {visitedTabs.teams && (
-              <div hidden={activeTab !== "teams"} className="p-4 md:p-6">
-                <section className="border-2 border-black bg-white p-6 md:p-8">
-                  <h2 className="font-display text-2xl uppercase md:text-3xl">Командные сражения</h2>
-                  <p className="mt-2 text-sm text-[#666]">Скоро. Командные сражения появятся в одном из следующих обновлений.</p>
-                </section>
-              </div>
-            )}
-          </>
+        {(visitedTabs.rating || activeTab === "rating") && (
+          <div hidden={activeTab !== "rating"}><RatingPanel /></div>
+        )}
+        {(visitedTabs.duels || activeTab === "duels") && (
+          <div hidden={activeTab !== "duels"}><DuelsPanel /></div>
+        )}
+        {(visitedTabs.teams || activeTab === "teams") && (
+          <div hidden={activeTab !== "teams"} className="p-4 md:p-6">
+            <section className="border-2 border-black bg-white p-6 md:p-8">
+              <h2 className="font-display text-2xl uppercase md:text-3xl">Командные сражения</h2>
+              <p className="mt-2 text-sm text-[#666]">Скоро. Командные сражения появятся в одном из следующих обновлений.</p>
+            </section>
+          </div>
         )}
       </div>
     </main>
+  );
+}
+
+function CompeteFallback() {
+  return (
+    <main className="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] px-2 pb-24 text-[#111] sm:px-4 md:px-6 md:pb-6">
+      <div className="breathe-table relative mx-auto flex w-full max-w-[1400px] flex-1 flex-col border-2 border-t-0 border-black bg-[#f4f4f0]">
+        <header className="border-b-2 border-black bg-[#5866f2] px-5 py-6 text-white md:px-8">
+          <p className="font-display text-4xl uppercase leading-none md:text-6xl">Соревнования.</p>
+          <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-white/80">Рейтинг · дуэли · команды</p>
+        </header>
+        <div className="p-5 md:p-8"><Skeleton label="Открываем соревнования" rows={4} /></div>
+      </div>
+    </main>
+  );
+}
+
+export default function CompetePage() {
+  return (
+    <Suspense fallback={<CompeteFallback />}>
+      <CompeteContent />
+    </Suspense>
   );
 }
