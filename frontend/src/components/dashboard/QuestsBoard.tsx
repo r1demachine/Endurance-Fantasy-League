@@ -1,6 +1,6 @@
 import Card from "@/components/ui/Card";
 
-function QuestsBoard({ quests }: { quests: any[] }) {
+export default function QuestsBoard({ quests }: { quests: any[] }) {
   if (!quests?.length) return null;
   return (
     <div className="border-b-2 border-black bg-white p-4 md:p-6">
