@@ -508,9 +508,13 @@ def grant_quests(db, user, acts, summaries) -> int:
         .filter(XPEvent.user_id == user.id, XPEvent.event_key.in_(lifetime_keys))
         .all()
     )
+    removed_old_lifetime_event = False
     for event in old_lifetime_events:
         if event.date is not None and event.date.date() < LIFETIME_QUESTS_ACTIVATION_DATE:
             db.delete(event)
+            removed_old_lifetime_event = True
+    if removed_old_lifetime_event:
+        db.flush()
 
     granted = 0
 
