@@ -37,6 +37,8 @@ test("weekly league is separate, grouped by division, and limited to ten entries
   assert.match(rating, /Ты — место \{yourRank\}/);
   assert.match(rating, /<Skeleton label="Загружаем рейтинг"/);
   assert.match(rating, /<ErrorState message=\{errors\[scope\]/);
+  assert.match(rating, /scope === "weekly" && \(index === 0 \|\| entries\[index - 1\]\?\.division !== entry\.division\)/);
+  assert.match(rating, /scope === "weekly" \? entry\.score : entry\.total_xp/);
 });
 
 test("profile stats are URL-driven and use the stats API for all three ranges", () => {
