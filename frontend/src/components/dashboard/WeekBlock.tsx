@@ -1,6 +1,6 @@
 export default function WeekBlock({
   weekData, weekOptions, selectedWeekStart, onWeekChange, onPreviousWeek, onNextWeek,
-  canGoPrevious, canGoNext, onPauseClick,
+  canGoPrevious, canGoNext, onPauseClick, onDeloadAction, deloadBusy, deloadError,
 }: {
   weekData: any;
   weekOptions: { week_start: string; label: string }[];
@@ -11,6 +11,9 @@ export default function WeekBlock({
   canGoPrevious: boolean;
   canGoNext: boolean;
   onPauseClick: () => void;
+  onDeloadAction: (enable: boolean) => void;
+  deloadBusy: boolean;
+  deloadError: string;
 }) {
   if (!weekData) return null;
   const pct = Math.min(Math.max(weekData.completion_ratio || 0, 0), 150);
@@ -24,7 +27,11 @@ export default function WeekBlock({
           <h3 className="font-display uppercase text-xl md:text-2xl">Твоя неделя</h3>
           <div className="flex items-center gap-2">
             {isInProgress && <span className="px-2 py-1 bg-[#ffd500] text-[10px] font-bold tracking-widest uppercase">В процессе</span>}
-            {weekData.is_deload && <span className="px-2 py-1 bg-[#0ea5e9] text-white text-[10px] font-bold tracking-widest uppercase">Deload</span>}
+            {weekData.is_deload && (
+              <span className={`px-2 py-1 text-white text-[10px] font-bold tracking-widest uppercase ${weekData.deload_source === "manual" ? "bg-[#a855f7]" : "bg-[#0ea5e9]"}`}>
+                Deload · {weekData.deload_source === "manual" ? "вручную" : "авто"}
+              </span>
+            )}
             {weekData.paused && <span className="px-2 py-1 bg-[#666] text-white text-[10px] font-bold tracking-widest uppercase">Пауза</span>}
             {weekData.state === "no_data" && <span className="px-2 py-1 bg-[#666] text-white text-[10px] font-bold tracking-widest uppercase">{weekData.target_load > 0 ? "Стартовая норма" : "Нет данных"}</span>}
           </div>
@@ -75,6 +82,42 @@ export default function WeekBlock({
           </p>
         </div>
       </div>
+
+      {weekData.is_current_week && (
+        <div className="mb-4 border-2 border-black/15 bg-[#f4f4f0] p-3">
+          {weekData.is_deload ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Разгрузочная неделя активна</p>
+                <p className="mt-1 text-sm">{weekData.deload_source === "manual" ? "Установлена вручную. Goal XP ограничен значением 85%." : "Назначена автоматически по нагрузке прошлых недель."}</p>
+              </div>
+              {weekData.deload_source === "manual" && (
+                <button type="button" disabled={!weekData.can_set_deload || deloadBusy} onClick={() => onDeloadAction(false)} className="border-2 border-black bg-white px-3 py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-[#ff4b26] hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
+                  {deloadBusy ? "Сохраняем…" : "Снять Deload"}
+                </button>
+              )}
+            </div>
+          ) : (
+            <button type="button" disabled={!weekData.can_set_deload || deloadBusy} onClick={() => onDeloadAction(true)} className="border-2 border-black bg-[#ffd500] px-3 py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
+              {deloadBusy ? "Сохраняем…" : "Поставить разгрузочную неделю"}
+            </button>
+          )}
+          {!weekData.can_set_deload && weekData.deload_block_reason && (
+            <p className="mt-2 text-xs text-[#666]">{weekData.deload_block_reason}</p>
+          )}
+          {weekData.deload_suggestion && !weekData.is_deload && (
+            <div className="mt-3 border-l-4 border-[#5866f2] bg-white p-3">
+              <p className="text-sm font-bold">Похоже, это разгрузочная неделя. Поставить Deload?</p>
+              <p className="mt-1 text-xs text-[#666]">Предложение необязательное. Если ничего не делать, в конце недели система проверит условия автоматического Deload.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" disabled={!weekData.can_set_deload || deloadBusy} onClick={() => onDeloadAction(true)} className="border-2 border-black bg-[#5866f2] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-white hover:bg-black disabled:opacity-40">Поставить</button>
+                <button type="button" disabled={deloadBusy} onClick={() => onDeloadAction(false)} className="border-2 border-black bg-white px-3 py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-[#e9e9e2] disabled:opacity-40">Не сейчас</button>
+              </div>
+            </div>
+          )}
+          {deloadError && <p role="alert" className="mt-2 text-xs font-bold text-[#b91c1c]">{deloadError}</p>}
+        </div>
+      )}
 
       {weekData.state === "no_data" && weekData.target_load > 0 && (
         <p className="text-[10px] text-[#666] mb-4">

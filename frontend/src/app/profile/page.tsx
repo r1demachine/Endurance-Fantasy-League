@@ -25,6 +25,12 @@ type ProfileData = {
     total_workouts?: number;
     total_xp?: number;
   };
+  week?: {
+    is_deload?: boolean;
+    deload_source?: "auto" | "manual" | null;
+    actual_load?: number;
+    target_load?: number;
+  };
   recent_events?: { id: number | string; type: string; title?: string; amount?: number; date?: string }[];
 };
 
@@ -143,6 +149,19 @@ export default function Profile() {
             )}
           </div>
         </section>
+
+        {userData?.week?.is_deload && (
+          <section className={`border-b-2 border-black px-4 py-4 sm:px-6 ${userData.week.deload_source === "manual" ? "bg-[#f3e8ff]" : "bg-[#e0f2fe]"}`}>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Текущая неделя · Deload</p>
+            <p className="mt-1 font-display text-xl uppercase">
+              Разгрузочная неделя {userData.week.deload_source === "manual" ? "· установлена вручную" : "· назначена автоматически"}
+            </p>
+            <p className="mt-1 text-xs text-[#555]">
+              Нагрузка: {Math.round(Number(userData.week.actual_load) || 0)} / {Math.round(Number(userData.week.target_load) || 0)} TSS.
+              {userData.week.deload_source === "manual" ? " Goal XP ограничен значением 85%." : ""}
+            </p>
+          </section>
+        )}
 
         <section className="border-b-2 border-black">
           <div className="flex items-end justify-between gap-3 border-b-2 border-black px-4 py-3 sm:px-6">

@@ -80,6 +80,8 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN telegram_link_expires TIMESTAMP"))
             if "telegram_last_notified_week" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN telegram_last_notified_week DATE"))
+            if "last_deload_week_start" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN last_deload_week_start DATE"))
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram_chat_id ON users(telegram_chat_id)"))
             conn.execute(text("ALTER TABLE users ALTER COLUMN intervals_id DROP NOT NULL"))
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)"))
@@ -124,6 +126,11 @@ try:
                 conn.execute(text("ALTER TABLE weekly_summaries ADD COLUMN is_deload BOOLEAN DEFAULT FALSE"))
             if "paused" not in wcols:
                 conn.execute(text("ALTER TABLE weekly_summaries ADD COLUMN paused BOOLEAN DEFAULT FALSE"))
+            if "deload_source" not in wcols:
+                conn.execute(text("ALTER TABLE weekly_summaries ADD COLUMN deload_source VARCHAR(10)"))
+            if "deload_manual_decision" not in wcols:
+                conn.execute(text("ALTER TABLE weekly_summaries ADD COLUMN deload_manual_decision BOOLEAN NOT NULL DEFAULT FALSE"))
+            conn.execute(text("UPDATE weekly_summaries SET deload_source = 'auto' WHERE is_deload = TRUE AND deload_source IS NULL"))
 
         # ── notifications (живые уведомления v4.2) ──
         if "notifications" in tables:

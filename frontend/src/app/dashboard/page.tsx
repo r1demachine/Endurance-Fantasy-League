@@ -42,6 +42,8 @@ export default function Dashboard() {
   const [pauseNow, setPauseNow] = useState(0);
   const [pauseBusy, setPauseBusy] = useState(false);
   const [pauseError, setPauseError] = useState("");
+  const [deloadBusy, setDeloadBusy] = useState(false);
+  const [deloadError, setDeloadError] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
@@ -186,6 +188,31 @@ export default function Dashboard() {
     }
   };
 
+  const handleDeloadAction = async (enable: boolean) => {
+    setDeloadBusy(true);
+    setDeloadError("");
+    try {
+      await authApi.post("/api/deload", { enable });
+      const response = await authApi.get("/api/weekly-summary", {
+        params: selectedWeekStart ? { week_start: selectedWeekStart } : {},
+      });
+      setWeekData(response.data.week || null);
+      await refreshUser(true);
+    } catch (error: unknown) {
+      setDeloadError(getApiErrorMessage(error, "Не удалось обновить Deload. Проверь условия недели и попробуй ещё раз."));
+      try {
+        const response = await authApi.get("/api/weekly-summary", {
+          params: selectedWeekStart ? { week_start: selectedWeekStart } : {},
+        });
+        setWeekData(response.data.week || null);
+      } catch {
+        // Keep the latest usable week snapshot if the refresh also fails.
+      }
+    } finally {
+      setDeloadBusy(false);
+    }
+  };
+
   const handleSync = async () => {
     setSyncMessage("");
     setSyncError("");
@@ -306,6 +333,9 @@ export default function Dashboard() {
                 canGoPrevious={canGoPrevious}
                 canGoNext={canGoNext}
                 onPauseClick={openPause}
+                onDeloadAction={handleDeloadAction}
+                deloadBusy={deloadBusy}
+                deloadError={deloadError}
               />
             )}
 
