@@ -87,16 +87,40 @@ export default function Dashboard() {
 
   const loadQuests = useCallback(async () => {
     setQuestsLoading(true);
+    setQuests([]);
     setQuestsError("");
     try {
       const response = await authApi.get("/api/quests");
       setQuests(Array.isArray(response.data) ? response.data : []);
     } catch (error: unknown) {
+      setQuests([]);
       setQuestsError(getApiErrorMessage(error, "Не удалось загрузить достижения."));
     } finally {
       setQuestsLoading(false);
     }
   }, []);
+
+  const refreshDashboardAfterDataChange = useCallback(async () => {
+    setWeekLoading(true);
+    setDashboardError("");
+    try {
+      const response = await authApi.get("/api/weekly-summary", {
+        params: selectedWeekStart ? { week_start: selectedWeekStart } : {},
+      });
+      const result = response.data;
+      setWeekData(result.week || null);
+      setWeekActivities(Array.isArray(result.activities) ? result.activities : []);
+      setWeekOptions(Array.isArray(result.week_options) ? result.week_options : []);
+      if (!selectedWeekStart && result.week?.week_start) {
+        setSelectedWeekStart(result.week.week_start);
+      }
+    } catch (error: unknown) {
+      setDashboardError(getApiErrorMessage(error, "Не удалось обновить данные после изменения тренировок."));
+    } finally {
+      setWeekLoading(false);
+    }
+    await loadQuests();
+  }, [selectedWeekStart, loadQuests]);
 
   useEffect(() => {
     if (!isAuthed) {
@@ -228,7 +252,7 @@ export default function Dashboard() {
       const response = await authApi.post("/api/sync", null, { params: { since } });
       setSyncMessage(`Синхронизация завершена: новых ${response.data.synced_count ?? 0}, обновлено ${response.data.updated_count ?? 0}, +${Math.round(Number(response.data.new_xp) || 0)} XP.`);
       await refreshUser(true);
-      await loadQuests();
+      await refreshDashboardAfterDataChange();
     } catch (error: unknown) {
       setSyncError(getApiErrorMessage(error, "Не удалось синхронизировать данные."));
     } finally {
@@ -326,7 +350,6 @@ export default function Dashboard() {
             <YearWeeksChart
               selectedWeekStart={selectedWeekStart || weekData?.week_start || ""}
               onWeekChange={setSelectedWeekStart}
-              onOpenSources={openSourceSettings}
             />
 
             {weekLoading ? (
@@ -360,6 +383,7 @@ export default function Dashboard() {
               weekOptions={weekOptions}
               selectedWeekStart={selectedWeekStart || weekData?.week_start || ""}
               onWeekChange={setSelectedWeekStart}
+              onOpenSources={openSourceSettings}
             />
           </>
         )}
