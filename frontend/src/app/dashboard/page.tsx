@@ -15,6 +15,7 @@ import WeekBlock from "@/components/dashboard/WeekBlock";
 import EventsFeed from "@/components/dashboard/EventsFeed";
 import QuestsBoard from "@/components/dashboard/QuestsBoard";
 import YearWeeksChart from "@/components/dashboard/YearWeeksChart";
+import DashboardWorkoutsSection from "@/components/dashboard/DashboardWorkoutsSection";
 import ProfileSettingsModal, { type SettingsTab } from "@/components/ProfileSettingsModal";
 
 export default function Dashboard() {
@@ -356,6 +357,13 @@ export default function Dashboard() {
               loading={questsLoading}
               error={questsError}
               onRetry={() => void loadQuests()}
+            />
+            <DashboardWorkoutsSection
+              weekLoading={weekLoading}
+              weekActivities={weekActivities}
+              weekOptions={weekOptions}
+              selectedWeekStart={selectedWeekStart || weekData?.week_start || ""}
+              onWeekChange={setSelectedWeekStart}
             />
           </>
         )}

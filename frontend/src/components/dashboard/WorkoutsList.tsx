@@ -28,7 +28,7 @@ export default function WorkoutsList({ weekLoading, weekActivities, selectedWeek
       ) : weekActivities.length === 0 ? (
         <div className="p-4 md:p-6">
           <EmptyState>За выбранную неделю тренировок нет. Синхронизируй данные во вкладке Источники.</EmptyState>
-          <Link href="/training?tab=sources" className="mt-3 inline-block text-sm font-bold text-[#5866f2] underline">Открыть источники данных →</Link>
+          <Link href="/profile?settings=sources" className="mt-3 inline-block text-sm font-bold text-[#5866f2] underline">Открыть источники данных →</Link>
         </div>
       ) : (
         <>

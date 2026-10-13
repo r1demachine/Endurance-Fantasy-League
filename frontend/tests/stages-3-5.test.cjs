@@ -7,6 +7,8 @@ const read = (relative) => fs.readFileSync(path.join(__dirname, "..", relative),
 const activity = read("src/components/ActivityCard.tsx");
 const tooltip = read("src/components/XpTooltip.tsx");
 const rating = read("src/components/compete/RatingPanel.tsx");
+const weekly = read("src/components/compete/WeeklyLeaguePanel.tsx");
+const compete = read("src/app/compete/page.tsx");
 const profile = read("src/app/profile/page.tsx");
 
 test("activity XP breakdown loads lazily, caches success, and supports retry", () => {
@@ -27,21 +29,25 @@ test("XP tooltip supports accessible explanatory text as well as chart mode", ()
   assert.match(activity, /<XpTooltip label=/);
 });
 
-test("weekly league is separate, grouped by division, and limited to ten entries", () => {
+test("weekly league is its own container before the Global/Friends rating", () => {
+  assert.match(compete, /<WeeklyLeaguePanel\s*\/>[\s\S]*?<RatingPanel\s*\/>/);
   assert.match(rating, /label: "Global"/);
   assert.match(rating, /label: "Друзья"/);
-  assert.match(rating, /label: "Weekly"/);
-  assert.match(rating, /scope === "weekly" && \(index === 0 \|\| entries\[index - 1\]\?\.division !== entry\.division\)/);
-  assert.match(rating, /const params = \{ scope: requestedScope, limit: 10 \}/);
-  assert.match(rating, /Лига формируется/);
-  assert.match(rating, /Ты — место \{yourRank\}/);
+  assert.doesNotMatch(rating, /label: "Weekly"|scope === "weekly"|entry\.division|entry\.score/);
+  assert.match(rating, /params: \{ scope: requestedScope, limit: 10 \}/);
+  assert.match(rating, /"Рейтинг пока пуст\."/);
   assert.match(rating, /<Skeleton label="Загружаем рейтинг"/);
   assert.match(rating, /<ErrorState message=\{errors\[scope\]/);
-  assert.match(rating, /scope === "weekly" && \(index === 0 \|\| entries\[index - 1\]\?\.division !== entry\.division\)/);
-  assert.match(rating, /scope === "weekly" \? entry\.score : entry\.total_xp/);
+  assert.match(weekly, /scope: "weekly", limit: 10/);
+  assert.match(weekly, /entry\.division/);
+  assert.match(weekly, /entry\.score/);
+  assert.match(weekly, /Лига формируется/);
+  assert.match(weekly, /Ты — место \{yourRank\}/);
+  assert.match(weekly, /<Skeleton label="Загружаем Weekly League"/);
+  assert.match(weekly, /<ErrorState message=\{error\} onRetry=\{\(\) => void loadWeekly\(\)\}/);
 });
 
-test("profile stats are URL-driven and use the stats API for all three ranges", () => {
+test("profile stats are URL-driven and the unwanted min-height gaps are removed", () => {
   assert.match(profile, /authApi\.get\("\/api\/profile\/stats", \{ params: \{ range: statsRange \} \}\)/);
   assert.match(profile, /value: "season", label: "Сезон"/);
   assert.match(profile, /value: "year", label: "Год"/);
@@ -51,4 +57,5 @@ test("profile stats are URL-driven and use the stats API for all three ranges", 
   assert.match(profile, /Сезон с /);
   assert.match(profile, /<Skeleton label="Загружаем статистику"/);
   assert.match(profile, /<ErrorState message=\{statsError\} onRetry=\{\(\) => void loadStats\(\)\}/);
+  assert.doesNotMatch(profile, /min-h-\[300px\]|min-h-\[220px\]/);
 });

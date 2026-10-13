@@ -218,7 +218,7 @@ function ProfileContent() {
           </section>
         )}
 
-        <section className="min-h-[300px] border-b-2 border-black">
+        <section className="border-b-2 border-black">
           <div className="flex flex-wrap items-end justify-between gap-3 border-b-2 border-black px-4 py-3 sm:px-6">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Athlete Stats</p>
@@ -235,7 +235,7 @@ function ProfileContent() {
               ))}
             </div>
           </div>
-          <div className="min-h-[220px]">
+          <div>
             {statsLoading ? (
               <div className="p-4 sm:p-6"><Skeleton label="Загружаем статистику" rows={3} /></div>
             ) : statsError ? (

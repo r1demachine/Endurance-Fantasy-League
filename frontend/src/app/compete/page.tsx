@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Tabs, Skeleton } from "@/components/ui";
 import RatingPanel from "@/components/compete/RatingPanel";
+import WeeklyLeaguePanel from "@/components/compete/WeeklyLeaguePanel";
 import DuelsPanel from "@/components/compete/DuelsPanel";
 
 type CompeteTab = "rating" | "duels" | "teams";
@@ -60,7 +61,10 @@ function CompeteContent() {
         />
 
         {(visitedTabs.rating || activeTab === "rating") && (
-          <div hidden={activeTab !== "rating"}><RatingPanel /></div>
+          <div hidden={activeTab !== "rating"} className="space-y-4 p-4 md:p-6">
+            <WeeklyLeaguePanel />
+            <RatingPanel />
+          </div>
         )}
         {(visitedTabs.duels || activeTab === "duels") && (
           <div hidden={activeTab !== "duels"}><DuelsPanel /></div>

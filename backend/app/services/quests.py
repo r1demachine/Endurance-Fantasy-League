@@ -241,10 +241,13 @@ def grant_quests(db, user, acts, summaries) -> int:
     # Повторяемый недельный бонус за станок: не больше одного XPEvent на неделю.
     trainer_by_week = {}
     for activity in acts:
-        if not _is_qualifying_trainer_activity(activity):
+        activity_day = _local_activity_day(activity)
+        if (
+            activity_day is None
+            or activity_day < activation_date
+            or not _is_qualifying_trainer_activity(activity)
+        ):
             continue
-        activity_dt = getattr(activity, "start_date_local", None) or activity.start_date
-        activity_day = activity_dt.date() if isinstance(activity_dt, datetime) else activity_dt
         week_start = _trainer_week_start(activity_day)
         trainer_by_week.setdefault(week_start, activity)
 

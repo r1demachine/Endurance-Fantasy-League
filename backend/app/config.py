@@ -34,8 +34,8 @@ class Settings(BaseSettings):
     XP_V6_ACTIVATION_DATE: str = ""
     # Разрешённые браузерные origins, разделённые запятыми; не используем wildcard.
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,https://endurance-fantasy-league.vercel.app"
-    # Квесты учитывают достижения начиная с этого понедельника, без ретроактивной выдачи.
-    XP_QUESTS_ACTIVATION_DATE: date = date(2026, 10, 12)
+    # Ачивки учитывают данные с начала календарного года; после настройки возможна ретроактивная выдача за этот период.
+    XP_QUESTS_ACTIVATION_DATE: date = date(2026, 1, 1)
     # Increment when the data-processing consent text changes materially.
     PRIVACY_CONSENT_VERSION: str = "2026-10-11-v1"
     # Telegram bot (optional). Without token webhook is disabled.

@@ -19,6 +19,7 @@ os.environ.setdefault("JWT_SECRET", "unit-test-jwt-secret-value-longer-than-32-c
 os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
 os.environ.setdefault("REDIS_URL", "")
 
+from app.config import Settings
 from app.database import Base
 from app.models import Activity, User, Wellness, WeeklySummary, XPEvent
 from app.routers import sync as sync_router
@@ -307,6 +308,50 @@ class InterfaceDataApiTests(unittest.TestCase):
         self.assertEqual(weekly["start_date"], "2026-10-12")
         self.assertEqual(yearly["start_date"], "2026-01-01")
         self.assertEqual(seasonal["start_date"], "2026-09-01")
+
+    def test_quest_activation_default_starts_on_january_first_2026(self):
+        self.assertEqual(
+            Settings.model_fields["XP_QUESTS_ACTIVATION_DATE"].default,
+            date(2026, 1, 1),
+        )
+
+    def test_quest_progress_and_awards_ignore_data_before_calendar_year_cutoff(self):
+        activation = date(2026, 1, 1)
+        old_summary = self.add_summary(
+            date(2025, 12, 29), training_days=7, ratio=1.5, finalized=True,
+        )
+        old_sleep = self.add_sleep(date(2025, 12, 31), secs=8 * 3600, score=100)
+        old_activity = self.add_activity(
+            "pre-calendar-year-ride",
+            stamp=datetime(2025, 12, 30, 8, 0),
+            distance=80000,
+            moving_time=7200,
+            indoor=True,
+        )
+        self.db.commit()
+
+        fake_settings = SimpleNamespace(XP_QUESTS_ACTIVATION_DATE=activation)
+        with patch("app.services.quests.get_settings", return_value=fake_settings), patch(
+            "app.services.quests._user_local_today", return_value=date(2026, 10, 14)
+        ):
+            payload = sync_router.get_quests(current=self.user, db=self.db)
+            granted = quest_service.grant_quests(
+                self.db, self.user, [old_activity], [old_summary],
+            )
+            self.db.commit()
+
+        quests = {quest["slug"]: quest for quest in payload}
+        self.assertEqual(quests["first_three_day_week"]["progress"]["current"], 0)
+        self.assertEqual(quests["goal_met"]["progress"]["current"], 0)
+        self.assertEqual(quests["first_50km_ride_week"]["progress"]["current"], 0)
+        self.assertEqual(quests["sleep_connected"]["progress"]["current"], 0)
+        self.assertEqual(granted, 0)
+        self.assertEqual(
+            self.db.query(XPEvent)
+            .filter(XPEvent.user_id == self.user.id, XPEvent.event_type == "quest")
+            .count(),
+            0,
+        )
 
     def test_quests_progress_and_sleep_duration_fulfill_three_nights(self):
         activation = date(2026, 1, 1)
