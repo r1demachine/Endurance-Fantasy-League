@@ -149,6 +149,7 @@ export interface ConfirmDialogProps {
   requireDelete?: boolean;
   requirePassword?: boolean;
   passwordLabel?: string;
+  confirmDelaySeconds?: number;
   onClose: () => void;
   onConfirm: (values: ConfirmPayload) => void | Promise<void>;
 }
@@ -163,12 +164,27 @@ export function ConfirmDialog({
   requireDelete = false,
   requirePassword = false,
   passwordLabel = "Пароль аккаунта",
+  confirmDelaySeconds,
   onClose,
   onConfirm,
 }: ConfirmDialogProps) {
   const [confirmation, setConfirmation] = useState("");
   const [password, setPassword] = useState("");
   const [internalError, setInternalError] = useState("");
+  const delaySeconds = confirmDelaySeconds ?? (danger ? 3 : 0);
+  const [remainingSeconds, setRemainingSeconds] = useState(delaySeconds);
+
+  useEffect(() => {
+    setRemainingSeconds(delaySeconds);
+    if (delaySeconds <= 0) return;
+    const deadline = Date.now() + delaySeconds * 1000;
+    const timer = window.setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setRemainingSeconds(remaining);
+      if (remaining === 0) window.clearInterval(timer);
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [delaySeconds]);
 
   const payload = buildConfirmPayload(
     { confirmation, password },
@@ -234,6 +250,11 @@ export function ConfirmDialog({
             {error || internalError}
           </p>
         )}
+        {delaySeconds > 0 && remainingSeconds > 0 && (
+          <p aria-live="polite" className="border-l-4 border-[#ff4b26] bg-[#ff4b26]/10 px-3 py-2 text-sm text-[#7f1d1d]">
+            Прочитай предупреждение перед продолжением. Подтверждение станет доступно через {remainingSeconds} с.
+          </p>
+        )}
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button
             type="button"
@@ -245,13 +266,13 @@ export function ConfirmDialog({
           </button>
           <button
             type="submit"
-            disabled={busy || !payload}
+            disabled={busy || !payload || remainingSeconds > 0}
             className={(danger
               ? "border-2 border-[#ff4b26] bg-[#ff4b26] text-white hover:bg-black"
               : "border-2 border-black bg-[#ffd500] text-[#111] hover:bg-black hover:text-white") +
               " px-4 py-3 text-[10px] font-bold uppercase tracking-widest transition-colors disabled:cursor-not-allowed disabled:opacity-50"}
           >
-            {busy ? "Выполняется..." : confirmLabel}
+            {busy ? "Выполняется..." : remainingSeconds > 0 ? `Подождите ${remainingSeconds} с…` : confirmLabel}
           </button>
         </div>
       </form>
