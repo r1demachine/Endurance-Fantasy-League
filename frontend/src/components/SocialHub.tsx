@@ -1,6 +1,6 @@
 "use client";
 
-import { Tabs } from "@/components/ui";
+import { ErrorState, Skeleton, Tabs } from "@/components/ui";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AnimatePresence } from "framer-motion";
@@ -422,7 +422,7 @@ type ClubConfirmAction =
   | { kind: "kick"; club: ClubSummary; member: ClubMember }
   | null;
 
-function ClubsPanel() {
+export function ClubsPanel() {
   const [clubs, setClubs] = useState<ClubSummary[]>([]);
   const [incoming, setIncoming] = useState<ClubJoinRequest[]>([]);
   const [ownedCount, setOwnedCount] = useState(0);
@@ -729,12 +729,7 @@ function ClubsPanel() {
         </button>
       </div>
 
-      {error && (
-        <div role="alert" className="border-2 border-[#ff4b26] bg-[#ff4b26]/10 p-3 text-sm font-bold text-[#a62910]">
-          <p>{error}</p>
-          <button type="button" onClick={() => void loadMine()} className="mt-2 underline">Повторить загрузку</button>
-        </div>
-      )}
+      {error && <ErrorState message={error} onRetry={() => void loadMine()} retryLabel="Повторить загрузку" />}
       {message && <p role="status" className="border-l-4 border-[#16a34a] bg-white px-3 py-2 text-sm font-bold text-[#166534]">{message}</p>}
 
       <div className="grid lg:grid-cols-2 gap-4">
@@ -841,7 +836,7 @@ function ClubsPanel() {
       <section className="space-y-3">
         <h3 className="font-display uppercase text-xl">Мои клубы</h3>
         {loading ? (
-          <p className="border-2 border-black bg-white p-4 text-sm text-[#666]">Загружаю клубы…</p>
+          <div className="border-2 border-black bg-white p-4"><Skeleton label="Загружаем клубы" rows={3} /></div>
         ) : clubs.length === 0 ? (
           <div className="border-2 border-dashed border-black/40 bg-white p-6 text-center">
             <p className="font-bold">Ты пока не состоишь ни в одном клубе.</p>
@@ -868,11 +863,10 @@ function ClubsPanel() {
       {selectedClubId !== null && (
         <section className="border-2 border-black bg-white">
           {detailLoading ? (
-            <p className="p-4 text-sm text-[#666]">Загружаю клуб…</p>
+            <div className="p-4"><Skeleton label="Загружаем клуб" rows={3} /></div>
           ) : detailError ? (
-            <div role="alert" className="p-4 text-sm font-bold text-[#a62910]">
-              <p>{detailError}</p>
-              <button type="button" onClick={() => setDetailVersion((version) => version + 1)} className="mt-2 underline">Повторить</button>
+            <div className="p-4">
+              <ErrorState message={detailError} onRetry={() => setDetailVersion((version) => version + 1)} />
             </div>
           ) : detail ? (
             <>
