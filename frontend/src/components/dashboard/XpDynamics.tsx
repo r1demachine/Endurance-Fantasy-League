@@ -24,7 +24,7 @@ export default function XpDynamics({
   handleChartTouchStart, handleChartTouchMove, handleChartTouchEnd, handleMouseMove,
 }: XpDynamicsProps) {
   return (
-    {/* График */}
+    
         {chartData.length > 0 && (
           <div className="border-b-2 border-black">
             <div className="grid md:grid-cols-[200px_1fr]">
