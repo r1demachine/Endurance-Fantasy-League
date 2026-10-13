@@ -1,5 +1,7 @@
 "use client";
 
+import { Tabs } from "@/components/ui";
+
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AnimatePresence } from "framer-motion";
 import { authApi } from "@/lib/auth";
@@ -1026,24 +1028,19 @@ export default function SocialHub() {
           </div>
 
           {/* Вкладки */}
-          <div className="flex border-b-2 border-black">
-            <button
-              onClick={() => setTab("friends")}
-              className={`flex-1 px-4 py-3 text-[10px] md:text-xs font-bold tracking-widest uppercase transition-colors ${
-                tab === "friends" ? "bg-[#ffd500] text-[#111]" : "hover:bg-black/5"
-              }`}
-            >
-              Friends
-            </button>
-            <button
-              onClick={() => setTab("clubs")}
-              className={`flex-1 px-4 py-3 text-[10px] md:text-xs font-bold tracking-widest uppercase border-l-2 border-black transition-colors ${
-                tab === "clubs" ? "bg-[#ffd500] text-[#111]" : "hover:bg-black/5"
-              }`}
-            >
-              Clubs
-            </button>
-          </div>
+          <Tabs
+            ariaLabel="Социальный раздел"
+            value={tab}
+            onChange={setTab}
+            className="flex border-b-2 border-black"
+            tabClassName="flex-1 px-4 py-3 text-[10px] md:text-xs font-bold tracking-widest uppercase transition-colors"
+            activeClassName="bg-[#ffd500] text-[#111]"
+            inactiveClassName="hover:bg-black/5"
+            items={[
+              { value: "friends", label: "Friends" },
+              { value: "clubs", label: "Clubs", className: "border-l-2 border-black" },
+            ]}
+          />
 
           {tab === "friends" ? <FriendsPanel version={version} onOpen={setModal} /> : <ClubsPanel />}
         </div>

@@ -1,43 +1,22 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import type { ReactNode, TouchEvent } from "react";
+import type { MouseEvent, TouchEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { getCachedUser, subscribeUser, refreshUser } from "@/lib/apiCache";
 import { authApi, isAuthenticated } from "@/lib/auth";
-import ActivityCard from "@/components/ActivityCard";
 import { Star, Sticker } from "@/components/DreamBits";
-import {
-  ResponsiveContainer, AreaChart, Area, ComposedChart, Bar, Line, Legend, XAxis, YAxis, Tooltip, CartesianGrid,
-} from "recharts";
-import XpTooltip from "@/components/XpTooltip";
 import { PauseDialog } from "@/components/Modal";
 import { getApiErrorMessage, parsePauseDate, parsePauseWeeks } from "@/components/dialog-utils";
-
-type Tone = "default" | "yellow" | "orange" | "indigo";
-
-function SectionTitle({ children, tone = "default" }: { children: ReactNode; tone?: Tone }) {
-  const tones: Record<Tone, string> = {
-    default: "bg-[#f4f4f0] text-[#111]",
-    yellow: "bg-[#ffd500] text-[#111]",
-    orange: "bg-[#ff4b26] text-white",
-    indigo: "bg-[#5866f2] text-white",
-  };
-  return (
-    <div className={`px-4 py-3 border-b-2 border-black font-display uppercase text-xl md:text-2xl tracking-tight ${tones[tone]}`}>
-      {children}
-    </div>
-  );
-}
-
-function Label({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return (
-    <p className={`text-[9px] md:text-[10px] font-bold tracking-widest uppercase ${className}`}>
-      {children}
-    </p>
-  );
-}
+import { ErrorState, Label, SectionTitle } from "@/components/ui";
+import WeekBlock from "@/components/dashboard/WeekBlock";
+import EventsFeed from "@/components/dashboard/EventsFeed";
+import SeasonWeeksChart from "@/components/dashboard/SeasonWeeksChart";
+import QuestsBoard from "@/components/dashboard/QuestsBoard";
+import RatingBoard from "@/components/dashboard/RatingBoard";
+import XpDynamics from "@/components/dashboard/XpDynamics";
+import WorkoutsList from "@/components/dashboard/WorkoutsList";
 
 function useIsTouch() {
   const [touch, setTouch] = useState(false);
@@ -52,235 +31,6 @@ function useIsTouch() {
     );
   }, []);
   return touch;
-}
-
-function WeekBlock({
-  weekData, weekOptions, selectedWeekStart, onWeekChange, onPreviousWeek, onNextWeek,
-  canGoPrevious, canGoNext, onPauseClick,
-}: {
-  weekData: any;
-  weekOptions: { week_start: string; label: string }[];
-  selectedWeekStart: string;
-  onWeekChange: (value: string) => void;
-  onPreviousWeek: () => void;
-  onNextWeek: () => void;
-  canGoPrevious: boolean;
-  canGoNext: boolean;
-  onPauseClick: () => void;
-}) {
-  if (!weekData) return null;
-  const pct = Math.min(Math.max(weekData.completion_ratio || 0, 0), 150);
-  const isReady = weekData.state === "ready";
-  const isInProgress = weekData.state === "in_progress";
-
-  return (
-    <div className="border-b-2 border-black bg-white p-4 md:p-6">
-      <div className="flex flex-col gap-3 mb-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h3 className="font-display uppercase text-xl md:text-2xl">Твоя неделя</h3>
-          <div className="flex items-center gap-2">
-            {isInProgress && <span className="px-2 py-1 bg-[#ffd500] text-[10px] font-bold tracking-widest uppercase">В процессе</span>}
-            {weekData.is_deload && <span className="px-2 py-1 bg-[#0ea5e9] text-white text-[10px] font-bold tracking-widest uppercase">Deload</span>}
-            {weekData.paused && <span className="px-2 py-1 bg-[#666] text-white text-[10px] font-bold tracking-widest uppercase">Пауза</span>}
-            {weekData.state === "no_data" && <span className="px-2 py-1 bg-[#666] text-white text-[10px] font-bold tracking-widest uppercase">{weekData.target_load > 0 ? "Стартовая норма" : "Нет данных"}</span>}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button type="button" aria-label="Предыдущая неделя" disabled={!canGoPrevious} onClick={onPreviousWeek} className="w-9 h-9 border-2 border-black font-bold disabled:opacity-30 hover:bg-[#ffd500] transition-colors">←</button>
-          <select value={selectedWeekStart} onChange={(e) => onWeekChange(e.target.value)} aria-label="Выбрать неделю" className="min-w-0 flex-1 max-w-[300px] border-2 border-black bg-white px-3 py-2 text-sm font-bold">
-            {weekOptions.map((option) => <option key={option.week_start} value={option.week_start}>{option.label}</option>)}
-          </select>
-          <button type="button" aria-label="Следующая неделя" disabled={!canGoNext} onClick={onNextWeek} className="w-9 h-9 border-2 border-black font-bold disabled:opacity-30 hover:bg-[#ffd500] transition-colors">→</button>
-        </div>
-      </div>
-
-      {/* Кольцо цели */}
-      <div className="flex items-center gap-6 mb-6">
-        <div className="relative w-24 h-24 shrink-0">
-          <svg className="w-full h-full transform -rotate-90">
-            <circle cx="48" cy="48" r="40" stroke="#e5e7eb" strokeWidth="8" fill="none" />
-            <circle
-              cx="48" cy="48" r="40"
-              stroke={pct >= 100 ? "#16a34a" : "#ff4b26"}
-              strokeWidth="8"
-              fill="none"
-              strokeDasharray={`${Math.min(pct, 100) * 2.51} 251`}
-              strokeLinecap="round"
-            />
-          </svg>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="font-display text-xl">{Math.round(pct)}%</span>
-          </div>
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-[10px] font-bold tracking-widest uppercase text-[#666] mb-1">
-            Цель нагрузки
-          </p>
-          <p className="font-display text-2xl mb-1">
-            {weekData.actual_load} / {weekData.target_load} TSS
-          </p>
-          <p className="text-[10px] text-[#666]">
-            {weekData.training_days} тренировочных дней
-          </p>
-          <p className="text-[10px] text-[#666] mt-1">
-            Дивизион:{" "}
-            <span className="font-bold text-[#171a38]">{weekData.division ?? "Provisional"}</span>
-            {weekData.division_source && (
-              <span className="text-[#999]"> · {weekData.division_source}</span>
-            )}
-          </p>
-        </div>
-      </div>
-
-      {weekData.state === "no_data" && weekData.target_load > 0 && (
-        <p className="text-[10px] text-[#666] mb-4">
-          История ещё не накоплена — цель равна стартовой норме (3 тренировки × 45 мин).
-          Синхронизируй тренировки, и цель станет персональной.
-        </p>
-      )}
-
-      <div className="mb-4">
-        <button
-          type="button"
-          onClick={onPauseClick}
-          className="px-3 py-2 border-2 border-black text-[10px] font-bold tracking-widest uppercase hover:bg-[#ffd500] transition-colors"
-        >
-          ⏸ Пауза (болезнь / отпуск)
-        </button>
-      </div>
-
-      <div className="flex items-center justify-between gap-3 border-y-2 border-black/10 py-3 mb-4">
-        <span className="text-[10px] font-bold tracking-widest uppercase text-[#666]">Итого XP за неделю</span>
-        <span className="font-display text-2xl text-[#ff4b26]">+{Math.round(Number(weekData.total_xp) || 0)}</span>
-      </div>
-
-      {/* Разбивка XP */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        {[
-          { label: "Нагрузка", value: weekData.effort_xp, color: "text-[#ff4b26]" },
-          { label: "Цель", value: weekData.goal_xp, color: "text-[#16a34a]" },
-          { label: "Регулярность", value: weekData.consistency_xp, color: "text-[#5866f2]" },
-          { label: "Качество", value: weekData.quality_xp, color: "text-[#ffd500]" },
-          { label: "Восстановление", value: weekData.recovery_xp, color: "text-[#0ea5e9]" },
-          { label: "Квесты", value: weekData.quest_xp, color: "text-[#a855f7]" },
-        ].map((item) => (
-          <div key={item.label} className="border border-black/10 p-2">
-            <p className="text-[9px] font-bold tracking-widest uppercase text-[#666]">
-              {item.label}
-            </p>
-            <p className={`font-display text-lg ${item.color}`}>+{item.value}</p>
-          </div>
-        ))}
-      </div>
-
-      {isReady && (
-        <div className="mt-4 pt-4 border-t border-black/10 flex items-center justify-between">
-          <span className="text-[10px] font-bold tracking-widest uppercase text-[#666]">
-            League Score
-          </span>
-          <span className="font-display text-xl text-[#171a38]">
-            {weekData.league_score}
-          </span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function EventsFeed({ events }: { events: any[] }) {
-  const typeIcons: Record<string, string> = {
-    consistency: "📅", quality_hard: "⚡", quality_long: "🏃",
-    weekly_goal: "🎯", recovery: "😴", quest: "🏆", achievement: "⭐",
-  };
-  return (
-    <div className="border-b-2 border-black bg-white p-4 md:p-6">
-      <h3 className="font-display uppercase text-xl md:text-2xl mb-4">XP-события недели</h3>
-      {events.length === 0 ? <p className="text-sm text-[#666]">За эту неделю XP-событий нет.</p> : (
-        <div className="space-y-2">
-          {events.map((e) => (
-            <div key={e.id} className="flex items-center gap-3 p-2 border border-black/10 hover:bg-black/5 transition-colors">
-              <span className="text-xl shrink-0">{typeIcons[e.type] || "✨"}</span>
-              <div className="flex-1 min-w-0">
-                <p className="font-bold uppercase text-sm truncate">{e.title}</p>
-                <p className="text-[9px] font-bold tracking-widest uppercase text-[#666]">{e.date}</p>
-              </div>
-              <span className="font-display text-lg text-[#16a34a] shrink-0">+{e.amount}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SeasonWeeksChart({ weeks }: { weeks: any[] }) {
-  return (
-    <div className="border-b-2 border-black">
-      <div className="grid md:grid-cols-[200px_1fr]">
-        <div className="hidden md:flex flex-col justify-between p-5 border-r-2 border-black bg-[#ffd500]">
-          <div><p className="font-display uppercase text-xl md:text-2xl tracking-tight leading-none">Сезон по неделям</p><div className="h-0.5 bg-black mt-3 mb-4" /><Label className="text-[#111]/70 block">XP и нагрузка TSS</Label></div>
-          <span className="font-display text-4xl mt-auto">↗</span>
-        </div>
-        <div className="p-4 md:p-6 bg-white">
-          <div className="md:hidden mb-4"><SectionTitle tone="yellow">Сезон по неделям</SectionTitle></div>
-          {weeks.length === 0 ? <p className="text-sm text-[#666]">Пока нет недельных сводок за сезон.</p> : (
-            <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={weeks} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#00000015" />
-                  <XAxis dataKey="label" tick={{ fill: "#666", fontSize: 10 }} axisLine={{ stroke: "#000" }} tickLine={false} />
-                  <YAxis yAxisId="xp" tick={{ fill: "#666", fontSize: 10 }} axisLine={false} tickLine={false} width={40} />
-                  <YAxis yAxisId="load" orientation="right" tick={{ fill: "#666", fontSize: 10 }} axisLine={false} tickLine={false} width={40} />
-                  <Tooltip />
-                  <Legend />
-                  <Bar yAxisId="xp" dataKey="total_xp" name="Итого XP" fill="#ff4b26" radius={[2, 2, 0, 0]} />
-                  <Line yAxisId="load" type="monotone" dataKey="actual_load" name="Факт TSS" stroke="#5866f2" strokeWidth={2.5} dot={{ r: 3 }} />
-                  <Line yAxisId="load" type="monotone" dataKey="target_load" name="Цель TSS" stroke="#16a34a" strokeWidth={2} strokeDasharray="5 4" dot={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function QuestsBoard({ quests }: { quests: any[] }) {
-  if (!quests?.length) return null;
-  return (
-    <div className="border-b-2 border-black bg-white p-4 md:p-6">
-      <h3 className="font-display uppercase text-xl md:text-2xl mb-4">Достижения</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-        {quests.map((q) => (
-          <div
-            key={q.slug}
-            className={`p-3 border-2 ${
-              q.status === "earned"
-                ? "border-[#16a34a] bg-[#16a34a]/10"
-                : q.status === "unavailable"
-                ? "border-black/10 bg-black/5 opacity-60"
-                : "border-black/20"
-            }`}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <p className="font-bold uppercase text-sm truncate">
-                {q.status === "earned" ? "⭐" : q.status === "unavailable" ? "🔒" : "🏆"} {q.title}
-              </p>
-              <span className="font-display text-[#16a34a] shrink-0">+{q.reward}</span>
-            </div>
-            <p className="text-[9px] font-bold tracking-widest uppercase text-[#666] mt-1">{q.desc}</p>
-            {q.status === "earned" && q.earned_at && (
-              <p className="text-[9px] text-[#16a34a] mt-1">получено {q.earned_at}</p>
-            )}
-            {q.status === "unavailable" && (
-              <p className="text-[9px] text-[#999] mt-1">данные ещё не синхронизируются</p>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 export default function Dashboard() {
@@ -361,7 +111,7 @@ export default function Dashboard() {
     setTouchTooltipActive(false);
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleMouseMove = (e: MouseEvent<HTMLDivElement>) => {
     if (!isTouch) {
       setCursorY(e.clientY);
     }
@@ -611,7 +361,7 @@ export default function Dashboard() {
           </Link>
         </div>
 
-        {dashboardError && <p role="alert" className="border-2 border-[#ff4b26] bg-white px-4 py-3 text-sm font-bold text-[#a62910]">{dashboardError}</p>}
+        {dashboardError && <ErrorState message={dashboardError} onRetry={() => window.location.reload()} />}
 
         {/* Статистика */}
         <div className="grid md:grid-cols-3 border-b-2 border-black">
@@ -691,270 +441,37 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* Рейтинг */}
-        <div className="border-b-2 border-black">
-          <div className="relative grid md:grid-cols-[200px_1fr]">
-            <Sticker className="-top-3 right-4 bg-[#5866f2] text-white rotate-[3deg] z-30">who's here? 👀</Sticker>
-            <div className="hidden md:flex flex-col justify-between p-5 border-r-2 border-black bg-[#5866f2] text-white">
-              <div>
-                <p className="font-display uppercase text-xl md:text-2xl tracking-tight leading-none">Rating</p>
-                <div className="h-0.5 bg-black mt-3 mb-4"></div>
-                <Label className="block text-white/80">Global & Friends</Label>
-              </div>
-              <span className="font-display text-4xl mt-auto">↓</span>
-            </div>
-            <div>
-              <div className="md:hidden">
-                <SectionTitle tone="indigo">Rating</SectionTitle>
-              </div>
-              <div className="flex border-b-2 border-black">
-                <button
-                  onClick={() => setLeaderboardTab("global")}
-                  className={`flex-1 px-4 py-3 text-[10px] md:text-xs font-bold tracking-widest uppercase transition-colors ${
-                    leaderboardTab === "global" ? "bg-[#5866f2] text-white" : "hover:bg-black/5"
-                  }`}
-                >
-                  Global
-                </button>
-                <button
-                  onClick={() => setLeaderboardTab("friends")}
-                  className={`flex-1 px-4 py-3 text-[10px] md:text-xs font-bold tracking-widest uppercase border-l-2 border-black transition-colors ${
-                    leaderboardTab === "friends" ? "bg-[#5866f2] text-white" : "hover:bg-black/5"
-                  }`}
-                >
-                  Friends
-                </button>
-                <button
-                  onClick={() => setLeaderboardTab("weekly")}
-                  className={`flex-1 px-4 py-3 text-[10px] md:text-xs font-bold tracking-widest uppercase border-l-2 border-black transition-colors ${
-                    leaderboardTab === "weekly" ? "bg-[#ffd500] text-[#111]" : "hover:bg-black/5"
-                  }`}
-                >
-                  Week
-                </button>
-              </div>
+        <RatingBoard
+          leaderboardTab={leaderboardTab}
+          setLeaderboardTab={setLeaderboardTab}
+          isAuthed={isAuthed}
+          boardsLoaded={boardsLoaded}
+          rows={rows}
+          yourRank={yourRank}
+          weeklyEntries={weeklyEntries}
+          weeklyBoard={weeklyBoard}
+          handleInvite={handleInvite}
+          inviteMessage={inviteMessage}
+        />
 
-              <div>
-                {!boardsLoaded ? (
-                  <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-6">
-                    Loading rating...
-                  </p>
-                ) : leaderboardTab !== "weekly" && rows.length === 0 ? (
-                  <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-6">
-                    {leaderboardTab === "friends"
-                      ? isAuthed
-                        ? "No friends yet — find athletes in your profile 👥"
-                        : "Login to see your friends rating 🔐"
-                      : "Be the first on the leaderboard! 🏆"}
-                  </p>
-                ) : leaderboardTab === "weekly" ? (
-                  <div>
-                    {weeklyEntries.length === 0 && (
-                      <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-6">
-                        Weekly league пуста — синхронизируй тренировку на этой неделе 🏁
-                      </p>
-                    )}
-                    {!weeklyBoard?.formed && (
-                      <p className="text-center text-[10px] font-bold tracking-widest uppercase text-[#666] py-3 bg-[#ffd500]/20">
-                        Лига формируется: {weeklyEntries.length}/{weeklyBoard?.min_size ?? 5} атлетов
-                      </p>
-                    )}
-                    {weeklyEntries.map((p: any, idx: number) => (
-                      <div key={p.id}>
-                        {(idx === 0 || weeklyEntries[idx - 1].division !== p.division) && (
-                          <div className="px-4 py-2 bg-[#171a38] text-white text-[10px] font-bold tracking-widest uppercase flex justify-between">
-                            <span>{p.division ?? "Open · provisional"}</span>
-                            <span className="text-white/60">{p.division_source}</span>
-                          </div>
-                        )}
-                        <div className={`flex justify-between items-center px-4 py-3 border-t border-black/10 ${p.is_you ? "bg-[#ffd500]/20" : "hover:bg-black/5"} transition-colors`}>
-                          <div className="flex items-center gap-3 min-w-0">
-                            <span className="font-display text-lg w-8 text-[#999]">
-                              {String(p.rank).padStart(2, "0")}
-                            </span>
-                            <Link href={`/u/${p.username}`} className="font-bold uppercase tracking-wide text-sm hover:text-[#5866f2] transition-colors truncate">
-                              {p.display_name} {p.is_you && "(YOU)"}
-                            </Link>
-                          </div>
-                          <span className="font-display text-[#171a38]">{p.score}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <>
-                  {rows.slice(0, 10).map((player, idx) => (
-                    <div
-                      key={player.id}
-                      className={`flex justify-between items-center px-4 py-3 ${
-                        idx > 0 ? "border-t border-black/20" : ""
-                      } ${player.is_you ? "bg-[#5866f2]/15 border-l-4 border-l-[#5866f2]" : "hover:bg-black/5"} transition-colors`}
-                    >
-                      <div className="flex items-center gap-3 md:gap-4">
-                        <span className={`font-display text-lg w-8 ${player.rank <= 3 ? "text-[#ff4b26]" : "text-[#999]"}`}>
-                          {String(player.rank).padStart(2, "0")}
-                        </span>
-                        <div className="min-w-0">
-                          <Link
-                            href={`/u/${player.username}`}
-                            className={`font-bold uppercase tracking-wide text-sm hover:text-[#5866f2] transition-colors truncate block ${player.is_you ? "text-[#5866f2]" : ""}`}
-                          >
-                            {player.display_name} {player.is_you && "(YOU)"}
-                          </Link>
-                          <Label className="text-[#666]">LVL {player.level}</Label>
-                        </div>
-                      </div>
-                      <span className="font-display text-[#ff4b26]">
-                        {Math.round(player.total_xp).toLocaleString()}
-                      </span>
-                    </div>
-                  ))}
-                  {yourRank !== null && yourRank > 10 && (
-                    <>
-                      <div className="border-t border-black/20 px-4 py-2 text-center font-display text-xl text-[#999]">…</div>
-                      <div className="flex justify-between items-center px-4 py-3 border-t-2 border-black bg-[#ffd500]/20">
-                        <span className="font-bold uppercase tracking-wide text-sm">Ты — место {yourRank}</span>
-                        <span className="font-display text-[#ff4b26]">{yourRank}</span>
-                      </div>
-                    </>
-                  )}
-                  </>
-                )}
-              </div>
+        <XpDynamics
+          chartData={chartData}
+          chartKey={chartKey}
+          isTouch={isTouch}
+          touchTooltipActive={touchTooltipActive}
+          tooltipPortal={tooltipPortal}
+          cursorY={cursorY}
+          handleChartTouchStart={handleChartTouchStart}
+          handleChartTouchMove={handleChartTouchMove}
+          handleChartTouchEnd={handleChartTouchEnd}
+          handleMouseMove={handleMouseMove}
+        />
 
-              {leaderboardTab === "friends" && (
-                <div className="border-t-2 border-black">
-                  {isAuthed ? (
-                    <button
-                      onClick={handleInvite}
-                      className="w-full px-4 py-3 text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-[#5866f2] hover:text-white transition-colors"
-                    >
-                      + Invite friends
-                    </button>
-                  ) : (
-                    <Link
-                      href="/login"
-                      className="block w-full px-4 py-3 text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-[#5866f2] hover:text-white transition-colors"
-                    >
-                      🔐 Login to see friends
-                    </Link>
-                  )}
-                  {inviteMessage && (
-                    <p className="text-[10px] font-bold text-[#5866f2] text-center py-2 bg-[#5866f2]/10">{inviteMessage}</p>
-                  )}
-                </div>
-              )}
-
-              <Label className="text-[#999] text-center py-3 border-t border-black/20">
-                * Live rating · real athletes data
-              </Label>
-            </div>
-          </div>
-        </div>
-
-        {/* График */}
-        {chartData.length > 0 && (
-          <div className="border-b-2 border-black">
-            <div className="grid md:grid-cols-[200px_1fr]">
-              <div className="hidden md:flex flex-col justify-between p-5 border-r-2 border-black bg-[#f4f4f0]">
-                <div>
-                  <p className="font-display uppercase text-xl md:text-2xl tracking-tight leading-none">XP Dynamics</p>
-                  <div className="h-0.5 bg-black mt-3 mb-4"></div>
-                  <Label className="text-[#666] block">Last {chartData.length} workouts</Label>
-                </div>
-                <span className="font-display text-4xl mt-auto">↓</span>
-              </div>
-              <div className="p-4 md:p-6 bg-white" onMouseMove={handleMouseMove}>
-                <div className="md:hidden mb-4">
-                  <SectionTitle>XP Dynamics</SectionTitle>
-                </div>
-                <div className="h-64 w-full relative">
-                  <ResponsiveContainer key={chartKey} width="100%" height="100%">
-                    <AreaChart
-                      data={chartData}
-                      margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                      onTouchStart={isTouch ? handleChartTouchStart : undefined}
-                      onTouchMove={isTouch ? handleChartTouchMove : undefined}
-                      onTouchEnd={isTouch ? handleChartTouchEnd : undefined}
-                    >
-                      <defs>
-                        <linearGradient id="xpFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#ff4b26" stopOpacity={0.3} />
-                          <stop offset="100%" stopColor="#ff4b26" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#00000015" />
-                      <XAxis dataKey="date" tick={{ fill: "#666", fontSize: 10 }} axisLine={{ stroke: "#000" }} tickLine={false} />
-                      <YAxis tick={{ fill: "#666", fontSize: 10 }} axisLine={false} tickLine={false} width={36} />
-                      <Tooltip
-                        content={<XpTooltip chartData={chartData} />}
-                        trigger="hover"
-                        active={isTouch ? touchTooltipActive : undefined}
-                        portal={tooltipPortal}
-                        allowEscapeViewBox={{ x: true, y: true }}
-                        wrapperStyle={{
-                          position: "fixed",
-                          left: "50%",
-                          transform: "translateX(-50%)",
-                          top: `${cursorY - 200}px`,
-                          width: "calc(100% - 32px)",
-                          maxWidth: "900px",
-                          pointerEvents: "none",
-                          zIndex: 100,
-                        }}
-                        cursor={
-                          isTouch
-                            ? touchTooltipActive
-                              ? { stroke: "#5866f2", strokeWidth: 1 }
-                              : false
-                            : { stroke: "#5866f2", strokeWidth: 1 }
-                        }
-                      />
-                      <Area type="monotone" dataKey="xp" stroke="#ff4b26" strokeWidth={2.5} fill="url(#xpFill)"
-                        activeDot={{ r: 5, fill: "#171a38", stroke: "#ffd500", strokeWidth: 2 }} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Тренировки */}
-        <div className="border-b-2 border-black">
-          <div className="grid md:grid-cols-[200px_1fr]">
-            <div className="hidden md:flex flex-col justify-between p-5 border-r-2 border-black bg-[#ff4b26] text-white">
-              <div>
-                <p className="font-display uppercase text-xl md:text-2xl tracking-tight leading-none">Workouts</p>
-                <div className="h-0.5 bg-black mt-3 mb-4"></div>
-                <Label className="block text-white/80">Hover / long press for details</Label>
-              </div>
-              <span className="font-display text-4xl mt-auto">↓</span>
-            </div>
-            <div className="p-4 md:p-6">
-              <div className="md:hidden mb-4">
-                <SectionTitle tone="orange">Workouts</SectionTitle>
-              </div>
-              <p className="text-[10px] font-bold tracking-widest uppercase text-[#666] mb-3">
-                {selectedWeekStart ? `Неделя с ${selectedWeekStart}` : "Выбранная неделя"}
-              </p>
-              {weekLoading ? <p className="text-sm text-[#666]">Загружаем тренировки недели…</p> : weekActivities.length === 0 ? (
-                <p className="text-sm text-[#666]">
-                  За выбранную неделю тренировок нет. Синхронизируй данные в{" "}
-                  <Link href="/profile" className="text-[#5866f2] font-bold underline">профиле</Link>.
-                </p>
-              ) : (
-                <div className="space-y-0">
-                  {weekActivities.map((act: any, idx: number) => (
-                    <div key={act.id ?? idx} className={idx > 0 ? "border-t-2 border-black" : ""}>
-                      <ActivityCard act={act} />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <WorkoutsList
+          weekLoading={weekLoading}
+          weekActivities={weekActivities}
+          selectedWeekStart={selectedWeekStart}
+        />
 
       </div>
     </main>
