@@ -8,6 +8,7 @@ type WorkoutsListProps = { weekLoading: boolean; weekActivities: any[]; selected
 
 export default function WorkoutsList({ weekLoading, weekActivities, selectedWeekStart }: WorkoutsListProps) {
   return (
+    <>
     
         <div className="border-b-2 border-black">
           <div className="grid md:grid-cols-[200px_1fr]">
@@ -43,5 +44,6 @@ export default function WorkoutsList({ weekLoading, weekActivities, selectedWeek
             </div>
           </div>
         </div>
+    </>
   );
 }
