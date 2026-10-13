@@ -505,10 +505,30 @@ class InterfaceDataApiTests(unittest.TestCase):
         self.add_sleep(date(2026, 10, 20), secs=7 * 3600, score=90)
         self.db.commit()
 
+        class EmptyDuelQuery:
+            def filter(self, *args):
+                return self
+
+            def distinct(self):
+                return self
+
+            def order_by(self, *args):
+                return self
+
+            def all(self):
+                return []
+
+        class EmptyDuelSession:
+            def query(self, *args):
+                return EmptyDuelQuery()
+
+            def close(self):
+                pass
+
         with (
             patch("app.routers.sync._user_local_today", return_value=date(2026, 10, 25)),
             patch("app.services.quests._user_local_today", return_value=date(2026, 10, 25)),
-            patch("app.routers.sync.SessionLocal", self.Session),
+            patch("app.routers.sync.SessionLocal", EmptyDuelSession),
         ):
             sync_router._recalculate_user_xp_v6(self.db, self.user)
             self.db.commit()
