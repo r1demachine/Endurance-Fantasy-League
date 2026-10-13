@@ -130,9 +130,9 @@ export default function QuestsBoard({ quests, loading, error, onRetry }: Props) 
           {weeklyQuests.length > 0 && (
             <section aria-labelledby="weekly-achievements-heading" className="mb-5">
               <div className="mb-3 border-b-2 border-black pb-2">
-                <h4 id="weekly-achievements-heading" className="font-display text-lg uppercase md:text-xl">Эта неделя</h4>
+                <h4 id="weekly-achievements-heading" className="font-display text-lg uppercase md:text-xl">Недельные достижения</h4>
                 {weekStart && <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-[#666]">{formatWeekRange(weekStart)}</p>}
-                <p className="mt-1 text-xs text-[#666]">Недельный прогресс сбрасывается каждый понедельник. Награды за прошлые недели остаются в истории XP.</p>
+                <p className="mt-1 text-xs text-[#666]">Прогресс считается по выбранной неделе и сбрасывается каждый понедельник. Начисленные награды за прошлые недели остаются в истории XP.</p>
               </div>
               {renderCards(weeklyQuests)}
             </section>
