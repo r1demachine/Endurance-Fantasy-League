@@ -6,7 +6,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { getCachedUser, subscribeUser, refreshUser } from "@/lib/apiCache";
 import { authApi, isAuthenticated } from "@/lib/auth";
-import ActivityCard from "@/components/ActivityCard";
 import { Star, Sticker } from "@/components/DreamBits";
 import { PauseDialog } from "@/components/Modal";
 import { getApiErrorMessage, parsePauseDate, parsePauseWeeks } from "@/components/dialog-utils";
