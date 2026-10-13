@@ -16,10 +16,14 @@ export default function Header() {
   const isHome = pathname === "/";
 
   const links = [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/duels", label: "Дуэли" },
-    { href: "/profile", label: "Profile" },
+    { href: "/dashboard", label: "Главная" },
+    { href: "/training", label: "Тренировки" },
+    { href: "/compete", label: "Соревнования" },
+    { href: "/profile", label: "Профиль" },
   ];
+
+  const isLinkActive = (href: string) =>
+    pathname === href || pathname.startsWith(`${href}/`);
 
   return (
     <>
@@ -52,7 +56,7 @@ export default function Header() {
                 </div>
                 <nav className="flex items-stretch ml-auto">
                   {links.map((link) => {
-                    const isActive = pathname === link.href;
+                    const isActive = isLinkActive(link.href);
                     return (
                       <Link
                         key={link.href}
@@ -75,14 +79,8 @@ export default function Header() {
       )}
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[60] bg-[#f4f4f0] text-[#111] border-t-2 border-black flex items-stretch pb-[env(safe-area-inset-bottom)]">
-        <Link
-          href="/"
-          className="w-14 shrink-0 border-r-2 border-black flex items-center justify-center font-display text-2xl active:bg-black active:text-white transition-colors"
-        >
-          F<span className="text-[#ff4b26]">.</span>
-        </Link>
         {links.map((link) => {
-          const isActive = pathname === link.href;
+          const isActive = isLinkActive(link.href);
           return (
             <Link
               key={link.href}
