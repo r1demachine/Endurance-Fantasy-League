@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getCachedUser, subscribeUser, refreshUser } from "@/lib/apiCache";
-import { authApi, isAuthenticated } from "@/lib/auth";
+import { clearUserCache, getCachedUser, subscribeUser, refreshUser } from "@/lib/apiCache";
+import { authApi, isAuthenticated, logout } from "@/lib/auth";
 import { Star, Sticker } from "@/components/DreamBits";
 import { Modal, PauseDialog } from "@/components/Modal";
 import ActivityUpload from "@/components/ActivityUpload";
@@ -15,6 +15,7 @@ import WeekBlock from "@/components/dashboard/WeekBlock";
 import EventsFeed from "@/components/dashboard/EventsFeed";
 import QuestsBoard from "@/components/dashboard/QuestsBoard";
 import DashboardTrainingSections from "@/components/dashboard/DashboardTrainingSections";
+import ProfileSettingsModal, { type SettingsTab } from "@/components/ProfileSettingsModal";
 
 type DuelSummary = {
   id: number;
@@ -27,7 +28,6 @@ type DuelSummary = {
 
 export default function Dashboard() {
   const router = useRouter();
-  const sourceNavigationStartedRef = useRef(false);
   const [userData, setUserData] = useState<any>(null);
   const [weekData, setWeekData] = useState<any>(null);
   const [events, setEvents] = useState<any[]>([]);
@@ -46,6 +46,7 @@ export default function Dashboard() {
   const [deloadBusy, setDeloadBusy] = useState(false);
   const [deloadError, setDeloadError] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
   const [syncError, setSyncError] = useState("");
@@ -162,6 +163,21 @@ export default function Dashboard() {
     setPauseDialogOpen(true);
   };
 
+  const openSourceSettings = () => {
+    if (!isAuthed) {
+      router.push("/login");
+      return;
+    }
+    setSettingsTab("sources");
+  };
+
+  const handleSettingsLogout = async () => {
+    await logout();
+    clearUserCache();
+    setSettingsTab(null);
+    router.push("/");
+  };
+
   const handlePauseSubmit = async (weeks: number) => {
     const validWeeks = parsePauseWeeks(weeks);
     if (validWeeks === null) {
@@ -222,10 +238,7 @@ export default function Dashboard() {
       return;
     }
     if (!data.user?.has_intervals_key) {
-      if (!sourceNavigationStartedRef.current) {
-        sourceNavigationStartedRef.current = true;
-        router.push("/profile?settings=sources", { scroll: false });
-      }
+      setSettingsTab("sources");
       return;
     }
 
@@ -263,19 +276,13 @@ export default function Dashboard() {
                 <p className="font-display text-4xl uppercase md:text-6xl">Добро пожаловать.</p>
                 <Label className="text-[#666]">Уровень 1 · 0 XP · 0 тренировок</Label>
                 <p className="mx-auto max-w-md text-sm text-[#666]">Синхронизируй первую тренировку — и прогресс появится здесь.</p>
-                <Link
-                  href="/profile?settings=sources"
-                  onClick={(event) => {
-                    if (sourceNavigationStartedRef.current) {
-                      event.preventDefault();
-                      return;
-                    }
-                    sourceNavigationStartedRef.current = true;
-                  }}
+                <button
+                  type="button"
+                  onClick={openSourceSettings}
                   className="inline-block bg-[#ff4b26] px-6 py-3 text-xs font-bold uppercase tracking-widest text-white transition-colors hover:bg-[#5866f2]"
                 >
                   Подключить источник →
-                </Link>
+                </button>
               </>
             ) : (
               <>
@@ -429,6 +436,16 @@ export default function Dashboard() {
           </Modal>
         )}
       </AnimatePresence>
+
+      {settingsTab && (
+        <ProfileSettingsModal
+          tab={settingsTab}
+          userData={userData ?? data}
+          onClose={() => setSettingsTab(null)}
+          onTabChange={setSettingsTab}
+          onLogout={handleSettingsLogout}
+        />
+      )}
     </main>
   );
 }

@@ -17,12 +17,10 @@ test("profile settings state is read from Next URL search params only", () => {
   assert.doesNotMatch(profile, /useState<SettingsTab/);
 });
 
-test("settings navigation uses router with scroll disabled and guards rapid duplicate clicks", () => {
+test("profile settings navigation keeps URL state and guards rapid duplicate clicks", () => {
   assert.match(profile, /router\.push\(target, \{ scroll: false \}\)/);
   assert.match(profile, /router\.replace\(target, \{ scroll: false \}\)/);
   assert.match(profile, /pendingSettingsUrlRef\.current === nextQuery/);
-  assert.match(dashboard, /sourceNavigationStartedRef\.current = true/);
-  assert.match(dashboard, /event\.preventDefault\(\)/);
 });
 
 test("query-only changes do not create new PageTransition instances", () => {
@@ -62,4 +60,16 @@ test("competition tab follows the URL and active panels render immediately", () 
 
 test("settings dialog establishes a theme-aware foreground instead of inheriting body text-white", () => {
   assert.match(modal, /bg-\[\#f4f4f0\] text-\[\#111\] shadow-none/);
+});
+
+
+test("dashboard opens source settings in a portal without navigating away from dashboard", () => {
+  assert.match(dashboard, /const \[settingsTab, setSettingsTab\] = useState<SettingsTab \| null>\(null\)/);
+  assert.match(dashboard, /setSettingsTab\("sources"\)/);
+  assert.match(dashboard, /onClick=\{openSourceSettings\}/);
+  assert.match(dashboard, /<ProfileSettingsModal/);
+  assert.match(dashboard, /userData=\{userData \?\? data\}/);
+  assert.match(dashboard, /onTabChange=\{setSettingsTab\}/);
+  assert.doesNotMatch(dashboard, /router\.push\("\/profile\?settings=sources"/);
+  assert.doesNotMatch(dashboard, /href="\/profile\?settings=sources"/);
 });
