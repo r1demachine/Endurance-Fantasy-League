@@ -413,6 +413,138 @@ class InterfaceDataApiTests(unittest.TestCase):
         ).first()
         self.assertIsNotNone(sleep_event)
 
+    def test_weekly_quest_progress_counts_current_week_only_and_accepts_both_sleep_rules(self):
+        today = date(2026, 10, 18)
+        # Four qualifying days and one sub-floor day in this week.
+        for index, day in enumerate((
+            date(2026, 10, 12), date(2026, 10, 13),
+            date(2026, 10, 14), date(2026, 10, 15),
+        )):
+            self.add_activity(
+                f"weekly-qualifying-{index}", stamp=datetime.combine(day, datetime.min.time()).replace(hour=9),
+                tss=30, moving_time=1800,
+            )
+        self.add_activity(
+            "weekly-under-floor", stamp=datetime(2026, 10, 16, 9, 0),
+            tss=10, moving_time=1800,
+        )
+        # 6h without a score and a score of 60 with less than 6h are both good nights.
+        self.add_sleep(date(2026, 10, 12), secs=6 * 3600, score=None)
+        self.add_sleep(date(2026, 10, 13), secs=5 * 3600, score=60)
+        self.add_sleep(date(2026, 10, 14), secs=5 * 3600, score=59)
+        # A qualified day from the prior week must not increase this week's counter.
+        self.add_activity(
+            "prior-week-ride", stamp=datetime(2026, 10, 11, 9, 0),
+            tss=40, moving_time=2400,
+        )
+        self.db.commit()
+
+        with patch("app.services.quests._user_local_today", return_value=today):
+            payload = sync_router.get_quests(current=self.user, db=self.db)
+        quests = {quest["slug"]: quest for quest in payload}
+        self.assertEqual(quests["qualifying_days_5"]["kind"], "weekly")
+        self.assertEqual(quests["qualifying_days_5"]["week_start"], "2026-10-12")
+        self.assertEqual(quests["qualifying_days_5"]["progress"]["current"], 4)
+        self.assertEqual(quests["qualifying_days_5"]["progress"]["target"], 5)
+        self.assertEqual(quests["good_sleep_5"]["progress"]["current"], 2)
+        self.assertEqual(quests["good_sleep_5"]["progress"]["target"], 5)
+        self.assertEqual(len(quests["good_sleep_5"]["progress"]["steps"]), 5)
+        self.assertTrue(quests["good_sleep_5"]["progress"]["steps"][0]["filled"])
+        self.assertTrue(quests["good_sleep_5"]["progress"]["steps"][1]["filled"])
+        self.assertFalse(quests["good_sleep_5"]["progress"]["steps"][2]["filled"])
+
+    def test_manual_workouts_do_not_qualify_for_weekly_long_or_intensity_quests(self):
+        self.add_activity(
+            "manual-long-hard", stamp=datetime(2026, 10, 14, 9, 0),
+            tss=200, moving_time=4 * 3600, manual=True,
+            intensity=1.0, hard_secs=3 * 3600,
+        )
+        self.db.commit()
+        with patch("app.services.quests._user_local_today", return_value=date(2026, 10, 18)):
+            payload = sync_router.get_quests(current=self.user, db=self.db)
+        quests = {quest["slug"]: quest for quest in payload}
+        self.assertEqual(quests["long_workout_2h"]["progress"]["current"], 0)
+        self.assertEqual(quests["long_workout_3h"]["progress"]["current"], 0)
+        self.assertEqual(quests["high_intensity"]["progress"]["current"], 0)
+        self.assertEqual(quests["long_workout_2h"]["status"], "open")
+        self.assertEqual(quests["high_intensity"]["status"], "open")
+
+    def test_weekly_awards_are_idempotent_and_persist_with_week_specific_keys(self):
+        today = date(2026, 10, 18)
+        workouts = [
+            ("monday-hour", datetime(2026, 10, 12, 9, 0), 30, 3600, 0.50, 0),
+            ("tuesday-if", datetime(2026, 10, 13, 9, 0), 30, 3600, 0.80, 0),
+            ("wednesday-three-hour", datetime(2026, 10, 14, 9, 0), 35, 3 * 3600, 0.55, 0),
+            ("thursday-hard-secs", datetime(2026, 10, 15, 9, 0), 30, 1800, 0.50, 300),
+            ("friday-hour", datetime(2026, 10, 16, 9, 0), 30, 1800, 0.50, 0),
+        ]
+        for key, stamp, tss, moving_time, intensity, hard_secs in workouts:
+            self.add_activity(
+                key, stamp=stamp, tss=tss, moving_time=moving_time,
+                intensity=intensity, hard_secs=hard_secs,
+            )
+        # Three nights qualify by duration alone; two qualify by score alone.
+        for day in (
+            date(2026, 10, 12), date(2026, 10, 13), date(2026, 10, 14),
+            date(2026, 10, 15), date(2026, 10, 16),
+        ):
+            if day.day in (12, 14, 16):
+                self.add_sleep(day, secs=6 * 3600, score=None)
+            else:
+                self.add_sleep(day, secs=5 * 3600, score=60)
+        self.db.commit()
+
+        with patch("app.services.quests._user_local_today", return_value=today):
+            activities = self.db.query(Activity).filter(Activity.user_id == self.user.id).all()
+            summaries = self.db.query(WeeklySummary).filter(WeeklySummary.user_id == self.user.id).all()
+            first_grant = quest_service.grant_quests(self.db, self.user, activities, summaries)
+            self.db.commit()
+            second_grant = quest_service.grant_quests(self.db, self.user, activities, summaries)
+            self.db.commit()
+
+        self.assertGreaterEqual(first_grant, 5)
+        self.assertEqual(second_grant, 0)
+        expected = {
+            "quest:qualifying_days_5:2026-10-12": 50,
+            "quest:good_sleep_5:2026-10-12": 35,
+            "quest:long_workout_2h:2026-10-12": 25,
+            "quest:long_workout_3h:2026-10-12": 15,
+            "quest:high_intensity:2026-10-12": 30,
+        }
+        for event_key, amount in expected.items():
+            event = self.db.query(XPEvent).filter(
+                XPEvent.user_id == self.user.id,
+                XPEvent.event_key == event_key,
+            ).first()
+            self.assertIsNotNone(event, event_key)
+            self.assertEqual(event.amount, amount, event_key)
+
+    def test_weekly_progress_resets_and_previous_week_awards_remain_queryable(self):
+        self.add_activity(
+            "last-week-long-ride", stamp=datetime(2026, 10, 6, 9, 0),
+            tss=40, moving_time=2 * 3600,
+        )
+        self.db.commit()
+        activities = self.db.query(Activity).filter(Activity.user_id == self.user.id).all()
+        summaries = self.db.query(WeeklySummary).filter(WeeklySummary.user_id == self.user.id).all()
+        quest_service.grant_quests(self.db, self.user, activities, summaries)
+        self.db.commit()
+
+        with patch("app.services.quests._user_local_today", return_value=date(2026, 10, 18)):
+            old_week = sync_router.get_quests(
+                week_start=date(2026, 10, 5), current=self.user, db=self.db,
+            )
+            current_week = sync_router.get_quests(current=self.user, db=self.db)
+        old_long = next(q for q in old_week if q["slug"] == "long_workout_2h")
+        current_long = next(q for q in current_week if q["slug"] == "long_workout_2h")
+        self.assertEqual(old_long["week_start"], "2026-10-05")
+        self.assertEqual(old_long["status"], "earned")
+        self.assertIsNotNone(old_long["earned_at"])
+        self.assertEqual(current_long["week_start"], "2026-10-12")
+        self.assertEqual(current_long["progress"]["current"], 0)
+        self.assertEqual(current_long["status"], "open")
+
+
     def test_quality_hard_requires_fifteen_minutes_and_attributes_first_qualifier(self):
         day = date(2026, 10, 13)
         rows = {
