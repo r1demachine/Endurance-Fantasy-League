@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -27,6 +27,7 @@ type DuelSummary = {
 
 export default function Dashboard() {
   const router = useRouter();
+  const sourceNavigationStartedRef = useRef(false);
   const [userData, setUserData] = useState<any>(null);
   const [weekData, setWeekData] = useState<any>(null);
   const [events, setEvents] = useState<any[]>([]);
@@ -221,7 +222,10 @@ export default function Dashboard() {
       return;
     }
     if (!data.user?.has_intervals_key) {
-      router.push("/profile?settings=sources");
+      if (!sourceNavigationStartedRef.current) {
+        sourceNavigationStartedRef.current = true;
+        router.push("/profile?settings=sources", { scroll: false });
+      }
       return;
     }
 
@@ -259,7 +263,19 @@ export default function Dashboard() {
                 <p className="font-display text-4xl uppercase md:text-6xl">Добро пожаловать.</p>
                 <Label className="text-[#666]">Уровень 1 · 0 XP · 0 тренировок</Label>
                 <p className="mx-auto max-w-md text-sm text-[#666]">Синхронизируй первую тренировку — и прогресс появится здесь.</p>
-                <Link href="/profile?settings=sources" className="inline-block bg-[#ff4b26] px-6 py-3 text-xs font-bold uppercase tracking-widest text-white transition-colors hover:bg-[#5866f2]">Подключить источник →</Link>
+                <Link
+                  href="/profile?settings=sources"
+                  onClick={(event) => {
+                    if (sourceNavigationStartedRef.current) {
+                      event.preventDefault();
+                      return;
+                    }
+                    sourceNavigationStartedRef.current = true;
+                  }}
+                  className="inline-block bg-[#ff4b26] px-6 py-3 text-xs font-bold uppercase tracking-widest text-white transition-colors hover:bg-[#5866f2]"
+                >
+                  Подключить источник →
+                </Link>
               </>
             ) : (
               <>
