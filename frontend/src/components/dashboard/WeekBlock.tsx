@@ -1,4 +1,4 @@
-function WeekBlock({
+export default function WeekBlock({
   weekData, weekOptions, selectedWeekStart, onWeekChange, onPreviousWeek, onNextWeek,
   canGoPrevious, canGoNext, onPauseClick,
 }: {
