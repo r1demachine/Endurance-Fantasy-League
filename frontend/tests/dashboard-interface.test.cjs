@@ -30,6 +30,15 @@ test("dashboard removes weekly XP events and puts workouts after the complete ac
   assert.match(questsBoard, /quest\.progress_reason/);
 });
 
+test("weekly and lifetime achievements are shown as separate sections with live progress", () => {
+  assert.match(questsBoard, /quest.kind === "weekly"/);
+  assert.match(questsBoard, /Эта неделя/);
+  assert.match(questsBoard, /formatWeekRange\(weekStart\)/);
+  assert.match(questsBoard, /Разовые достижения/);
+  assert.match(questsBoard, /progress.steps.map/);
+  assert.match(questsBoard, /aria-valuenow=\{Math.min\(current, target\)\}/);
+});
+
 test("year chart and weekly summary share week state without clipped outlines", () => {
   assert.match(dashboard, /selectedWeekStart=\{selectedWeekStart \|\| weekData\?\.week_start \|\| ""\}/);
   assert.match(dashboard, /onWeekChange=\{setSelectedWeekStart\}/);
