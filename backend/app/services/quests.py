@@ -449,9 +449,10 @@ def quest_states(db, user) -> list:
         slug = quest["slug"]
         event_key = trainer_key if slug == "trainer_week" else _quest_key(slug)
         event = earned.get(event_key)
-        if event:
+        trainer_earned = slug == "trainer_week" and trainer_done
+        if event or trainer_earned:
             status = "earned"
-            earned_at = event.date.strftime("%d.%m.%Y") if event.date else None
+            earned_at = event.date.strftime("%d.%m.%Y") if event and event.date else None
         elif quest.get("requires"):
             status = "unavailable"
             earned_at = None
