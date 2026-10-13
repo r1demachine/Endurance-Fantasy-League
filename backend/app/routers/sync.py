@@ -377,6 +377,8 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         if e.event_type in ("quest", "achievement"):
             quest_by_week[e.week_start] = quest_by_week.get(e.week_start, 0.0) + e.amount
 
+    generated_quality_consistency_keys: set[str] = set()
+
     def upsert_event(key, etype, amount, ws, dt, title):
         ev = events_by_key.get(key)
         if amount <= 0:
@@ -384,6 +386,8 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
                 db.delete(ev)
                 events_by_key.pop(key, None)
             return
+        if etype in {"consistency", "quality_hard", "quality_long"}:
+            generated_quality_consistency_keys.add(key)
         if ev is not None:
             ev.amount = round_xp(amount)
             ev.title = title
@@ -477,7 +481,22 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         summ.paused = bool(paused)
         summ.finalized = finalized
 
-    # 6) лиги: закрываем завершённые недели без лиги
+    # Remove regularity/quality events that no longer correspond to the current
+    # activity history (for example, an Intervals update makes a workout
+    # non-qualifying). Only v6-generated event types are reconciled here.
+    for event in all_events:
+        if event.event_type not in {"consistency", "quality_hard", "quality_long"}:
+            continue
+        event_week = X6.week_start(event.week_start.date()) if event.week_start else None
+        if (
+            event_week is not None
+            and event_week >= activation_ws
+            and event.event_key not in generated_quality_consistency_keys
+        ):
+            db.delete(event)
+            events_by_key.pop(event.event_key, None)
+
+    # 6) lиги: финализация идемпотентна; повторно обрабатываем незавершённые недели.
     for ws in all_weeks:
         if ws < this_week:
             _close_league_week(db, ws, allow_week_notifications=allow_week_notifications)
@@ -554,8 +573,28 @@ def _close_league_week(
     from ..models import LeagueWeek, LeagueMembership
 
     ws_dt = datetime.combine(week_start_d, datetime.min.time())
-    if db.query(LeagueWeek).filter(LeagueWeek.week_start == ws_dt).first():
-        return False
+    existing_week = db.query(LeagueWeek).filter(LeagueWeek.week_start == ws_dt).first()
+    if existing_week:
+        # Retry idempotent side effects for a week whose league row was already
+        # committed before duel finalization or Telegram delivery failed.
+        try:
+            from ..models import Duel
+            has_open_duels = db.query(Duel.id).filter(
+                Duel.week_start == ws_dt,
+                Duel.status.in_(["pending", "active"]),
+            ).first() is not None
+            if has_open_duels:
+                from .duels import finalize_duels_for_week
+                finalize_duels_for_week(db, week_start_d)
+        except Exception as exc:  # noqa: BLE001
+            print(f"finalize_duels_for_week retry failed: {type(exc).__name__}")
+        if allow_week_notifications:
+            try:
+                from ..services.telegram_week import notify_week_results
+                notify_week_results(db, week_start_d)
+            except Exception as exc:  # noqa: BLE001
+                print(f"telegram week notify retry failed: {type(exc).__name__}")
+        return existing_week.status == "closed"
     summaries = (
         db.query(WeeklySummary)
         .filter(WeeklySummary.week_start == ws_dt, WeeklySummary.finalized == True)  # noqa: E712
@@ -622,10 +661,8 @@ def _close_league_week(
                 entry["summ"].division_source = entry["source"]
 
     db.commit()
-    if not formed:
-        return False
 
-    # These side effects run once, immediately after this week actually forms.
+    # Finalize duels even if the league itself did not meet the minimum size.
     try:
         from .duels import finalize_duels_for_week
         finalize_duels_for_week(db, week_start_d)
@@ -638,7 +675,8 @@ def _close_league_week(
             notify_week_results(db, week_start_d)
         except Exception as exc:  # noqa: BLE001
             print(f"telegram week notify failed: {type(exc).__name__}")
-    return True
+
+    return bool(formed)
 
 def _has_invalid_since_query(errors: list[dict]) -> bool:
     """Identify malformed since query parameters for the route's HTTP 400 contract."""
