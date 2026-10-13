@@ -1,6 +1,8 @@
-"""Удаление аккаунта: дуэли, клубы, заявка + пароль."""
+"""Account deletion cleans user-owned tables and enforces a rate limit."""
+import ast
 import unittest
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -84,6 +86,24 @@ class CleanupSocialTests(unittest.TestCase):
         )
         self.assertIn("sync_progress", executed)
         self.assertIn("heart_rate_settings_history", executed)
+
+    def test_account_delete_endpoint_has_rate_limit(self):
+        source_path = Path(__file__).resolve().parents[1] / "app" / "routers" / "privacy.py"
+        module = ast.parse(source_path.read_text(encoding="utf-8"))
+        endpoint = next(
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == "delete_account"
+        )
+        rate_limits = [
+            decorator.args[0].value
+            for decorator in endpoint.decorator_list
+            if isinstance(decorator, ast.Call)
+            and isinstance(decorator.func, ast.Attribute)
+            and decorator.func.attr == "limit"
+            and decorator.args
+            and isinstance(decorator.args[0], ast.Constant)
+        ]
+        self.assertIn("5/hour", rate_limits)
 
     def test_delete_account_requires_password(self):
         user = SimpleNamespace(id=1, password_hash="x", api_key_encrypted=None, intervals_id=None)
