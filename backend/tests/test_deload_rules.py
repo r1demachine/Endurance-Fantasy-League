@@ -21,7 +21,7 @@ class DeloadRulesTests(unittest.TestCase):
             paused=False, manual_decision=False,
         )
         self.assertIsNone(D.manual_deload_block_reason(**common))
-        self.assertIn("85%", D.manual_deload_block_reason(**{**common, "current_load": 340.0}))
+        self.assertIn("85%", D.manual_deload_block_reason(**{**common, "current_load": 344.0}))
         self.assertIn("паузе", D.manual_deload_block_reason(**{**common, "paused": True}))
         self.assertIn("решение", D.manual_deload_block_reason(**{**common, "manual_decision": True}))
 
