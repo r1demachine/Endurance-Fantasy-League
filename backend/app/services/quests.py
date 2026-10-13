@@ -10,6 +10,22 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+# ── Настройки недельных достижений ──
+WEEKLY_QUALIFYING_DAYS_TARGET = 5
+WEEKLY_QUALIFYING_DAYS_REWARD = 50.0
+WEEKLY_GOOD_SLEEP_NIGHTS_TARGET = 5
+WEEKLY_GOOD_SLEEP_MIN_SECONDS = 6 * 60 * 60
+WEEKLY_GOOD_SLEEP_MIN_SCORE = 60
+WEEKLY_GOOD_SLEEP_REWARD = 35.0
+WEEKLY_LONG_WORKOUT_SECONDS = 2 * 60 * 60
+WEEKLY_LONG_WORKOUT_REWARD = 25.0
+WEEKLY_EXTRA_LONG_WORKOUT_SECONDS = 3 * 60 * 60
+WEEKLY_EXTRA_LONG_WORKOUT_REWARD = 15.0
+WEEKLY_HIGH_INTENSITY_IF_THRESHOLD = 0.75
+WEEKLY_HIGH_INTENSITY_HARD_SECONDS = 5 * 60
+WEEKLY_HIGH_INTENSITY_MIN_DURATION_SECONDS = 15 * 60
+WEEKLY_HIGH_INTENSITY_REWARD = 30.0
+
 QUEST_REGISTRY = [
     {
         "slug": "first_three_day_week",
@@ -47,12 +63,6 @@ QUEST_REGISTRY = [
         "desc": "Три ночи с данными о сне (продолжительность или sleep score)",
         "reward": 25.0,
     },
-    {
-        "slug": "trainer_week",
-        "title": "Станок",
-        "desc": "Тренировка на тренажёре от 30 минут в сезон",
-        "reward": 15.0,
-    },
     # ── Сейчас невычислимо: данные не синхронизируются. НЕ имитируем. ──
     {
         "slug": "power_record_20m",
@@ -77,6 +87,58 @@ def _quest_key(slug: str) -> str:
 
 TRAINER_WEEKLY_REWARD = 15.0
 
+# Every entry is reset on Monday. Keys are quest:{slug}:{week_start.isoformat()}.
+WEEKLY_QUEST_REGISTRY = [
+    {
+        "slug": "qualifying_days_5",
+        "title": "5 дней с тренировками",
+        "desc": "Пять календарных дней с квалифицирующей нагрузкой",
+        "reward": WEEKLY_QUALIFYING_DAYS_REWARD,
+        "target": WEEKLY_QUALIFYING_DAYS_TARGET,
+        "unit": "дней",
+    },
+    {
+        "slug": "good_sleep_5",
+        "title": "5 ночей хорошего сна",
+        "desc": "Не менее 6 часов сна или sleep score от 60",
+        "reward": WEEKLY_GOOD_SLEEP_REWARD,
+        "target": WEEKLY_GOOD_SLEEP_NIGHTS_TARGET,
+        "unit": "ночей",
+    },
+    {
+        "slug": "long_workout_2h",
+        "title": "Длинная тренировка",
+        "desc": "Тренировка продолжительностью не менее 2 часов",
+        "reward": WEEKLY_LONG_WORKOUT_REWARD,
+        "target": 1,
+        "unit": "тренировка",
+    },
+    {
+        "slug": "long_workout_3h",
+        "title": "Тренировка 3 часа+",
+        "desc": "Дополнительная награда за тренировку от 3 часов",
+        "reward": WEEKLY_EXTRA_LONG_WORKOUT_REWARD,
+        "target": 1,
+        "unit": "тренировка",
+    },
+    {
+        "slug": "high_intensity",
+        "title": "Высокая интенсивность",
+        "desc": "Не manual: реальная IF ≥ 0,75 или не менее 5 минут в Z4+",
+        "reward": WEEKLY_HIGH_INTENSITY_REWARD,
+        "target": 1,
+        "unit": "тренировка",
+    },
+    {
+        "slug": "trainer_week",
+        "title": "Станок",
+        "desc": "Тренировка на тренажёре от 30 минут в сезон",
+        "reward": TRAINER_WEEKLY_REWARD,
+        "target": 1,
+        "unit": "тренировка",
+    },
+]
+
 
 def _trainer_season_active(day: date) -> bool:
     """Сезон станка: с 1 октября по 30 апреля включительно."""
@@ -87,8 +149,13 @@ def _trainer_week_start(day: date) -> date:
     return day - timedelta(days=day.weekday())
 
 
+def _weekly_quest_key(slug: str, week_start: date) -> str:
+    return f"quest:{slug}:{week_start.isoformat()}"
+
+
 def _trainer_week_key(week_start: date) -> str:
-    return f"quest:trainer_week:{week_start.isoformat()}"
+    # Preserve the established trainer_week key format for old XPEvent history.
+    return _weekly_quest_key("trainer_week", week_start)
 
 
 def _is_qualifying_trainer_activity(activity) -> bool:
@@ -129,9 +196,10 @@ def _record_duration_progress(activities) -> float:
     return min(best_progress, 100.0)
 
 
-def _qualifying_training_days_by_week(activities) -> dict[date, int]:
-    """Recompute qualifying days directly from activities, not weekly XP events."""
+def _qualifying_days_by_week(activities) -> dict[date, list[date]]:
+    """Qualified calendar days, using exactly the XP v6 qualifying-day rules."""
     from . import xp_v6 as X6
+
     per_day = {}
     for activity in activities:
         day = _local_activity_day(activity)
@@ -148,12 +216,22 @@ def _qualifying_training_days_by_week(activities) -> dict[date, int]:
         row = per_day.setdefault(day, {"activities": [], "tss": 0.0})
         row["activities"].append({"moving_time": getattr(activity, "moving_time", 0)})
         row["tss"] += float(load or 0.0)
-    by_week: dict[date, int] = {}
+
+    by_week: dict[date, list[date]] = {}
     for day, row in per_day.items():
         if X6.is_qualifying_day(row["activities"], row["tss"]):
-            week_start = _trainer_week_start(day)
-            by_week[week_start] = by_week.get(week_start, 0) + 1
+            week = _trainer_week_start(day)
+            by_week.setdefault(week, []).append(day)
+    for days in by_week.values():
+        days.sort()
     return by_week
+
+
+def _qualifying_training_days_by_week(activities) -> dict[date, int]:
+    return {
+        week: len(days)
+        for week, days in _qualifying_days_by_week(activities).items()
+    }
 
 
 def _best_goal_streak(summaries) -> int:
@@ -218,23 +296,185 @@ CONDS = {
 }
 
 
+def _wellness_day(row) -> date | None:
+    value = getattr(row, "date", None)
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def _group_weekly_data(activities, wellness_rows):
+    activities_by_week: dict[date, list] = {}
+    wellness_by_week: dict[date, list] = {}
+    for activity in activities:
+        day = _local_activity_day(activity)
+        if day is not None:
+            activities_by_week.setdefault(_trainer_week_start(day), []).append(activity)
+    for row in wellness_rows:
+        day = _wellness_day(row)
+        if day is not None:
+            wellness_by_week.setdefault(_trainer_week_start(day), []).append(row)
+    return activities_by_week, wellness_by_week
+
+
+def _high_intensity_qualifies(activity) -> bool:
+    """Real-load IF or 5 minutes of hard intervals; manually created workouts never qualify."""
+    if bool(getattr(activity, "is_manual", False)):
+        return False
+    from . import xp_v6 as X6
+
+    moving_time = int(getattr(activity, "moving_time", 0) or 0)
+    if moving_time < WEEKLY_HIGH_INTENSITY_MIN_DURATION_SECONDS:
+        return False
+    if int(getattr(activity, "hard_secs", 0) or 0) >= WEEKLY_HIGH_INTENSITY_HARD_SECONDS:
+        return True
+    _load, source = X6.resolve_training_load({
+        "training_load": getattr(activity, "training_load", None),
+        "moving_time": moving_time,
+        "intensity": getattr(activity, "intensity", None),
+        "sport_type": getattr(activity, "sport_type", None),
+        "is_manual": False,
+        "source": getattr(activity, "source", None),
+    })
+    return (
+        source == "real"
+        and float(getattr(activity, "intensity", 0.0) or 0.0) >= WEEKLY_HIGH_INTENSITY_IF_THRESHOLD
+    )
+
+
+def _weekly_quest_progress(week_start: date, activities, wellness_rows) -> dict[str, dict]:
+    """Build progress from raw records for one week; internal earned date is not exposed."""
+    qualified_days = _qualifying_days_by_week(activities).get(week_start, [])
+    good_sleep_days = sorted({
+        day for row in wellness_rows
+        if (day := _wellness_day(row)) is not None
+        and _trainer_week_start(day) == week_start
+        and (
+            float(getattr(row, "sleep_secs", 0) or 0) >= WEEKLY_GOOD_SLEEP_MIN_SECONDS
+            or float(getattr(row, "sleep_score", 0) or 0) >= WEEKLY_GOOD_SLEEP_MIN_SCORE
+        )
+    })
+    week_activities = [
+        activity for activity in activities
+        if _local_activity_day(activity) is not None
+        and _trainer_week_start(_local_activity_day(activity)) == week_start
+    ]
+    measured_activities = [
+        activity for activity in week_activities
+        if not bool(getattr(activity, "is_manual", False))
+        and int(getattr(activity, "moving_time", 0) or 0) > 0
+    ]
+    long_2h = sorted(
+        (activity for activity in measured_activities
+         if int(getattr(activity, "moving_time", 0) or 0) >= WEEKLY_LONG_WORKOUT_SECONDS),
+        key=lambda activity: (_local_activity_day(activity), int(getattr(activity, "id", 0) or 0)),
+    )
+    long_3h = sorted(
+        (activity for activity in measured_activities
+         if int(getattr(activity, "moving_time", 0) or 0) >= WEEKLY_EXTRA_LONG_WORKOUT_SECONDS),
+        key=lambda activity: (_local_activity_day(activity), int(getattr(activity, "id", 0) or 0)),
+    )
+    hard_activities = sorted(
+        (activity for activity in week_activities if _high_intensity_qualifies(activity)),
+        key=lambda activity: (_local_activity_day(activity), int(getattr(activity, "id", 0) or 0)),
+    )
+    trainer_activities = sorted(
+        (activity for activity in week_activities if _is_qualifying_trainer_activity(activity)),
+        key=lambda activity: (_local_activity_day(activity), int(getattr(activity, "id", 0) or 0)),
+    )
+
+    raw = {
+        "qualifying_days_5": {
+            "current": min(len(qualified_days), WEEKLY_QUALIFYING_DAYS_TARGET),
+            "_earned_day": qualified_days[WEEKLY_QUALIFYING_DAYS_TARGET - 1]
+            if len(qualified_days) >= WEEKLY_QUALIFYING_DAYS_TARGET else None,
+        },
+        "good_sleep_5": {
+            "current": min(len(good_sleep_days), WEEKLY_GOOD_SLEEP_NIGHTS_TARGET),
+            "_earned_day": good_sleep_days[WEEKLY_GOOD_SLEEP_NIGHTS_TARGET - 1]
+            if len(good_sleep_days) >= WEEKLY_GOOD_SLEEP_NIGHTS_TARGET else None,
+            "steps": [
+                {
+                    "slot": index + 1,
+                    "label": f"Ночь {index + 1}",
+                    "filled": index < min(len(good_sleep_days), WEEKLY_GOOD_SLEEP_NIGHTS_TARGET),
+                    "date": good_sleep_days[index].isoformat() if len(good_sleep_days) > index else None,
+                }
+                for index in range(WEEKLY_GOOD_SLEEP_NIGHTS_TARGET)
+            ],
+        },
+        "long_workout_2h": {
+            "current": int(bool(long_2h)),
+            "_earned_day": _local_activity_day(long_2h[0]) if long_2h else None,
+            "_source_id": getattr(long_2h[0], "id", None) if long_2h else None,
+        },
+        "long_workout_3h": {
+            "current": int(bool(long_3h)),
+            "_earned_day": _local_activity_day(long_3h[0]) if long_3h else None,
+            "_source_id": getattr(long_3h[0], "id", None) if long_3h else None,
+        },
+        "high_intensity": {
+            "current": int(bool(hard_activities)),
+            "_earned_day": _local_activity_day(hard_activities[0]) if hard_activities else None,
+            "_source_id": getattr(hard_activities[0], "id", None) if hard_activities else None,
+        },
+        "trainer_week": {
+            "current": int(bool(trainer_activities)),
+            "_earned_day": _local_activity_day(trainer_activities[0]) if trainer_activities else None,
+            "_source_id": getattr(trainer_activities[0], "id", None) if trainer_activities else None,
+            "season_active": _trainer_season_active(week_start),
+            "season_window": {"starts_month": 10, "ends_month": 4},
+        },
+    }
+    progress = {}
+    for quest in WEEKLY_QUEST_REGISTRY:
+        values = raw[quest["slug"]]
+        item = {
+            "current": values["current"],
+            "target": quest["target"],
+            "unit": quest["unit"],
+        }
+        if "steps" in values:
+            item["steps"] = values["steps"]
+        for internal_key in ("_earned_day", "_source_id"):
+            if internal_key in values:
+                item[internal_key] = values[internal_key]
+        if quest["slug"] == "trainer_week":
+            item["season_active"] = values["season_active"]
+            item["season_window"] = values["season_window"]
+        progress[quest["slug"]] = item
+    return progress
+
+
 def grant_quests(db, user, acts, summaries) -> int:
-    """Idempotently grant awards when lifetime progress meets data-derived conditions."""
+    """Idempotently grant lifetime and weekly achievements from source records."""
     from sqlalchemy import or_
     from ..models import XPEvent, Wellness
 
     all_activities = list(acts)
     all_summaries = [summary for summary in summaries if summary.week_start]
-    sleep_dates = {
-        row.date
-        for row in db.query(Wellness.date)
+    wellness_rows = (
+        db.query(Wellness)
         .filter(
             Wellness.user_id == user.id,
             or_(Wellness.sleep_secs > 0, Wellness.sleep_score > 0),
         )
         .all()
-        if row.date
+    )
+    sleep_dates = {
+        day.isoformat()
+        for row in wellness_rows
+        if (day := _wellness_day(row)) is not None
     }
+    activities_by_week, wellness_by_week = _group_weekly_data(all_activities, wellness_rows)
+
     ctx = {
         "weeks": all_summaries,
         "acts": [activity for activity in all_activities if _local_activity_day(activity) is not None],
@@ -248,60 +488,67 @@ def grant_quests(db, user, acts, summaries) -> int:
         local_zone = ZoneInfo("UTC")
     today = datetime.now(timezone.utc).astimezone(local_zone).date()
     granted = 0
-    for q in QUEST_REGISTRY:
-        slug = q["slug"]
+
+    # Lifetime awards keep their stable quest:{slug}:lifetime keys.
+    for quest in QUEST_REGISTRY:
+        slug = quest["slug"]
         if slug not in CONDS:
-            continue  # unavailable-квесты не начисляются
+            continue
         key = _quest_key(slug)
         exists = (
             db.query(XPEvent)
             .filter(XPEvent.user_id == user.id, XPEvent.event_key == key)
             .first()
         )
-        if exists:
+        if exists or not CONDS[slug](ctx):
             continue
-        if CONDS[slug](ctx):
-            db.add(XPEvent(
-                user_id=user.id,
-                week_start=datetime.combine(today - timedelta(days=today.weekday()), datetime.min.time()),
-                date=datetime.combine(today, datetime.min.time()),
-                event_type="quest",
-                event_key=key,
-                amount=q["reward"],
-                source_type="quest",
-                title=f"🏆 {q['title']}",
-            ))
-            granted += 1
-    # Повторяемый недельный бонус за станок: не больше одного XPEvent на неделю.
-    trainer_by_week = {}
-    for activity in all_activities:
-        activity_day = _local_activity_day(activity)
-        if activity_day is None or not _is_qualifying_trainer_activity(activity):
-            continue
-        week_start = _trainer_week_start(activity_day)
-        trainer_by_week.setdefault(week_start, activity)
-
-    for week_start, activity in trainer_by_week.items():
-        key = _trainer_week_key(week_start)
-        exists = db.query(XPEvent).filter(
-            XPEvent.user_id == user.id,
-            XPEvent.event_key == key,
-        ).first()
-        if exists:
-            continue
-        activity_dt = getattr(activity, "start_date_local", None) or activity.start_date
         db.add(XPEvent(
             user_id=user.id,
-            week_start=datetime.combine(week_start, datetime.min.time()),
-            date=activity_dt if isinstance(activity_dt, datetime) else datetime.combine(activity_dt, datetime.min.time()),
+            week_start=datetime.combine(today - timedelta(days=today.weekday()), datetime.min.time()),
+            date=datetime.combine(today, datetime.min.time()),
             event_type="quest",
             event_key=key,
-            amount=TRAINER_WEEKLY_REWARD,
+            amount=quest["reward"],
             source_type="quest",
-            source_id=str(activity.id) if getattr(activity, "id", None) is not None else None,
-            title="🏆 Станок",
+            title=f"🏆 {quest['title']}",
         ))
         granted += 1
+
+    # Evaluate every historical week. Paused/deload weeks do not suppress these awards.
+    weeks_with_source_data = set(activities_by_week) | set(wellness_by_week)
+    for week in sorted(weeks_with_source_data):
+        progress_by_slug = _weekly_quest_progress(
+            week,
+            activities_by_week.get(week, []),
+            wellness_by_week.get(week, []),
+        )
+        for quest in WEEKLY_QUEST_REGISTRY:
+            slug = quest["slug"]
+            progress = progress_by_slug[slug]
+            if int(progress["current"]) < int(progress["target"]):
+                continue
+            key = _weekly_quest_key(slug, week)
+            exists = (
+                db.query(XPEvent)
+                .filter(XPEvent.user_id == user.id, XPEvent.event_key == key)
+                .first()
+            )
+            if exists:
+                continue
+            earned_day = progress.get("_earned_day") or week
+            source_id = progress.get("_source_id")
+            db.add(XPEvent(
+                user_id=user.id,
+                week_start=datetime.combine(week, datetime.min.time()),
+                date=datetime.combine(earned_day, datetime.min.time()),
+                event_type="quest",
+                event_key=key,
+                amount=quest["reward"],
+                source_type="quest",
+                source_id=str(source_id) if source_id is not None else None,
+                title=f"🏆 {quest['title']}",
+            ))
+            granted += 1
 
     return granted
 
@@ -321,13 +568,16 @@ def _user_local_today(user) -> date:
     return datetime.now(timezone.utc).astimezone(zone).date()
 
 
-def quest_states(db, user) -> list:
-    """Quest statuses and measurable progress for the authenticated user's data."""
+def quest_states(db, user, selected_week: date | None = None) -> list:
+    """Return selected-week progress (current week by default) and lifetime progress."""
     from sqlalchemy import or_
     from ..models import Activity, XPEvent, Wellness, WeeklySummary
 
     today = _user_local_today(user)
-    current_week = _trainer_week_start(today)
+    selected_week_start = _trainer_week_start(selected_week or today)
+    current_calendar_week = _trainer_week_start(today)
+    is_historical_week = selected_week_start < current_calendar_week
+
     earned = {
         event.event_key: event
         for event in db.query(XPEvent)
@@ -343,8 +593,7 @@ def quest_states(db, user) -> list:
     )
     all_summaries = [summary for summary in summaries if summary.week_start]
     dated_activities = [activity for activity in activities if _local_activity_day(activity) is not None]
-
-    sleep_records = (
+    wellness_rows = (
         db.query(Wellness)
         .filter(
             Wellness.user_id == user.id,
@@ -353,9 +602,53 @@ def quest_states(db, user) -> list:
         .order_by(Wellness.date.asc())
         .all()
     )
-    sleep_dates = sorted({row.date for row in sleep_records if row.date})
-    night_count = len(sleep_dates)
+    activities_by_week, wellness_by_week = _group_weekly_data(dated_activities, wellness_rows)
 
+    weekly_progress = _weekly_quest_progress(
+        selected_week_start,
+        activities_by_week.get(selected_week_start, []),
+        wellness_by_week.get(selected_week_start, []),
+    )
+    out = []
+    for quest in WEEKLY_QUEST_REGISTRY:
+        slug = quest["slug"]
+        event = earned.get(_weekly_quest_key(slug, selected_week_start))
+        values = weekly_progress[slug]
+        current = int(values["current"])
+        target = int(values["target"])
+        source_completed = current >= target
+        # A past XPEvent is a durable receipt. For the current week, source data is
+        # the authority even if a stale event remains from an earlier calculation.
+        complete = source_completed or (is_historical_week and event is not None)
+        status = "earned" if complete else "open"
+        earned_day = values.get("_earned_day")
+        earned_at = (
+            event.date.strftime("%d.%m.%Y")
+            if event is not None and event.date is not None and complete
+            else earned_day.strftime("%d.%m.%Y") if earned_day is not None and source_completed else None
+        )
+        progress = {
+            key: value for key, value in values.items()
+            if not key.startswith("_")
+        }
+        out.append({
+            "slug": slug,
+            "title": quest["title"],
+            "desc": quest["desc"],
+            "reward": int(quest["reward"]),
+            "kind": "weekly",
+            "week_start": selected_week_start.isoformat(),
+            "status": status,
+            "earned_at": earned_at,
+            "progress": progress,
+        })
+
+    # Lifetime statuses/progress remain based on raw history, independent of XPEvent presence.
+    sleep_dates = sorted({
+        day for row in wellness_rows
+        if (day := _wellness_day(row)) is not None
+    })
+    night_count = len(sleep_dates)
     qualifying_days_by_week = _qualifying_training_days_by_week(dated_activities)
     best_training_days = max(qualifying_days_by_week.values(), default=0)
     finalized = sorted(
@@ -376,18 +669,7 @@ def quest_states(db, user) -> list:
         week = _trainer_week_start(activity_day)
         ride_km_by_week[week] = ride_km_by_week.get(week, 0.0) + max(float(activity.distance or 0.0), 0.0) / 1000.0
     best_ride_km = max(ride_km_by_week.values(), default=0.0)
-
     duration_progress = _record_duration_progress(activities)
-
-    trainer_key = _trainer_week_key(current_week)
-    trainer_qualifies = any(
-        _is_qualifying_trainer_activity(activity)
-        and _local_activity_day(activity) is not None
-        and _trainer_week_start(_local_activity_day(activity)) == current_week
-        for activity in activities
-    )
-    trainer_done = trainer_qualifies
-    trainer_season_active = _trainer_season_active(today)
 
     progress_by_slug = {
         "first_three_day_week": {
@@ -412,18 +694,12 @@ def quest_states(db, user) -> list:
                     "slot": index + 1,
                     "label": f"Ночь {index + 1}",
                     "filled": index < min(night_count, 3),
-                    "date": sleep_dates[-3:][index] if len(sleep_dates[-3:]) > index else None,
+                    "date": sleep_dates[-3:][index].isoformat() if len(sleep_dates[-3:]) > index else None,
                 }
                 for index in range(3)
             ],
         },
-        "trainer_week": {
-            "current": 1 if trainer_done else 0, "target": 1, "unit": "тренировка",
-            "season_active": trainer_season_active,
-            "season_window": {"starts_month": 10, "ends_month": 4},
-        },
     }
-
     completion_by_slug = {
         "first_three_day_week": best_training_days >= 3,
         "goal_met": any(
@@ -434,19 +710,15 @@ def quest_states(db, user) -> list:
         "first_50km_ride_week": any(distance >= 50.0 for distance in ride_km_by_week.values()),
         "record_duration": duration_progress >= 100.0,
         "sleep_connected": night_count >= 3,
-        "trainer_week": trainer_qualifies,
     }
 
-    out = []
     for quest in QUEST_REGISTRY:
         slug = quest["slug"]
-        event_key = trainer_key if slug == "trainer_week" else _quest_key(slug)
-        event = earned.get(event_key)
+        event = earned.get(_quest_key(slug))
         if quest.get("requires"):
             status, earned_at = "unavailable", None
         elif completion_by_slug.get(slug, False):
             status = "earned"
-            # Event date is optional metadata; current progress determines completion.
             earned_at = event.date.strftime("%d.%m.%Y") if event and event.date else None
         else:
             status, earned_at = "open", None
@@ -456,6 +728,7 @@ def quest_states(db, user) -> list:
             "title": quest["title"],
             "desc": quest["desc"],
             "reward": int(quest["reward"]),
+            "kind": "lifetime",
             "status": status,
             "earned_at": earned_at,
         }
