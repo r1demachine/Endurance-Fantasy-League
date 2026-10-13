@@ -1,15 +1,16 @@
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from ..auth import verify_password
 from ..config import get_settings
-from ..database import get_db
+from ..database import Base, get_db
 from ..dependencies import get_current_user
+from ..rate_limit import limiter
 from ..models import (
     Activity,
     Club,
@@ -103,6 +104,50 @@ def accept_current_data_policy(
     }
 
 
+# Tables cleaned through domain-specific logic below. All other tables with a
+# direct FK to users.id are swept dynamically, so adding a new user-owned table
+# does not silently make account deletion fail or leave personal data behind.
+_USER_FK_TABLES_CLEANED_EXPLICITLY = {
+    "activities",
+    "clubs",
+    "club_join_attempts",
+    "club_join_requests",
+    "club_members",
+    "duels",
+    "friendships",
+    "league_memberships",
+    "notifications",
+    "wellness",
+    "weekly_summaries",
+    "xp_events",
+}
+
+
+def _cleanup_remaining_user_fk_rows(db: Session, uid: int) -> set[str]:
+    """Delete any user-FK rows not already handled by domain-specific cleanup."""
+    users_table_name = User.__table__.name
+    cleaned: set[str] = set()
+    # Reverse dependency order: delete children before parents where possible.
+    for table in reversed(Base.metadata.sorted_tables):
+        if table.name in _USER_FK_TABLES_CLEANED_EXPLICITLY:
+            continue
+        user_fk_columns = [
+            column
+            for column in table.columns
+            if any(
+                fk.column.table.name == users_table_name and fk.column.name == "id"
+                for fk in column.foreign_keys
+            )
+        ]
+        if not user_fk_columns:
+            continue
+        db.execute(
+            table.delete().where(or_(*(column == uid for column in user_fk_columns)))
+        )
+        cleaned.add(table.name)
+    return cleaned
+
+
 def _cleanup_social_for_user(db: Session, uid: int) -> None:
     """Дуэли, клубы и заявки до удаления User (FK без cascade)."""
     db.query(Duel).filter(
@@ -160,7 +205,9 @@ def _cleanup_social_for_user(db: Session, uid: int) -> None:
 
 
 @router.delete("/account")
+@limiter.limit("5/hour")
 def delete_account(
+    request: Request,
     data: DeleteAccountInput,
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -188,6 +235,9 @@ def delete_account(
         )
         db.query(Wellness).filter(Wellness.user_id == uid).delete(synchronize_session=False)
         db.query(Activity).filter(Activity.user_id == uid).delete(synchronize_session=False)
+
+        # Future-proof cleanup for newly added tables with FK -> users.id.
+        _cleanup_remaining_user_fk_rows(db, uid)
 
         current.api_key_encrypted = None
         current.intervals_id = None
