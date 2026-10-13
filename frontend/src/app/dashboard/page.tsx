@@ -10,21 +10,12 @@ import { Star, Sticker } from "@/components/DreamBits";
 import { Modal, PauseDialog } from "@/components/Modal";
 import ActivityUpload from "@/components/ActivityUpload";
 import { getApiErrorMessage, parsePauseDate, parsePauseWeeks } from "@/components/dialog-utils";
-import { EmptyState, ErrorState, Label, SectionTitle, Skeleton } from "@/components/ui";
+import { ErrorState, Label, SectionTitle, Skeleton } from "@/components/ui";
 import WeekBlock from "@/components/dashboard/WeekBlock";
 import EventsFeed from "@/components/dashboard/EventsFeed";
 import QuestsBoard from "@/components/dashboard/QuestsBoard";
-import DashboardTrainingSections from "@/components/dashboard/DashboardTrainingSections";
+import YearWeeksChart from "@/components/dashboard/YearWeeksChart";
 import ProfileSettingsModal, { type SettingsTab } from "@/components/ProfileSettingsModal";
-
-type DuelSummary = {
-  id: number;
-  week_start: string | null;
-  status: string;
-  other: { username: string; display_name: string } | null;
-  my_xp: number | null;
-  other_xp: number | null;
-};
 
 export default function Dashboard() {
   const router = useRouter();
@@ -35,6 +26,8 @@ export default function Dashboard() {
   const [weekActivities, setWeekActivities] = useState<any[]>([]);
   const [selectedWeekStart, setSelectedWeekStart] = useState("");
   const [quests, setQuests] = useState<any[]>([]);
+  const [questsLoading, setQuestsLoading] = useState(true);
+  const [questsError, setQuestsError] = useState("");
   const [loading, setLoading] = useState(true);
   const [isAuthed, setIsAuthed] = useState(false);
   const [dashboardError, setDashboardError] = useState("");
@@ -50,9 +43,6 @@ export default function Dashboard() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
   const [syncError, setSyncError] = useState("");
-  const [nextDuel, setNextDuel] = useState<DuelSummary | null>(null);
-  const [duelLoading, setDuelLoading] = useState(true);
-  const [duelError, setDuelError] = useState("");
 
   useEffect(() => {
     const cached = getCachedUser();
@@ -60,11 +50,9 @@ export default function Dashboard() {
       setUserData(cached);
       setWeekData(cached.week || null);
       setEvents(cached.recent_events || []);
-      setQuests(cached.quests || []);
     }
     const unsubscribe = subscribeUser((user) => {
       setUserData(user);
-      setQuests(user?.quests || []);
     });
     void refreshUser();
     setIsAuthed(isAuthenticated());
@@ -100,32 +88,26 @@ export default function Dashboard() {
     return () => controller.abort();
   }, [selectedWeekStart]);
 
-  const loadNextDuel = useCallback(async () => {
-    setDuelLoading(true);
-    setDuelError("");
+  const loadQuests = useCallback(async () => {
+    setQuestsLoading(true);
+    setQuestsError("");
     try {
-      const response = await authApi.get("/api/duels");
-      const items = Array.isArray(response.data.items) ? response.data.items as DuelSummary[] : [];
-      const candidates = items.filter((duel) => duel.status === "active" || duel.status === "pending");
-      candidates.sort((a, b) => {
-        const priority = (status: string) => status === "active" ? 0 : 1;
-        return priority(a.status) - priority(b.status);
-      });
-      setNextDuel(candidates[0] ?? null);
+      const response = await authApi.get("/api/quests");
+      setQuests(Array.isArray(response.data) ? response.data : []);
     } catch (error: unknown) {
-      setDuelError(getApiErrorMessage(error, "Не удалось загрузить ближайшую дуэль."));
+      setQuestsError(getApiErrorMessage(error, "Не удалось загрузить достижения."));
     } finally {
-      setDuelLoading(false);
+      setQuestsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     if (!isAuthed) {
-      setDuelLoading(false);
+      setQuestsLoading(false);
       return;
     }
-    void loadNextDuel();
-  }, [isAuthed, loadNextDuel]);
+    void loadQuests();
+  }, [isAuthed, loadQuests]);
 
   if (loading) {
     return (
@@ -249,6 +231,7 @@ export default function Dashboard() {
       const response = await authApi.post("/api/sync", null, { params: { since } });
       setSyncMessage(`Синхронизация завершена: новых ${response.data.synced_count ?? 0}, обновлено ${response.data.updated_count ?? 0}, +${Math.round(Number(response.data.new_xp) || 0)} XP.`);
       await refreshUser(true);
+      await loadQuests();
     } catch (error: unknown) {
       setSyncError(getApiErrorMessage(error, "Не удалось синхронизировать данные."));
     } finally {
@@ -343,6 +326,11 @@ export default function Dashboard() {
 
         {isAuthed && !isEmpty && (
           <>
+            <YearWeeksChart
+              selectedWeekStart={selectedWeekStart || weekData?.week_start || ""}
+              onWeekChange={setSelectedWeekStart}
+            />
+
             {weekLoading ? (
               <section className="border-b-2 border-black bg-white p-5 md:p-6"><Skeleton label="Загружаем недельную сводку" rows={4} /></section>
             ) : (
@@ -363,45 +351,13 @@ export default function Dashboard() {
             )}
 
             <EventsFeed events={events} />
-            <QuestsBoard quests={quests} />
-
-            <section className="border-b-2 border-black bg-white">
-              <SectionTitle tone="indigo">Ближайшая дуэль</SectionTitle>
-              <div className="p-4 md:p-6">
-                {duelLoading ? (
-                  <Skeleton label="Загружаем дуэль" rows={2} />
-                ) : duelError ? (
-                  <ErrorState message={duelError} onRetry={() => void loadNextDuel()} />
-                ) : nextDuel ? (
-                  <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="font-display text-2xl uppercase">vs {nextDuel.other?.display_name ?? "Соперник"}</p>
-                      <Label className="mt-1 text-[#666]">{nextDuel.status === "active" ? "Идёт сейчас" : "Ожидает ответа"} · неделя {nextDuel.week_start || "—"}</Label>
-                    </div>
-                    {nextDuel.status === "active" && <p className="font-display text-2xl">{nextDuel.my_xp ?? 0} : {nextDuel.other_xp ?? 0} XP</p>}
-                    <Link href="/compete?tab=duels" className="border-2 border-black bg-[#ffd500] px-4 py-3 text-[10px] font-bold uppercase tracking-widest hover:bg-black hover:text-white">Открыть дуэль →</Link>
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <EmptyState>Пока нет ближайших дуэлей. Вызови друга и проверь прогресс недели.</EmptyState>
-                    <Link href="/compete?tab=duels" className="border-2 border-black px-4 py-3 text-[10px] font-bold uppercase tracking-widest hover:bg-[#ffd500]">Дуэли →</Link>
-                  </div>
-                )}
-              </div>
-            </section>
+            <QuestsBoard
+              quests={quests}
+              loading={questsLoading}
+              error={questsError}
+              onRetry={() => void loadQuests()}
+            />
           </>
-        )}
-
-        {isAuthed && !isEmpty && (
-          <DashboardTrainingSections
-            userData={data}
-            weekLoading={weekLoading}
-            weekActivities={weekActivities}
-            weekOptions={weekOptions}
-            weekData={weekData}
-            selectedWeekStart={selectedWeekStart}
-            onWeekChange={setSelectedWeekStart}
-          />
         )}
 
         <section className="border-b-2 border-black bg-[#f4f4f0] p-4 md:p-6">

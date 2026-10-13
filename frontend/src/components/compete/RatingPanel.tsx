@@ -55,9 +55,7 @@ export default function RatingPanel() {
     }
 
     try {
-      const params = requestedScope === "weekly"
-        ? { scope: requestedScope }
-        : { scope: requestedScope, limit: 10 };
+      const params = { scope: requestedScope, limit: 10 };
       const response = await authApi.get("/api/leaderboard", { params });
       const payload = response.data as LeaderboardPayload;
       setBoards((previous) => ({
@@ -90,6 +88,7 @@ export default function RatingPanel() {
       <div className="border-b-2 border-black bg-[#f4f4f0] p-4 md:p-6">
         <h2 className="font-display text-2xl uppercase">Рейтинг</h2>
         <p className="mt-1 text-sm text-[#666]">Первые 10 участников и твоё место в таблице.</p>
+        {scope === "weekly" && <p className="mt-2 max-w-3xl text-xs leading-relaxed text-[#555]">Weekly League считает недельный League Score и группирует участников по дивизионам. Если участников пока меньше минимального состава, лига формируется; Global и Friends показывают общий XP и не используют недельные дивизионы.</p>}
       </div>
       <Tabs
         ariaLabel="Рейтинг"
@@ -111,7 +110,7 @@ export default function RatingPanel() {
           <ErrorState message={errors[scope] || "Не удалось загрузить рейтинг."} onRetry={() => void loadScope(scope)} />
         ) : entries.length === 0 ? (
           <EmptyState>
-            {scope === "friends" ? "Нет данных для рейтинга друзей. Добавь друзей в профиле." : scope === "weekly" ? "Недельная лига ещё формируется или в ней пока нет участников." : "Рейтинг пока пуст."}
+            {scope === "friends" ? "Нет данных для рейтинга друзей. Добавь друзей в профиле." : scope === "weekly" ? "Лига формируется: недельных результатов пока недостаточно для таблицы." : "Рейтинг пока пуст."}
           </EmptyState>
         ) : (
           <div>

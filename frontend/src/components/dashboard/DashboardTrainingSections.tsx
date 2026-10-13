@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent, TouchEvent } from "react";
 import { authApi } from "@/lib/auth";
+import { formatWeekRange } from "@/lib/format";
 import { getApiErrorMessage } from "@/components/dialog-utils";
 import { EmptyState, ErrorState, Label, SectionTitle, Skeleton } from "@/components/ui";
 import WorkoutsList from "@/components/dashboard/WorkoutsList";
@@ -43,6 +44,7 @@ export default function DashboardTrainingSections({
   selectedWeekStart,
   onWeekChange,
 }: Props) {
+  const [activeTab, setActiveTab] = useState<"workouts" | "graphs">("workouts");
   const [seasonWeeks, setSeasonWeeks] = useState<any[]>([]);
   const [seasonWeeksLoading, setSeasonWeeksLoading] = useState(true);
   const [seasonWeeksError, setSeasonWeeksError] = useState("");
@@ -134,7 +136,30 @@ export default function DashboardTrainingSections({
 
   return (
     <div className="border-b-2 border-black">
-      <section className="border-b-2 border-black bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-black bg-[#f4f4f0] p-4 md:p-6">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Тренировки</p>
+          <h2 className="font-display text-2xl uppercase">Анализ тренировок</h2>
+        </div>
+        <div className="flex gap-2" role="tablist" aria-label="Разделы тренировок">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "workouts"}
+            onClick={() => setActiveTab("workouts")}
+            className={`border-2 border-black px-4 py-3 text-[10px] font-bold uppercase tracking-widest transition-colors ${activeTab === "workouts" ? "bg-[#5866f2] text-white" : "bg-white hover:bg-[#ffd500]"}`}
+          >Тренировки</button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "graphs"}
+            onClick={() => setActiveTab("graphs")}
+            className={`border-2 border-black px-4 py-3 text-[10px] font-bold uppercase tracking-widest transition-colors ${activeTab === "graphs" ? "bg-[#5866f2] text-white" : "bg-white hover:bg-[#ffd500]"}`}
+          >Графики</button>
+        </div>
+      </div>
+      {activeTab === "workouts" && (
+        <section className="border-b-2 border-black bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-black bg-[#f4f4f0] p-4 md:p-6">
           <div>
             <h2 className="font-display text-2xl uppercase">Список тренировок</h2>
@@ -144,7 +169,7 @@ export default function DashboardTrainingSections({
             <button type="button" aria-label="Предыдущая неделя" disabled={!canGoPrevious} onClick={() => moveWeek("previous")} className="h-10 w-10 border-2 border-black bg-white font-bold disabled:opacity-30 hover:bg-[#ffd500]">←</button>
             <select aria-label="Выбрать неделю" value={selectedWeekStart || weekData?.week_start || ""} onChange={(event) => onWeekChange(event.target.value)} className="min-w-0 max-w-[270px] border-2 border-black bg-white px-3 py-2 text-sm font-bold">
               {weekOptions.length === 0 && <option value="">Нет недель</option>}
-              {weekOptions.map((option) => <option key={option.week_start} value={option.week_start}>{option.label}</option>)}
+              {weekOptions.map((option) => <option key={option.week_start} value={option.week_start}>{formatWeekRange(option.week_start)}</option>)}
             </select>
             <button type="button" aria-label="Следующая неделя" disabled={!canGoNext} onClick={() => moveWeek("next")} className="h-10 w-10 border-2 border-black bg-white font-bold disabled:opacity-30 hover:bg-[#ffd500]">→</button>
           </div>
@@ -155,8 +180,10 @@ export default function DashboardTrainingSections({
           selectedWeekStart={selectedWeekStart || weekData?.week_start || ""}
         />
       </section>
+      )}
 
-      <section className="bg-white">
+      {activeTab === "graphs" && (
+        <section className="bg-white">
         {chartData.length > 0 ? (
           <XpDynamics
             chartData={chartData}
@@ -184,6 +211,7 @@ export default function DashboardTrainingSections({
           <SeasonWeeksChart weeks={seasonWeeks} />
         )}
       </section>
+      )}
     </div>
   );
 }

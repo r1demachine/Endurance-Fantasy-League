@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import ActivityCard from "@/components/ActivityCard";
+import { formatWeekRange } from "@/lib/format";
 import { EmptyState } from "@/components/ui";
 
 type WorkoutsListProps = {
@@ -48,7 +49,7 @@ export default function WorkoutsList({ weekLoading, weekActivities, selectedWeek
         </>
       )}
       <p className="border-t border-black/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-[#666]">
-        {selectedWeekStart ? `Неделя с ${selectedWeekStart}` : "Выбранная неделя"}
+        {selectedWeekStart ? formatWeekRange(selectedWeekStart) : "Выбранная неделя"}
       </p>
     </section>
   );

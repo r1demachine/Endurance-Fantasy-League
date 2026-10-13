@@ -1915,8 +1915,7 @@ def get_weekly_summary(
     today = _user_local_today(current)
     current_start = _monday_for_day(today)
     selected_start = _monday_for_day(week_start or today)
-    if selected_start > current_start:
-        raise HTTPException(status_code=422, detail="Нельзя выбрать будущую неделю")
+    # Future weeks are read-only empty periods; the year chart can select them.
     selected_dt = datetime.combine(selected_start, datetime.min.time())
     next_dt = selected_dt + timedelta(days=7)
 

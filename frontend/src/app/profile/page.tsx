@@ -1,10 +1,13 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { logout } from "@/lib/auth";
+import { authApi, logout } from "@/lib/auth";
+import { getApiErrorMessage } from "@/components/dialog-utils";
+import { ErrorState, Skeleton } from "@/components/ui";
+import { formatWeekRange } from "@/lib/format";
 import { clearUserCache, getCachedUser, refreshUser, subscribeUser } from "@/lib/apiCache";
 import ProfileSettingsModal, { type SettingsTab } from "@/components/ProfileSettingsModal";
 import SocialHub from "@/components/SocialHub";
@@ -34,6 +37,15 @@ type ProfileData = {
   recent_events?: { id: number | string; type: string; title?: string; amount?: number; date?: string }[];
 };
 
+type StatsRange = "season" | "year" | "week";
+type StatsData = { range: StatsRange; start_date: string; end_date: string; distance_km: number; hours: number; elevation: number; workouts: number; xp: number };
+const STATS_RANGES: { value: StatsRange; label: string }[] = [
+  { value: "season", label: "Сезон" }, { value: "year", label: "Год" }, { value: "week", label: "Неделя" },
+];
+function isStatsRange(value: string | null): value is StatsRange {
+  return value === "season" || value === "year" || value === "week";
+}
+
 const SETTINGS_TABS: SettingsTab[] = ["account", "appearance", "sources", "training", "privacy", "danger"];
 
 function isSettingsTab(value: string | null): value is SettingsTab {
@@ -42,13 +54,49 @@ function isSettingsTab(value: string | null): value is SettingsTab {
 
 function ProfileContent() {
   const [userData, setUserData] = useState<ProfileData | null>(null);
+  const [statsData, setStatsData] = useState<StatsData | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState("");
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
   const queryTab = searchParams.get("settings");
   const settingsTab = isSettingsTab(queryTab) ? queryTab : null;
+  const queryRange = searchParams.get("range");
+  const statsRange: StatsRange = isStatsRange(queryRange) ? queryRange : "season";
   const pendingSettingsUrlRef = useRef<string | null>(null);
+
+  const loadStats = useCallback(async () => {
+    setStatsLoading(true);
+    setStatsError("");
+    try {
+      const response = await authApi.get("/api/profile/stats", { params: { range: statsRange } });
+      setStatsData(response.data as StatsData);
+    } catch (requestError: unknown) {
+      setStatsError(getApiErrorMessage(requestError, "Не удалось загрузить статистику. Попробуй ещё раз."));
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [statsRange]);
+
+  useEffect(() => {
+    void loadStats();
+  }, [loadStats]);
+
+  useEffect(() => {
+    if (!isStatsRange(queryRange)) {
+      const params = new URLSearchParams(queryString);
+      params.set("range", "season");
+      router.replace(pathname + "?" + params.toString(), { scroll: false });
+    }
+  }, [pathname, queryRange, queryString, router]);
+
+  const changeStatsRange = (nextRange: StatsRange) => {
+    const params = new URLSearchParams(queryString);
+    params.set("range", nextRange);
+    router.replace(pathname + "?" + params.toString(), { scroll: false });
+  };
 
   useEffect(() => {
     const cached = getCachedUser();
@@ -91,7 +139,6 @@ function ProfileContent() {
   };
 
   const user = userData?.user;
-  const season = userData?.season_stats;
   const achievements = (userData?.recent_events ?? [])
     .filter((event) => event.type === "achievement")
     .slice(0, 3);
@@ -171,31 +218,44 @@ function ProfileContent() {
           </section>
         )}
 
-        <section className="border-b-2 border-black">
-          <div className="flex items-end justify-between gap-3 border-b-2 border-black px-4 py-3 sm:px-6">
+        <section className="min-h-[300px] border-b-2 border-black">
+          <div className="flex flex-wrap items-end justify-between gap-3 border-b-2 border-black px-4 py-3 sm:px-6">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Season Stats</p>
-              <h3 className="font-display text-xl uppercase sm:text-2xl">Статистика сезона</h3>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Athlete Stats</p>
+              <h3 className="font-display text-xl uppercase sm:text-2xl">Статистика</h3>
+              <p className="mt-1 text-xs text-[#666]">
+                {statsData ? statsRange === "season" ? "Сезон с " + new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long" }).format(new Date(statsData.start_date + "T12:00:00")) : statsRange === "year" ? new Date(statsData.start_date + "T12:00:00").getFullYear() + " год" : formatWeekRange(statsData.start_date) : "Выбери период"}
+              </p>
             </div>
-            <span className="pb-1 text-right text-[10px] font-bold uppercase tracking-wide text-[#666]">
-              С {season?.season_start ?? "текущего сезона"}
-            </span>
+            <div role="group" aria-label="Период статистики" className="flex border-2 border-black">
+              {STATS_RANGES.map((range) => (
+                <button key={range.value} type="button" aria-pressed={statsRange === range.value} onClick={() => changeStatsRange(range.value)} className={`min-h-10 border-r-2 border-black px-3 text-[10px] font-bold uppercase tracking-wide last:border-r-0 sm:px-4 ${statsRange === range.value ? "bg-[#ffd500]" : "bg-white hover:bg-black/5"}`}>
+                  {range.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-2 divide-x-2 divide-y-2 divide-black sm:grid-cols-3 sm:divide-y-0 lg:grid-cols-5">
-            {[
-              { label: "Дистанция", value: String(season?.total_km ?? 0), unit: "км" },
-              { label: "Время", value: String(season?.total_hours ?? 0), unit: "ч" },
-              { label: "Набор", value: String(season?.total_elevation ?? 0), unit: "м" },
-              { label: "Тренировки", value: String(season?.total_workouts ?? 0), unit: "" },
-              { label: "XP за сезон", value: String(Math.round(season?.total_xp ?? 0)), unit: "" },
-            ].map((item) => (
-              <div key={item.label} className="min-w-0 px-3 py-4 text-center sm:p-4">
-                <p className="font-display text-2xl sm:text-3xl">
-                  {item.value}<span className="ml-1 text-xs text-[#666]">{item.unit}</span>
-                </p>
-                <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-[#666] sm:text-[10px]">{item.label}</p>
+          <div className="min-h-[220px]">
+            {statsLoading ? (
+              <div className="p-4 sm:p-6"><Skeleton label="Загружаем статистику" rows={3} /></div>
+            ) : statsError ? (
+              <div className="p-4 sm:p-6"><ErrorState message={statsError} onRetry={() => void loadStats()} /></div>
+            ) : statsData ? (
+              <div className="grid grid-cols-2 divide-x-2 divide-y-2 divide-black sm:grid-cols-3 sm:divide-y-0 lg:grid-cols-5">
+                {[
+                  { label: "Дистанция", value: String(statsData.distance_km ?? 0), unit: "км" },
+                  { label: "Время", value: String(statsData.hours ?? 0), unit: "ч" },
+                  { label: "Набор", value: String(statsData.elevation ?? 0), unit: "м" },
+                  { label: "Тренировки", value: String(statsData.workouts ?? 0), unit: "" },
+                  { label: "XP за период", value: String(Math.round(statsData.xp ?? 0)), unit: "" },
+                ].map((item) => (
+                  <div key={item.label} className="min-w-0 px-3 py-4 text-center sm:p-4">
+                    <p className="font-display text-2xl sm:text-3xl">{item.value}<span className="ml-1 text-xs text-[#666]">{item.unit}</span></p>
+                    <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-[#666] sm:text-[10px]">{item.label}</p>
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : <div className="p-6 text-sm text-[#666]">Статистика пока недоступна.</div>}
           </div>
         </section>
 

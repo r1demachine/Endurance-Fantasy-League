@@ -17,6 +17,7 @@ export default function Header() {
 
   const links = [
     { href: "/dashboard", label: "Главная", emoji: "🏠" },
+    { href: "/training", label: "Тренировки", emoji: "📈" },
     { href: "/compete", label: "Соревнования", emoji: "🏆" },
     { href: "/profile", label: "Профиль", emoji: "👤" },
   ];
