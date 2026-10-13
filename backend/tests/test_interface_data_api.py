@@ -460,6 +460,108 @@ class InterfaceDataApiTests(unittest.TestCase):
         self.assertTrue(quests["good_sleep_5"]["progress"]["steps"][1]["filled"])
         self.assertFalse(quests["good_sleep_5"]["progress"]["steps"][2]["filled"])
 
+    def test_weekly_summary_recalculation_persists_repeatable_bonuses_idempotently(self):
+        week_start = date(2026, 10, 12)
+        self.user.xp_migrated_at = datetime(2026, 10, 12)
+        activity_ids = []
+        for index, day in enumerate((
+            date(2026, 10, 12), date(2026, 10, 13), date(2026, 10, 14),
+            date(2026, 10, 15), date(2026, 10, 16),
+        )):
+            activity = self.add_activity(
+                f"bonus-workout-{index}",
+                stamp=datetime.combine(day, datetime.min.time()).replace(hour=9),
+                tss=35, moving_time=60 * 60, intensity=0.80 if index == 0 else 0.50,
+            )
+            activity_ids.append(activity.id)
+
+        manual = self.add_activity(
+            "manual-bonus-excluded", stamp=datetime(2026, 10, 17, 9, 0),
+            tss=100, moving_time=2 * 60 * 60, manual=True, intensity=1.0,
+        )
+        short = self.add_activity(
+            "short-bonus-excluded", stamp=datetime(2026, 10, 17, 12, 0),
+            tss=30, moving_time=44 * 60,
+        )
+        good_sleep_days = (
+            (date(2026, 10, 12), 6 * 3600, None),
+            (date(2026, 10, 13), 5 * 3600, 60),
+            (date(2026, 10, 14), 5 * 3600, 59),
+            (date(2026, 10, 15), 5 * 3600, 90),
+            (date(2026, 10, 16), 0, 61),
+            (date(2026, 10, 17), 0, 62),
+        )
+        for day, secs, score in good_sleep_days:
+            self.add_sleep(day, secs=secs, score=score)
+        self.db.commit()
+
+        with (
+            patch("app.routers.sync._user_local_today", return_value=date(2026, 10, 25)),
+            patch("app.services.quests._user_local_today", return_value=date(2026, 10, 25)),
+            patch("app.routers.sync.SessionLocal", self.Session),
+        ):
+            sync_router._recalculate_user_xp_v6(self.db, self.user)
+            self.db.commit()
+
+            summary = self.db.query(WeeklySummary).filter(
+                WeeklySummary.user_id == self.user.id,
+                WeeklySummary.week_start == datetime.combine(week_start, datetime.min.time()),
+            ).one()
+            event_rows = self.db.query(XPEvent).filter(
+                XPEvent.user_id == self.user.id,
+                XPEvent.week_start == datetime.combine(week_start, datetime.min.time()),
+            ).all()
+            workout_bonus_events = [event for event in event_rows if event.event_type == "activity_bonus"]
+            sleep_bonus_events = [event for event in event_rows if event.event_type == "sleep_bonus"]
+
+            self.assertEqual(len(workout_bonus_events), 5)
+            self.assertEqual(len(sleep_bonus_events), 5)
+            self.assertEqual({event.source_id for event in workout_bonus_events}, {str(value) for value in activity_ids})
+            self.assertNotIn(str(manual.id), {event.source_id for event in workout_bonus_events})
+            self.assertNotIn(str(short.id), {event.source_id for event in workout_bonus_events})
+            self.assertTrue(all(event.amount == X6.WORKOUT_BONUS_XP for event in workout_bonus_events))
+            self.assertTrue(all(event.amount == X6.GOOD_SLEEP_BONUS_XP for event in sleep_bonus_events))
+
+            payload = sync_router.get_weekly_summary(
+                week_start=week_start, current=self.user, db=self.db,
+            )
+            week = payload["week"]
+            for field in ("effort_xp", "goal_xp", "consistency_xp", "quality_xp", "recovery_xp", "quest_xp"):
+                self.assertGreater(week[field], 0, field)
+            components = sum(
+                week[field] for field in (
+                    "effort_xp", "goal_xp", "consistency_xp",
+                    "quality_xp", "recovery_xp", "quest_xp",
+                )
+            )
+            self.assertAlmostEqual(week["total_xp"], components, places=1)
+            self.assertEqual(week["quest_xp"], round(summary.quest_xp, 1))
+            self.assertGreaterEqual(week["quest_xp"], 5 * X6.WORKOUT_BONUS_XP + 5 * X6.GOOD_SLEEP_BONUS_XP)
+
+            before = sorted((event.event_key, event.amount) for event in event_rows)
+            sync_router._recalculate_user_xp_v6(self.db, self.user)
+            self.db.commit()
+            after_rows = self.db.query(XPEvent).filter(
+                XPEvent.user_id == self.user.id,
+                XPEvent.week_start == datetime.combine(week_start, datetime.min.time()),
+            ).all()
+            after = sorted((event.event_key, event.amount) for event in after_rows)
+            self.assertEqual(after, before)
+            self.assertEqual(
+                self.db.query(XPEvent).filter(
+                    XPEvent.user_id == self.user.id,
+                    XPEvent.event_type == "activity_bonus",
+                ).count(),
+                5,
+            )
+            self.assertEqual(
+                self.db.query(XPEvent).filter(
+                    XPEvent.user_id == self.user.id,
+                    XPEvent.event_type == "sleep_bonus",
+                ).count(),
+                5,
+            )
+
     def test_manual_workouts_do_not_qualify_for_weekly_long_or_intensity_quests(self):
         self.add_activity(
             "manual-long-hard", stamp=datetime(2026, 10, 14, 9, 0),
