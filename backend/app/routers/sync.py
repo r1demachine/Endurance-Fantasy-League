@@ -380,7 +380,10 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
 
     generated_quality_consistency_keys: set[str] = set()
 
-    def upsert_event(key, etype, amount, ws, dt, title):
+    def upsert_event(
+        key, etype, amount, ws, dt, title, *,
+        source_type="week", source_id=None,
+    ):
         ev = events_by_key.get(key)
         if amount <= 0:
             if ev is not None and ev.id is not None:
@@ -392,13 +395,19 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         if ev is not None:
             ev.amount = round_xp(amount)
             ev.title = title
+            ev.week_start = datetime.combine(ws, datetime.min.time())
+            ev.date = datetime.combine(dt, datetime.min.time())
+            ev.source_type = source_type
+            ev.source_id = str(source_id) if source_id is not None else None
         else:
             ev = XPEvent(
                 user_id=user.id,
                 week_start=datetime.combine(ws, datetime.min.time()),
                 date=datetime.combine(dt, datetime.min.time()),
                 event_type=etype, event_key=key,
-                amount=round_xp(amount), source_type="week", title=title,
+                amount=round_xp(amount), source_type=source_type,
+                source_id=str(source_id) if source_id is not None else None,
+                title=title,
             )
             db.add(ev)
             events_by_key[key] = ev
@@ -446,33 +455,56 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         if ws >= activation_ws:
             for d, info in day_info.items():
                 if X6.week_start(d) == ws and info["qualifying"]:
-                    upsert_event(f"consistency:{d.isoformat()}", "consistency",
-                                 X6.CONSISTENCY_XP_PER_DAY, ws, d, "Training day +30")
+                    upsert_event(
+                        f"consistency:{d.isoformat()}", "consistency",
+                        X6.CONSISTENCY_XP_PER_DAY, ws, d, "Training day +30",
+                        source_type="day", source_id=d.isoformat(),
+                    )
 
         quality_xp = 0.0
         if ws >= activation_ws:
             day_dicts = {
                 d: [{
                     "moving_time": a.moving_time, "intensity": a.intensity, "hard_secs": a.hard_secs or 0,
-                    "load_source": "estimated" if a.tss_estimated else "real",
+                    "load_source": "manual" if bool(a.is_manual) else ("estimated" if a.tss_estimated else "real"),
                     "sport_type": a.sport_type, "id": a.id,
+                    "start_date": a.start_date_local or a.start_date,
                 } for a in info["acts"]]
                 for d, info in day_info.items() if X6.week_start(d) == ws
             }
+            quality_sources = X6.quality_event_activity_ids(day_dicts, medians)
             for kind, amt in X6.quality_events_week(day_dicts, medians):
-                upsert_event(f"{kind}:{ws.isoformat()}", kind, amt, ws, ws,
-                             "High intensity +15" if kind == "quality_hard" else "Long workout +15")
+                source_id = quality_sources.get(kind)
+                source_activity = next(
+                    (a for info in day_info.values() for a in info["acts"] if str(a.id) == str(source_id)),
+                    None,
+                )
+                source_stamp = (
+                    (source_activity.start_date_local or source_activity.start_date)
+                    if source_activity is not None else None
+                )
+                source_day = source_stamp.date() if source_stamp is not None else ws
+                upsert_event(
+                    f"{kind}:{ws.isoformat()}", kind, amt, ws, source_day,
+                    "High intensity +15" if kind == "quality_hard" else "Long workout +15",
+                    source_type="week", source_id=source_id,
+                )
                 quality_xp += amt
 
         goal_xp = 0.0
         recovery = 0.0
         if finalized and ws >= activation_ws:
             goal_xp = X6.weekly_goal_xp(eff_ratio)
-            upsert_event(f"weekly_goal:{ws.isoformat()}", "weekly_goal", goal_xp, ws, ws,
-                         f"Weekly goal {int(eff_ratio * 100)}%")
+            upsert_event(
+                f"weekly_goal:{ws.isoformat()}", "weekly_goal", goal_xp, ws, ws,
+                f"Weekly goal {int(eff_ratio * 100)}%",
+                source_type="week", source_id=ws.isoformat(),
+            )
             recovery = X6.recovery_xp_week(scores_by_week.get(ws, []))
-            upsert_event(f"recovery:{ws.isoformat()}", "recovery", recovery, ws, ws,
-                         "Recovery (sleep score)")
+            upsert_event(
+                f"recovery:{ws.isoformat()}", "recovery", recovery, ws, ws,
+                "Recovery (sleep score)", source_type="week", source_id=ws.isoformat(),
+            )
 
         quest_xp = round_xp(quest_by_week.get(datetime.combine(ws, datetime.min.time()), 0.0))
         consistency_xp = round_xp(min(days, X6.CONSISTENCY_DAYS_CAP) * X6.CONSISTENCY_XP_PER_DAY) if ws >= activation_ws else 0.0
@@ -1649,6 +1681,230 @@ def _week_activity_payload(act: Activity) -> dict:
     }
 
 
+def _activity_stamp(activity: Activity):
+    return activity.start_date_local or activity.start_date
+
+
+def _activity_load(activity: Activity, X6) -> float:
+    if activity.tss is not None:
+        return max(0.0, float(activity.tss or 0.0))
+    resolved, _source = X6.resolve_training_load({
+        "training_load": activity.training_load,
+        "moving_time": activity.moving_time,
+        "intensity": activity.intensity,
+        "sport_type": activity.sport_type,
+        "is_manual": bool(activity.is_manual),
+        "source": getattr(activity, "source", None),
+    })
+    return max(0.0, float(resolved or 0.0))
+
+
+@router.get("/activities/{activity_id}/xp")
+def get_activity_xp_breakdown(
+    activity_id: int,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Detailed XP components for one of the authenticated user's own workouts."""
+    activity = (
+        db.query(Activity)
+        .filter(Activity.id == activity_id, Activity.user_id == current.id)
+        .first()
+    )
+    if activity is None:
+        raise HTTPException(status_code=404, detail="Тренировка не найдена")
+    stamp = _activity_stamp(activity)
+    if stamp is None:
+        raise HTTPException(status_code=404, detail="У тренировки нет даты для расчёта XP")
+
+    from ..services import xp_v6 as X6
+    activity_day = stamp.date()
+    week_start = _monday_for_day(activity_day)
+    week_dt = datetime.combine(week_start, datetime.min.time())
+    all_activities = db.query(Activity).filter(Activity.user_id == current.id).all()
+    dated_activities = [
+        (row, _activity_stamp(row))
+        for row in all_activities
+        if _activity_stamp(row) is not None
+    ]
+    day_rows = sorted(
+        [row for row, row_stamp in dated_activities if row_stamp.date() == activity_day],
+        key=lambda row: (_activity_stamp(row), row.id),
+    )
+    week_rows = sorted(
+        [row for row, row_stamp in dated_activities if _monday_for_day(row_stamp.date()) == week_start],
+        key=lambda row: (_activity_stamp(row), row.id),
+    )
+    tss_by_id = {row.id: _activity_load(row, X6) for row, _row_stamp in dated_activities}
+    daily_tss = sum(tss_by_id.get(row.id, 0.0) for row in day_rows)
+    effective_daily_tss = min(daily_tss, X6.DAILY_TSS_CAP)
+    day_effort_xp = X6.effort_xp_day(daily_tss)
+    day_shares = X6.allocate_daily_effort_xp(
+        [{"tss": tss_by_id.get(row.id, 0.0)} for row in day_rows],
+        day_effort_xp,
+    )
+    day_share_by_id = {row.id: day_shares[index] for index, row in enumerate(day_rows)}
+    calculated_share = day_share_by_id.get(activity.id, 0.0)
+    stored_effort_xp = round_xp(activity.xp_earned or 0.0)
+    manual_factor = X6.MANUAL_LOAD_FACTOR if bool(activity.is_manual) else 1.0
+
+    history = [
+        {"id": row.id, "sport_type": row.sport_type, "moving_time": row.moving_time}
+        for row, _row_stamp in dated_activities
+    ]
+    medians = X6.medians_by_sport(history, set())
+    quality_by_day = defaultdict(list)
+    for row in week_rows:
+        row_stamp = _activity_stamp(row)
+        source = "manual" if bool(row.is_manual) else ("estimated" if row.tss_estimated else "real")
+        quality_by_day[row_stamp.date()].append({
+            "id": row.id,
+            "sport_type": row.sport_type,
+            "moving_time": row.moving_time,
+            "intensity": row.intensity,
+            "hard_secs": row.hard_secs or 0,
+            "load_source": source,
+            "start_date": row_stamp,
+        })
+    quality_source_ids = X6.quality_event_activity_ids(quality_by_day, medians)
+
+    week_events = (
+        db.query(XPEvent)
+        .filter(XPEvent.user_id == current.id, XPEvent.week_start == week_dt)
+        .order_by(XPEvent.date.asc(), XPEvent.id.asc())
+        .all()
+    )
+    consistency_events = [
+        event for event in week_events
+        if event.event_type == "consistency"
+        and (
+            event.event_key == f"consistency:{activity_day.isoformat()}"
+            or event.source_id == activity_day.isoformat()
+        )
+    ]
+    consistency_event = consistency_events[0] if consistency_events else None
+    consistency_xp = round_xp(consistency_event.amount or 0.0) if consistency_event else 0.0
+
+    day_quest_events = [
+        event for event in week_events
+        if event.event_type in {"quest", "achievement"}
+        and event.date is not None
+        and event.date.date() == activity_day
+    ]
+    quests = [{
+        "id": event.id,
+        "title": event.title or event.event_type,
+        "amount": round_xp(event.amount or 0.0),
+        "scope": "day",
+        "date": activity_day.isoformat(),
+    } for event in day_quest_events]
+    day_quest_xp = round_xp(sum(item["amount"] for item in quests))
+
+    quality_events = []
+    for event_type in ("quality_hard", "quality_long"):
+        event = next((row for row in week_events if row.event_type == event_type), None)
+        if event is None:
+            continue
+        attributed_id = event.source_id
+        if not attributed_id:
+            attributed_id = quality_source_ids.get(event_type)
+        if str(attributed_id) != str(activity.id):
+            continue
+        quality_events.append({
+            "type": event.event_type,
+            "title": event.title or event.event_type,
+            "amount": round_xp(event.amount or 0.0),
+            "scope": "week",
+            "activity_id": activity.id,
+        })
+
+    summary = (
+        db.query(WeeklySummary)
+        .filter(WeeklySummary.user_id == current.id, WeeklySummary.week_start == week_dt)
+        .first()
+    )
+    weekly_summary = {
+        "effort_xp": round_xp(summary.effort_xp or 0.0) if summary else 0.0,
+        "consistency_xp": round_xp(summary.consistency_xp or 0.0) if summary else 0.0,
+        "quality_xp": round_xp(summary.quality_xp or 0.0) if summary else 0.0,
+        "goal_xp": round_xp(summary.goal_xp or 0.0) if summary else 0.0,
+        "recovery_xp": round_xp(summary.recovery_xp or 0.0) if summary else 0.0,
+        "quest_xp": round_xp(summary.quest_xp or 0.0) if summary else 0.0,
+        "total_xp": round_xp(summary.total_xp or 0.0) if summary else 0.0,
+    }
+    component_sum = round_xp(sum(
+        weekly_summary[key]
+        for key in ("effort_xp", "consistency_xp", "quality_xp", "goal_xp", "recovery_xp", "quest_xp")
+    ))
+    week_bonus_events = []
+    for event_type, amount_key in (("weekly_goal", "goal_xp"), ("recovery", "recovery_xp")):
+        event = next((row for row in week_events if row.event_type == event_type), None)
+        amount = round_xp(event.amount or 0.0) if event else weekly_summary[amount_key]
+        if amount:
+            week_bonus_events.append({
+                "type": event_type,
+                "title": (event.title if event else None) or event_type,
+                "amount": amount,
+                "scope": "week",
+            })
+
+    quality_xp_for_activity = round_xp(sum(item["amount"] for item in quality_events))
+    related_day_xp = round_xp(consistency_xp + day_quest_xp)
+    related_week_xp = round_xp(quality_xp_for_activity + sum(item["amount"] for item in week_bonus_events))
+    return {
+        "activity_id": activity.id,
+        "activity_name": activity.name or "Без названия",
+        "date": activity_day.isoformat(),
+        "week_start": week_start.isoformat(),
+        "effort": {
+            "scope": "activity",
+            "tss": round(float(tss_by_id.get(activity.id, 0.0)), 2),
+            "day_tss": round(float(daily_tss), 2),
+            "effective_day_tss": round(float(effective_daily_tss), 2),
+            "daily_tss_cap": X6.DAILY_TSS_CAP,
+            "cap_applied": daily_tss > X6.DAILY_TSS_CAP,
+            "manual_coefficient": manual_factor,
+            "tss_before_manual_coefficient": round(
+                float(tss_by_id.get(activity.id, 0.0)) / manual_factor if manual_factor else 0.0, 2
+            ),
+            "day_total_effort_xp": day_effort_xp,
+            "calculated_activity_xp": round_xp(calculated_share),
+            "xp": stored_effort_xp,
+        },
+        "related": {
+            "day": {
+                "scope": "day",
+                "consistency": {
+                    "xp": consistency_xp,
+                    "qualifying": consistency_event is not None,
+                    "count_once_in_day_total": True,
+                },
+                "quests": quests,
+                "quest_xp": day_quest_xp,
+                "total_xp": related_day_xp,
+            },
+            "week": {
+                "scope": "week",
+                "quality": quality_events,
+                "quality_xp_for_this_activity": quality_xp_for_activity,
+                "shared_bonuses": week_bonus_events,
+                "shared_bonus_xp": round_xp(sum(item["amount"] for item in week_bonus_events)),
+                "quest_xp_for_week": weekly_summary["quest_xp"],
+                "total_xp_for_this_activity": related_week_xp,
+            },
+        },
+        "totals": {
+            "for_this_activity_xp": stored_effort_xp,
+            "related_to_day_xp": related_day_xp,
+            "related_to_week_xp": related_week_xp,
+            "weekly_summary_components_xp": component_sum,
+            "weekly_summary_total_xp": weekly_summary["total_xp"],
+            "weekly_summary_components_match": abs(component_sum - weekly_summary["total_xp"]) < 0.02,
+        },
+        "weekly_summary": weekly_summary,
+    }
+
+
 @router.get("/weekly-summary")
 def get_weekly_summary(
     week_start: _date | None = Query(default=None),
@@ -1791,6 +2047,64 @@ def get_weekly_summary(
         "activities": [_week_activity_payload(act) for act in activities],
         "is_current_week": selected_start == current_start,
     }
+
+
+@router.get("/season/weeks")
+@router.get("/year/weeks")
+def get_calendar_year_weeks(
+    year: int | None = Query(default=None, ge=1900, le=2200),
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Calendar-year timeline, including empty future weeks, Monday through Sunday."""
+    today = _user_local_today(current)
+    selected_year = year or today.year
+    year_start = _date(selected_year, 1, 1)
+    year_end = _date(selected_year, 12, 31)
+    first_week = _monday_for_day(year_start)
+    last_week = _monday_for_day(year_end)
+    current_week = _monday_for_day(today)
+
+    rows = (
+        db.query(WeeklySummary)
+        .filter(
+            WeeklySummary.user_id == current.id,
+            WeeklySummary.week_start >= datetime.combine(first_week, datetime.min.time()),
+            WeeklySummary.week_start <= datetime.combine(last_week, datetime.min.time()),
+        )
+        .order_by(WeeklySummary.week_start.asc())
+        .all()
+    )
+    by_week = {_monday_for_day(row.week_start.date()): row for row in rows if row.week_start}
+    weeks = []
+    cursor = first_week
+    while cursor <= last_week:
+        future = cursor > current_week
+        row = None if future else by_week.get(cursor)
+        weeks.append({
+            "week_start": cursor.isoformat(),
+            "week_end": (cursor + timedelta(days=6)).isoformat(),
+            "total_xp": round(float(row.total_xp or 0), 2) if row else 0,
+            "actual_load": round(float(row.actual_load or 0), 1) if row else 0,
+            "target_load": round(float(row.target_load or 0), 1) if row and row.target_load is not None else 0,
+            "has_summary": bool(row is not None),
+            "paused": bool(row.paused) if row else (_is_paused_week(current, cursor) if future else False),
+            "is_deload": bool(row.is_deload) if row else False,
+            "is_current": cursor == current_week,
+            "is_future": future,
+        })
+        cursor += timedelta(days=7)
+    return {"year": selected_year, "weeks": weeks}
+
+
+@router.get("/quests")
+def get_quests(
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Authenticated quest list with live progress values."""
+    from ..services.quests import quest_states
+    return quest_states(db, current)
 
 
 @router.get("/season-weeks")
@@ -1946,6 +2260,61 @@ def _is_accepted_friend(db: Session, viewer_id: int, owner_id: int) -> bool:
             and_(Friendship.from_user_id == owner_id, Friendship.to_user_id == viewer_id),
         ),
     ).first() is not None
+
+
+@router.get("/profile/stats")
+def get_profile_stats(
+    range: Literal["season", "year", "week"] = Query(default="season"),
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Personal stats for the current season, calendar year, or current Monday-based week."""
+    today = _user_local_today(current)
+    if range == "week":
+        start_day = _monday_for_day(today)
+        end_day = start_day + timedelta(days=7)
+    elif range == "year":
+        start_day = _date(today.year, 1, 1)
+        end_day = _date(today.year + 1, 1, 1)
+    else:
+        season_year = today.year if today.month >= 9 else today.year - 1
+        start_day = _date(season_year, 9, 1)
+        end_day = today + timedelta(days=1)
+
+    activities = db.query(Activity).filter(Activity.user_id == current.id).all()
+    ranged_activities = []
+    for activity in activities:
+        stamp = _activity_stamp(activity)
+        if stamp is None:
+            continue
+        if start_day <= stamp.date() < end_day:
+            ranged_activities.append(activity)
+
+    # Distance and duration omit manual records because these fields are user-entered
+    # and are not comparable to source-recorded training totals. Other workout metadata
+    # and XP still reflect the user's actual records.
+    measured_activities = [activity for activity in ranged_activities if not bool(activity.is_manual)]
+    xp_events = (
+        db.query(XPEvent)
+        .filter(XPEvent.user_id == current.id)
+        .all()
+    )
+    xp_from_activities = sum(float(activity.xp_earned or 0.0) for activity in ranged_activities)
+    xp_from_events = sum(
+        float(event.amount or 0.0)
+        for event in xp_events
+        if event.date is not None and start_day <= event.date.date() < end_day
+    )
+    return {
+        "range": range,
+        "start_date": start_day.isoformat(),
+        "end_date": (end_day - timedelta(days=1)).isoformat(),
+        "distance_km": round(sum(float(activity.distance or 0.0) for activity in measured_activities) / 1000.0, 2),
+        "hours": round(sum(float(activity.moving_time or 0.0) for activity in measured_activities) / 3600.0, 2),
+        "elevation": round(sum(float(activity.elevation_gain or 0.0) for activity in ranged_activities), 1),
+        "workouts": len(ranged_activities),
+        "xp": round_xp(xp_from_activities + xp_from_events),
+    }
 
 
 @router.get("/users/{username}")
