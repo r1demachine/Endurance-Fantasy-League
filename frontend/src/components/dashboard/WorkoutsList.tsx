@@ -8,7 +8,7 @@ type WorkoutsListProps = { weekLoading: boolean; weekActivities: any[]; selected
 
 export default function WorkoutsList({ weekLoading, weekActivities, selectedWeekStart }: WorkoutsListProps) {
   return (
-    {/* Тренировки */}
+    
         <div className="border-b-2 border-black">
           <div className="grid md:grid-cols-[200px_1fr]">
             <div className="hidden md:flex flex-col justify-between p-5 border-r-2 border-black bg-[#ff4b26] text-white">
