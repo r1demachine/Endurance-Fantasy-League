@@ -222,6 +222,7 @@ export default function ProfileSettingsModal({
                   hasKey={Boolean(userData?.user?.has_intervals_key)}
                   athleteId={userData?.user?.intervals_id ?? null}
                   onMessage={setNotice}
+                  allowDisconnectAction={false}
                 />
                 <TelegramBind />
               </div>
