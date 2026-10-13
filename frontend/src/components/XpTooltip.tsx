@@ -6,14 +6,26 @@
 export default function XpTooltip({
   active,
   payload,
-  chartData,
+  chartData = [],
   showSleep = true,
+  label,
+  content,
 }: {
   active?: boolean;
   payload?: any[];
-  chartData: any[];
+  chartData?: any[];
   showSleep?: boolean;
+  label?: string;
+  content?: string;
 }) {
+  if (content) {
+    return (
+      <span className="group relative inline-flex">
+        <button type="button" aria-label={`Пояснение: ${label || "XP"}`} className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#777] text-[10px] font-bold text-[#666] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#5866f2]">?</button>
+        <span role="tooltip" className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 hidden w-64 rounded border-2 border-black bg-white p-3 text-xs font-normal normal-case leading-relaxed text-[#333] shadow-[3px_3px_0_#000] group-hover:block group-focus-within:block">{content}</span>
+      </span>
+    );
+  }
   if (!active || !payload?.length) return null;
 
   const current = payload[0]?.payload;
