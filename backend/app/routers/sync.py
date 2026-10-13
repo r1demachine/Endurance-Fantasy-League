@@ -1931,7 +1931,7 @@ def _user_divisions_for_week(
     load_rows = (
         db.query(
             ranked_loads.c.user_id,
-            func.coalesce(func.avg(ranked_loads.c.actual_load), 0.0),
+            func.avg(func.coalesce(ranked_loads.c.actual_load, 0.0)),
         )
         .filter(ranked_loads.c.row_num <= 12)
         .group_by(ranked_loads.c.user_id)
