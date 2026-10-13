@@ -16,7 +16,7 @@ export default function RatingBoard({
   weeklyEntries, weeklyBoard, handleInvite, inviteMessage,
 }: RatingBoardProps) {
   return (
-    {/* Рейтинг */}
+    
         <div className="border-b-2 border-black">
           <div className="relative grid md:grid-cols-[200px_1fr]">
             <Sticker className="-top-3 right-4 bg-[#5866f2] text-white rotate-[3deg] z-30">who's here? 👀</Sticker>
