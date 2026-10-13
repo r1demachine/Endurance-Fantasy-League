@@ -3,10 +3,6 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { createPortal } from "react-dom";
-const subscribeToPortalRoot = () => () => {};
-const getPortalRootSnapshot = () => typeof document === "undefined" ? null : document.body;
-const getServerPortalRootSnapshot = () => null;
-
 import {
   buildConfirmPayload,
   formatPauseDate,
@@ -17,6 +13,10 @@ import {
   submitConfirmPayload,
   shouldCloseFromBackdrop,
 } from "./dialog-utils";
+
+const subscribeToPortalRoot = () => () => {};
+const getPortalRootSnapshot = () => typeof document === "undefined" ? null : document.body;
+const getServerPortalRootSnapshot = () => null;
 
 export interface ModalProps {
   title: string;
