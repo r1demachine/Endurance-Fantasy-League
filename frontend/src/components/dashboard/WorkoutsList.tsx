@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import ActivityCard from "@/components/ActivityCard";
 import { formatWeekRange } from "@/lib/format";
 import { EmptyState } from "@/components/ui";
@@ -10,9 +9,10 @@ type WorkoutsListProps = {
   weekLoading: boolean;
   weekActivities: any[];
   selectedWeekStart: string;
+  onOpenSources: () => void;
 };
 
-export default function WorkoutsList({ weekLoading, weekActivities, selectedWeekStart }: WorkoutsListProps) {
+export default function WorkoutsList({ weekLoading, weekActivities, selectedWeekStart, onOpenSources }: WorkoutsListProps) {
   const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
@@ -28,7 +28,7 @@ export default function WorkoutsList({ weekLoading, weekActivities, selectedWeek
       ) : weekActivities.length === 0 ? (
         <div className="p-4 md:p-6">
           <EmptyState>За выбранную неделю тренировок нет. Синхронизируй данные во вкладке Источники.</EmptyState>
-          <Link href="/profile?settings=sources" className="mt-3 inline-block text-sm font-bold text-[#5866f2] underline">Открыть источники данных →</Link>
+          <button type="button" onClick={onOpenSources} className="mt-3 inline-block text-sm font-bold text-[#5866f2] underline">Открыть источники данных →</button>
         </div>
       ) : (
         <>
