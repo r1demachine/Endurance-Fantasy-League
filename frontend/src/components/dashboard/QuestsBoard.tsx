@@ -1,12 +1,16 @@
-import Card from "@/components/ui/Card";
+"use client";
 
+import { useState } from "react";
+import Card from "@/components/ui/Card";
 export default function QuestsBoard({ quests }: { quests: any[] }) {
+  const [showAll, setShowAll] = useState(false);
+  const visibleQuests = showAll ? quests : quests.slice(0, 4);
   if (!quests?.length) return null;
   return (
     <div className="border-b-2 border-black bg-white p-4 md:p-6">
       <h3 className="font-display uppercase text-xl md:text-2xl mb-4">Достижения</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-        {quests.map((q) => (
+        {visibleQuests.map((q) => (
           <Card
             key={q.slug}
             className={`p-3 border-2 ${
@@ -33,6 +37,13 @@ export default function QuestsBoard({ quests }: { quests: any[] }) {
           </Card>
         ))}
       </div>
+      {quests.length > 4 && (
+        <div className="border-t-2 border-black px-4 py-3">
+          <button type="button" onClick={() => setShowAll((value) => !value)} className="text-[10px] font-bold uppercase tracking-widest text-[#5866f2] underline">
+            {showAll ? "Свернуть" : `Показать все (${quests.length})`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
