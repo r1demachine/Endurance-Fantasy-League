@@ -21,7 +21,7 @@ export default function IntervalsDisconnectAction({ hasKey }: { hasKey: boolean 
       setDialogOpen(false);
       setMessage(typeof response.data.message === "string"
         ? response.data.message
-        : "Intervals отвязан, импортированные данные удалены.");
+        : "Intervals отвязан. Тренировки, wellness и XP сохранены.");
       await refreshUser(true);
     } catch (caught: unknown) {
       setError(getApiErrorMessage(caught, "Не удалось отвязать Intervals."));
@@ -35,7 +35,7 @@ export default function IntervalsDisconnectAction({ hasKey }: { hasKey: boolean 
       <div className="border-b border-[#ff4b26]/30 px-4 py-3">
         <h3 className="font-display text-lg uppercase text-[#ff4b26]">Отвязать Intervals.icu</h3>
         <p className="mt-1 text-sm text-[#666]">
-          Отвязка удаляет ключ подключения, все тренировки и wellness пользователя, XP-события и недельные сводки. Сейчас серверный endpoint также удаляет тренировки, загруженные из FIT/GPX/TCX. Аккаунт останется.
+          Удалится только API-ключ и ID спортсмена. Все тренировки, данные восстановления, XP и недельная история останутся. Чтобы подключиться снова, потребуется ввести ключ заново.
         </p>
       </div>
       <div className="p-4">
@@ -46,7 +46,7 @@ export default function IntervalsDisconnectAction({ hasKey }: { hasKey: boolean 
             disabled={busy}
             className="border-2 border-[#ff4b26] px-4 py-3 text-xs font-bold uppercase tracking-widest text-[#ff4b26] hover:bg-[#ff4b26] hover:text-white disabled:opacity-50"
           >
-            {busy ? "Отвязываем..." : "Отвязать и удалить импортированные данные"}
+            {busy ? "Отвязываем..." : "Отвязать ключ"}
           </button>
         ) : (
           <p className="text-sm text-[#666]">Intervals сейчас не подключён.</p>
@@ -55,9 +55,9 @@ export default function IntervalsDisconnectAction({ hasKey }: { hasKey: boolean 
       </div>
       {dialogOpen && (
         <ConfirmDialog
-          title="Отвязать Intervals и удалить данные?"
-          text="Будут удалены ключ подключения и импортированные из Intervals.icu тренировки и связанные данные. Ручные загрузки из файлов и аккаунт останутся. Действие необратимо."
-          confirmLabel="Отвязать и удалить"
+          title="Отвязать Intervals.icu?"
+          text="Будет удалён только ключ и ID спортсмена Intervals.icu. История тренировок, данные сна и восстановления, недельные сводки и опыт останутся. После отвязки автоматическая синхронизация остановится."
+          confirmLabel="Отвязать ключ"
           busy={busy}
           error={error}
           onClose={() => setDialogOpen(false)}
