@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { authApi } from "@/lib/auth";
 import { getApiErrorMessage } from "@/components/dialog-utils";
+import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 
 type Person = { id: number; username: string; display_name: string; level?: number };
 type Duel = {
@@ -111,7 +112,7 @@ export default function DuelsPanel() {
             <input value={challengeUser} onChange={(e) => setChallengeUser(e.target.value)} placeholder="@username друга" className="flex-1 min-w-[160px] px-3 py-3 border-2 border-black bg-white font-bold text-sm" />
             <button type="button" disabled={busy || challengeUser.trim().length < 3} onClick={() => challenge()} className="px-4 py-3 bg-[#ff4b26] text-white border-2 border-black text-[10px] font-bold tracking-widest uppercase hover:bg-black disabled:opacity-50">Вызвать</button>
           </div>
-          {friendsError && <p role="alert" className="mb-3 text-sm font-bold text-[#a62910]">{friendsError}</p>}
+          {friendsError && <ErrorState message={friendsError} onRetry={() => { setLoading(true); void load(); }} retryLabel="Повторить загрузку" />}
           {friends.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {friends.slice(0, 12).map((f) => (
@@ -124,13 +125,10 @@ export default function DuelsPanel() {
 
         <section className="border-b-2 border-black p-4 md:p-6">
           <h2 className="font-display uppercase text-xl mb-4">Твои дуэли</h2>
-          {loading ? <p className="text-sm text-[#666]">Загрузка…</p> : loadError ? (
-            <div role="alert" className="border-2 border-[#ff4b26] bg-[#ff4b26]/10 p-3 text-sm font-bold text-[#a62910]">
-              <p>{loadError}</p>
-              <button type="button" onClick={() => { setLoading(true); void load(); }} className="mt-2 underline">Повторить загрузку</button>
-            </div>
+          {loading ? <Skeleton label="Загружаем дуэли" rows={3} /> : loadError ? (
+            <ErrorState message={loadError} onRetry={() => { setLoading(true); void load(); }} retryLabel="Повторить загрузку" />
           ) : items.length === 0 ? (
-            <p className="text-sm text-[#666]">Пока нет дуэлей — вызови друга выше.</p>
+            <EmptyState>Пока нет дуэлей — вызови друга выше.</EmptyState>
           ) : (
             <div className="space-y-3">
               {items.map((d) => (

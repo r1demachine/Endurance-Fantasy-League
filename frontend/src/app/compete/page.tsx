@@ -2,16 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Tabs } from "@/components/ui";
+import { Tabs, Skeleton } from "@/components/ui";
+import RatingPanel from "@/components/compete/RatingPanel";
 import DuelsPanel from "@/components/compete/DuelsPanel";
+import { ClubsPanel } from "@/components/SocialHub";
 
 type CompeteTab = "rating" | "duels" | "clubs" | "teams";
-const tabs = [
+const tabs: { value: CompeteTab; label: string }[] = [
   { value: "rating", label: "Рейтинг" },
   { value: "duels", label: "Дуэли" },
   { value: "clubs", label: "Клубы" },
   { value: "teams", label: "Командные сражения" },
-] as const;
+];
+
 function isCompeteTab(value: string | null): value is CompeteTab {
   return value === "rating" || value === "duels" || value === "clubs" || value === "teams";
 }
@@ -19,14 +22,21 @@ function isCompeteTab(value: string | null): value is CompeteTab {
 export default function CompetePage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<CompeteTab>("rating");
+  const [visitedTabs, setVisitedTabs] = useState<Partial<Record<CompeteTab, boolean>>>({});
+  const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
     const queryTab = new URLSearchParams(window.location.search).get("tab");
-    if (isCompeteTab(queryTab)) setActiveTab(queryTab);
-  }, []);
+    const initialTab: CompeteTab = isCompeteTab(queryTab) ? queryTab : "rating";
+    setActiveTab(initialTab);
+    setVisitedTabs({ [initialTab]: true });
+    setInitialized(true);
+    if (!isCompeteTab(queryTab)) router.replace(`/compete?tab=${initialTab}`, { scroll: false });
+  }, [router]);
 
   const changeTab = (tab: CompeteTab) => {
     setActiveTab(tab);
+    setVisitedTabs((previous) => ({ ...previous, [tab]: true }));
     router.replace(`/compete?tab=${tab}`, { scroll: false });
   };
 
@@ -37,6 +47,7 @@ export default function CompetePage() {
           <p className="font-display text-4xl uppercase leading-none md:text-6xl">Соревнования.</p>
           <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-white/80">Рейтинг · дуэли · клубы · команды</p>
         </header>
+
         <Tabs
           ariaLabel="Раздел соревнований"
           value={activeTab}
@@ -47,19 +58,23 @@ export default function CompetePage() {
           inactiveClassName="hover:bg-black/5"
           items={tabs.map((tab) => ({ ...tab, className: tab.value === "teams" ? "border-r-0" : "" }))}
         />
-        {activeTab === "duels" ? (
-          <DuelsPanel />
+
+        {!initialized ? (
+          <div className="p-5 md:p-8"><Skeleton label="Открываем соревнования" rows={4} /></div>
         ) : (
-          <section className="p-5 md:p-8">
-            <p className="font-display text-2xl uppercase">
-              {activeTab === "rating" ? "Рейтинг" : activeTab === "clubs" ? "Клубы" : "Командные сражения"}
-            </p>
-            <p className="mt-2 text-sm text-[#666]">
-              {activeTab === "teams"
-                ? "Командные сражения скоро появятся."
-                : "Этот раздел будет подключён на следующем этапе обновления интерфейса."}
-            </p>
-          </section>
+          <>
+            {visitedTabs.rating && <div hidden={activeTab !== "rating"}><RatingPanel /></div>}
+            {visitedTabs.duels && <div hidden={activeTab !== "duels"}><DuelsPanel /></div>}
+            {visitedTabs.clubs && <div hidden={activeTab !== "clubs"}><ClubsPanel /></div>}
+            {visitedTabs.teams && (
+              <div hidden={activeTab !== "teams"} className="p-4 md:p-6">
+                <section className="border-2 border-black bg-white p-6 md:p-8">
+                  <h2 className="font-display text-2xl uppercase md:text-3xl">Командные сражения</h2>
+                  <p className="mt-2 text-sm text-[#666]">Скоро. Сражения клубов появятся в одном из следующих обновлений.</p>
+                </section>
+              </div>
+            )}
+          </>
         )}
       </div>
     </main>

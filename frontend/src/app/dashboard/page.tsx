@@ -1,121 +1,52 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import type { MouseEvent, TouchEvent } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { getCachedUser, subscribeUser, refreshUser } from "@/lib/apiCache";
 import { authApi, isAuthenticated } from "@/lib/auth";
 import { Star, Sticker } from "@/components/DreamBits";
-import { PauseDialog } from "@/components/Modal";
+import { Modal, PauseDialog } from "@/components/Modal";
+import ActivityUpload from "@/components/ActivityUpload";
 import { getApiErrorMessage, parsePauseDate, parsePauseWeeks } from "@/components/dialog-utils";
-import { ErrorState, Label, SectionTitle } from "@/components/ui";
+import { EmptyState, ErrorState, Label, SectionTitle, Skeleton } from "@/components/ui";
 import WeekBlock from "@/components/dashboard/WeekBlock";
 import EventsFeed from "@/components/dashboard/EventsFeed";
-import SeasonWeeksChart from "@/components/dashboard/SeasonWeeksChart";
 import QuestsBoard from "@/components/dashboard/QuestsBoard";
-import RatingBoard from "@/components/dashboard/RatingBoard";
-import XpDynamics from "@/components/dashboard/XpDynamics";
-import WorkoutsList from "@/components/dashboard/WorkoutsList";
 
-function useIsTouch() {
-  const [touch, setTouch] = useState(false);
-  useEffect(() => {
-    setTouch(
-      typeof window !== "undefined" &&
-        (
-          window.matchMedia?.("(pointer: coarse)").matches ||
-          window.matchMedia?.("(hover: none)").matches ||
-          "ontouchstart" in window
-        )
-    );
-  }, []);
-  return touch;
-}
+type DuelSummary = {
+  id: number;
+  week_start: string | null;
+  status: string;
+  other: { username: string; display_name: string } | null;
+  my_xp: number | null;
+  other_xp: number | null;
+};
 
 export default function Dashboard() {
+  const router = useRouter();
   const [userData, setUserData] = useState<any>(null);
   const [weekData, setWeekData] = useState<any>(null);
   const [events, setEvents] = useState<any[]>([]);
   const [weekOptions, setWeekOptions] = useState<{ week_start: string; label: string }[]>([]);
   const [selectedWeekStart, setSelectedWeekStart] = useState("");
-  const [weekActivities, setWeekActivities] = useState<any[]>([]);
-  const [weekLoading, setWeekLoading] = useState(true);
-  const [seasonWeeks, setSeasonWeeks] = useState<any[]>([]);
-  const [globalYourRank, setGlobalYourRank] = useState<number | null>(null);
-  const [friendsYourRank, setFriendsYourRank] = useState<number | null>(null);
   const [quests, setQuests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [leaderboardTab, setLeaderboardTab] = useState<"global" | "friends" | "weekly">("weekly");
-  const [weeklyBoard, setWeeklyBoard] = useState<any>(null);
-  const [inviteMessage, setInviteMessage] = useState("");
-  const [globalBoard, setGlobalBoard] = useState<any[]>([]);
-  const [friendsBoard, setFriendsBoard] = useState<any[]>([]);
-  const [boardsLoaded, setBoardsLoaded] = useState(false);
   const [isAuthed, setIsAuthed] = useState(false);
+  const [dashboardError, setDashboardError] = useState("");
+  const [weekLoading, setWeekLoading] = useState(true);
   const [pauseDialogOpen, setPauseDialogOpen] = useState(false);
   const [pauseNow, setPauseNow] = useState(0);
   const [pauseBusy, setPauseBusy] = useState(false);
   const [pauseError, setPauseError] = useState("");
-  const [dashboardError, setDashboardError] = useState("");
-  const isTouch = useIsTouch();
-  const [touchTooltipActive, setTouchTooltipActive] = useState(false);
-  const [chartKey, setChartKey] = useState(0);
-  const [cursorY, setCursorY] = useState<number>(0);
-  const [tooltipPortal, setTooltipPortal] = useState<HTMLElement | null>(null);
-
-  useEffect(() => {
-    setTooltipPortal(document.body);
-  }, []);
-
-  const touchStartRef = useRef<{
-    time: number;
-    x: number;
-    y: number;
-  } | null>(null);
-
-  const TOUCH_HOLD_MS = 250;
-
-  const handleChartTouchStart = (
-    _nextState: unknown,
-    event: TouchEvent<SVGGraphicsElement>
-  ) => {
-    const touch = event.touches[0];
-    if (!touch) return;
-    touchStartRef.current = {
-      time: Date.now(),
-      x: touch.clientX,
-      y: touch.clientY,
-    };
-    setTouchTooltipActive(false);
-  };
-
-  const handleChartTouchMove = (
-    _nextState: unknown,
-    event: TouchEvent<SVGGraphicsElement>
-  ) => {
-    if (!touchStartRef.current) return;
-    const touch = event.touches[0];
-    if (!touch) return;
-    setCursorY(touch.clientY);
-    const elapsed = Date.now() - touchStartRef.current.time;
-    const dx = Math.abs(touch.clientX - touchStartRef.current.x);
-    const dy = Math.abs(touch.clientY - touchStartRef.current.y);
-    if (elapsed >= TOUCH_HOLD_MS && (dx > 4 || dy > 4)) {
-      setTouchTooltipActive(true);
-    }
-  };
-
-  const handleChartTouchEnd = () => {
-    touchStartRef.current = null;
-    setTouchTooltipActive(false);
-  };
-
-  const handleMouseMove = (e: MouseEvent<HTMLDivElement>) => {
-    if (!isTouch) {
-      setCursorY(e.clientY);
-    }
-  };
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState("");
+  const [syncError, setSyncError] = useState("");
+  const [nextDuel, setNextDuel] = useState<DuelSummary | null>(null);
+  const [duelLoading, setDuelLoading] = useState(true);
+  const [duelError, setDuelError] = useState("");
 
   useEffect(() => {
     const cached = getCachedUser();
@@ -125,18 +56,20 @@ export default function Dashboard() {
       setEvents(cached.recent_events || []);
       setQuests(cached.quests || []);
     }
-    const unsub = subscribeUser((u) => {
-      setUserData(u);
-      setQuests(u?.quests || []);
+    const unsubscribe = subscribeUser((user) => {
+      setUserData(user);
+      setQuests(user?.quests || []);
     });
-    refreshUser();
+    void refreshUser();
+    setIsAuthed(isAuthenticated());
     setLoading(false);
-    return unsub;
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
     const controller = new AbortController();
     setWeekLoading(true);
+    setDashboardError("");
     authApi.get("/api/weekly-summary", {
       params: selectedWeekStart ? { week_start: selectedWeekStart } : {},
       signal: controller.signal,
@@ -144,12 +77,13 @@ export default function Dashboard() {
       const result = response.data;
       setWeekData(result.week || null);
       setEvents(result.events || []);
-      setWeekActivities(result.activities || []);
       setWeekOptions(result.week_options || []);
-      if (!selectedWeekStart && result.week?.week_start) setSelectedWeekStart(result.week.week_start);
-    }).catch((error) => {
-      if (error.name !== "CanceledError" && error.name !== "AbortError") {
-        setWeekActivities([]);
+      if (!selectedWeekStart && result.week?.week_start) {
+        setSelectedWeekStart(result.week.week_start);
+      }
+    }).catch((error: unknown) => {
+      const name = (error as { name?: string }).name;
+      if (name !== "CanceledError" && name !== "AbortError") {
         setDashboardError(getApiErrorMessage(error, "Не удалось загрузить данные недели."));
       }
     }).finally(() => {
@@ -158,60 +92,37 @@ export default function Dashboard() {
     return () => controller.abort();
   }, [selectedWeekStart]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    authApi.get("/api/season-weeks", { signal: controller.signal })
-      .then((response) => setSeasonWeeks(response.data.weeks || []))
-      .catch((error) => { if (!controller.signal.aborted) setDashboardError(getApiErrorMessage(error, "Не удалось загрузить сезонную статистику.")); });
-    return () => controller.abort();
+  const loadNextDuel = useCallback(async () => {
+    setDuelLoading(true);
+    setDuelError("");
+    try {
+      const response = await authApi.get("/api/duels");
+      const items = Array.isArray(response.data.items) ? response.data.items as DuelSummary[] : [];
+      const candidates = items.filter((duel) => duel.status === "active" || duel.status === "pending");
+      candidates.sort((a, b) => {
+        const priority = (status: string) => status === "active" ? 0 : 1;
+        return priority(a.status) - priority(b.status);
+      });
+      setNextDuel(candidates[0] ?? null);
+    } catch (error: unknown) {
+      setDuelError(getApiErrorMessage(error, "Не удалось загрузить ближайшую дуэль."));
+    } finally {
+      setDuelLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    // после перехода с длинной главной скролл/анимации могут оставить
-    // графику съехавшую геометрию — Recharts кеширует offset при монтировании.
-    // Возвращаем скролл и перемонтируем график, когда всё улеглось.
-    window.scrollTo(0, 0);
-    const t = setTimeout(() => setChartKey((k) => k + 1), 150);
-    return () => clearTimeout(t);
-  }, []);
-
-  useEffect(() => {
-    setIsAuthed(isAuthenticated());
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const g = await authApi.get("/api/leaderboard", { params: { scope: "global", limit: 10 } });
-        setGlobalBoard(g.data.entries || []);
-        setGlobalYourRank(typeof g.data.your_rank === "number" ? g.data.your_rank : null);
-      } catch (error: unknown) {
-        setDashboardError(getApiErrorMessage(error, "Не удалось загрузить общий рейтинг."));
-      }
-      if (isAuthenticated()) {
-        try {
-          const f = await authApi.get("/api/leaderboard", { params: { scope: "friends", limit: 10 } });
-          setFriendsBoard(f.data.entries || []);
-          setFriendsYourRank(typeof f.data.your_rank === "number" ? f.data.your_rank : null);
-        } catch (error: unknown) {
-          setDashboardError(getApiErrorMessage(error, "Не удалось загрузить рейтинг друзей."));
-        }
-      }
-      // Weekly League — публичный, как global
-      try {
-        const w = await authApi.get("/api/leaderboard", { params: { scope: "weekly" } });
-        setWeeklyBoard(w.data);
-      } catch (error: unknown) {
-        setDashboardError(getApiErrorMessage(error, "Не удалось загрузить недельную лигу."));
-      }
-      setBoardsLoaded(true);
-    })();
-  }, []);
+    if (!isAuthed) {
+      setDuelLoading(false);
+      return;
+    }
+    void loadNextDuel();
+  }, [isAuthed, loadNextDuel]);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] flex items-center justify-center">
-        <p className="font-display uppercase text-2xl text-white animate-pulse">Dreaming...</p>
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2]">
+        <p className="animate-pulse font-display text-2xl uppercase text-white">Dreaming...</p>
       </div>
     );
   }
@@ -222,40 +133,26 @@ export default function Dashboard() {
     recent_activities: [],
   };
   const stats = data.stats ?? { day_streak: 0, week_streak: 0, week_hours: 0, week_goal_hours: 10 };
-
-  const chartData = [...(data.recent_activities || [])]
-    .slice()
-    .reverse()
-    .map((act: any) => ({
-      date: act.date || "",
-      xp: Math.round(Number(act.xp) || 0),
-      name: act.name || "workout",
-      sport: act.sport || "",
-      distance: act.distance_km ?? 0,
-      sleepMult: act.sleep_multiplier ?? 1,
-      intensityMult: act.intensity_multiplier ?? 1,
-      base_xp: act.base_xp ?? 0,
-      intensity_category: act.intensity_category ?? "UNKNOWN",
-      streakMult: act.streak_multiplier ?? 1,
-      tss_estimated: act.tss_estimated ?? false,
-    }));
-
-  const xpProgress = isEmpty ? 0 : (data.user.total_xp % 100);
+  const goalHours = Math.max(1, Number(stats.week_goal_hours) || 10);
+  const xpProgress = isEmpty ? 0 : Number(data.user.total_xp || 0) % 100;
+  const weekOptionIndex = weekOptions.findIndex((option) =>
+    option.week_start === (selectedWeekStart || weekData?.week_start)
+  );
+  const canGoPrevious = weekOptionIndex >= 0 && weekOptionIndex < weekOptions.length - 1;
+  const canGoNext = weekOptionIndex > 0;
 
   const navigateWeek = (direction: "previous" | "next") => {
-    const index = weekOptions.findIndex((option) => option.week_start === (selectedWeekStart || weekData?.week_start));
+    const index = weekOptions.findIndex((option) =>
+      option.week_start === (selectedWeekStart || weekData?.week_start)
+    );
     const target = weekOptions[index + (direction === "previous" ? 1 : -1)];
     if (target) setSelectedWeekStart(target.week_start);
   };
 
-  const handleInvite = async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.origin);
-      setInviteMessage("✅ Link copied — send it to your friends");
-    } catch {
-      setInviteMessage("Copy the link from the address bar");
-    }
-    setTimeout(() => setInviteMessage(""), 3000);
+  const openPause = () => {
+    setPauseNow(Date.now());
+    setPauseError("");
+    setPauseDialogOpen(true);
   };
 
   const handlePauseSubmit = async (weeks: number) => {
@@ -264,9 +161,8 @@ export default function Dashboard() {
       setPauseError("Выбери целое число недель от 0 до 8.");
       return;
     }
-    const endTimestamp = userData?.user?.paused_until;
-    const parsedPauseEnd = parsePauseDate(typeof endTimestamp === "string" ? endTimestamp : null);
-    const currentlyPaused = Boolean(parsedPauseEnd && parsedPauseEnd.getTime() > Date.now());
+    const pauseEnd = parsePauseDate(typeof userData?.user?.paused_until === "string" ? userData.user.paused_until : null);
+    const currentlyPaused = Boolean(pauseEnd && pauseEnd.getTime() > Date.now());
     if (validWeeks === 0 && !currentlyPaused) {
       setPauseError("Сейчас активной паузы нет.");
       return;
@@ -286,194 +182,191 @@ export default function Dashboard() {
     }
   };
 
-  const rows = leaderboardTab === "global" ? globalBoard : friendsBoard;
-  const yourRank = leaderboardTab === "global" ? globalYourRank : friendsYourRank;
-  const weeklyEntries = weeklyBoard?.entries || [];
-  const weekOptionIndex = weekOptions.findIndex((option) => option.week_start === (selectedWeekStart || weekData?.week_start));
-  const canGoPrevious = weekOptionIndex >= 0 && weekOptionIndex < weekOptions.length - 1;
-  const canGoNext = weekOptionIndex > 0;
+  const handleSync = async () => {
+    setSyncMessage("");
+    setSyncError("");
+    if (!isAuthed) {
+      router.push("/login");
+      return;
+    }
+    if (!data.user?.has_intervals_key) {
+      router.push("/training?tab=sources");
+      return;
+    }
+
+    const now = new Date();
+    const since = `${now.getFullYear()}-01-01`;
+    setSyncing(true);
+    try {
+      const response = await authApi.post("/api/sync", null, { params: { since } });
+      setSyncMessage(`Синхронизация завершена: новых ${response.data.synced_count ?? 0}, обновлено ${response.data.updated_count ?? 0}, +${Math.round(Number(response.data.new_xp) || 0)} XP.`);
+      await refreshUser(true);
+    } catch (error: unknown) {
+      setSyncError(getApiErrorMessage(error, "Не удалось синхронизировать данные."));
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] px-2 sm:px-4 md:px-6 pb-2 sm:pb-4 md:pb-6 text-[#111] relative overflow-hidden flex flex-col">
-      {/* ✦ сонный фон */}
-      <Star className="absolute w-6 h-6 text-white/80 top-[6%] left-[3%] animate-pulse" />
-      <Star className="absolute w-4 h-4 text-white/70 top-[16%] right-[6%] animate-pulse" />
-      <Star className="absolute w-5 h-5 text-[#ffd500] bottom-[10%] left-[8%] animate-pulse" />
-      <Star className="absolute w-7 h-7 text-white/80 bottom-[5%] right-[4%] animate-pulse" />
+    <main className="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] px-2 pb-24 text-[#111] sm:px-4 md:px-6 md:pb-6">
+      <Star className="absolute left-[3%] top-[6%] h-6 w-6 animate-pulse text-white/80" />
+      <Star className="absolute right-[6%] top-[16%] h-4 w-4 animate-pulse text-white/70" />
+      <Star className="absolute bottom-[10%] left-[8%] h-5 w-5 animate-pulse text-[#ffd500]" />
+      <Star className="absolute bottom-[5%] right-[4%] h-7 w-7 animate-pulse text-white/80" />
 
-      {/* 📰 жёсткая таблица поверх сна */}
-      <div className="relative max-w-[1400px] w-full mx-auto border-2 border-t-0 border-black bg-[#f4f4f0] flex-1 flex flex-col breathe-table">
-
-        {/* Гость / пустое состояние */}
+      <div className="breathe-table relative mx-auto flex w-full max-w-[1400px] flex-1 flex-col border-2 border-t-0 border-black bg-[#f4f4f0]">
         {(!isAuthed || isEmpty) && (
           <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="relative border-b-2 border-black bg-white p-6 md:p-10 text-center space-y-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="relative space-y-4 border-b-2 border-black bg-white p-6 text-center md:p-10"
           >
-            <Sticker className="top-3 left-6 bg-[#ffd500] text-black rotate-[3deg]">zzz…</Sticker>
+            <Sticker className="left-6 top-3 rotate-[3deg] bg-[#ffd500] text-black">zzz…</Sticker>
             {isAuthed ? (
               <>
-                <p className="font-display uppercase text-4xl md:text-6xl">Empty.</p>
-                <Label className="text-[#666]">Level 1 · 0 XP · 0 workouts</Label>
-                <p className="text-sm text-[#666] max-w-md mx-auto">
-                  Синхронизируй первую тренировку — и прогресс появится здесь.
-                </p>
-                <Link
-                  href="/profile"
-                  className="inline-block px-6 py-3 bg-[#ff4b26] text-white text-xs font-bold tracking-widest uppercase hover:bg-[#5866f2] transition-colors"
-                >
-                  Sync →
-                </Link>
+                <p className="font-display text-4xl uppercase md:text-6xl">Добро пожаловать.</p>
+                <Label className="text-[#666]">Уровень 1 · 0 XP · 0 тренировок</Label>
+                <p className="mx-auto max-w-md text-sm text-[#666]">Синхронизируй первую тренировку — и прогресс появится здесь.</p>
+                <Link href="/training?tab=sources" className="inline-block bg-[#ff4b26] px-6 py-3 text-xs font-bold uppercase tracking-widest text-white transition-colors hover:bg-[#5866f2]">Подключить источник →</Link>
               </>
             ) : (
               <>
-                <p className="font-display uppercase text-4xl md:text-6xl">Sleeping?</p>
+                <p className="font-display text-4xl uppercase md:text-6xl">Твоя следующая глава.</p>
                 <Label className="text-[#666]">Войди, чтобы видеть свой прогресс</Label>
-                <p className="text-sm text-[#666] max-w-md mx-auto">
-                  Глобальный рейтинг уже открыт ниже. Войди или зарегистрируйся, чтобы видеть свои тренировки, XP и друзей.
-                </p>
-                <Link
-                  href="/login"
-                  className="inline-block px-6 py-3 bg-[#ff4b26] text-white text-xs font-bold tracking-widest uppercase hover:bg-[#5866f2] transition-colors"
-                >
-                  Login →
-                </Link>
+                <p className="mx-auto max-w-md text-sm text-[#666]">Войди или зарегистрируйся, чтобы отслеживать уровень, тренировки, квесты и дуэли.</p>
+                <Link href="/login" className="inline-block bg-[#ff4b26] px-6 py-3 text-xs font-bold uppercase tracking-widest text-white transition-colors hover:bg-[#5866f2]">Войти →</Link>
               </>
             )}
           </motion.div>
         )}
 
-        {/* Заголовок + стикер, вылезающий за рамку */}
-        <div className="relative grid md:grid-cols-[1fr_auto] border-b-2 border-black">
-          <Sticker className="top-2 right-4 md:right-10 bg-[#f6b8d0] text-black rotate-[-4deg]">don't stop fighting 🔥</Sticker>
-          <div className="p-5 md:p-8 flex flex-col gap-3 md:border-r-2 border-black">
-            <Label className="text-[#666]">Season 001 · Athlete: {data.user.name}</Label>
-            <h1 className="font-display uppercase leading-[0.9] text-4xl md:text-6xl lg:text-7xl">
-              Progress<span className="text-[#ff4b26]">.</span>
+        <header className="relative grid border-b-2 border-black md:grid-cols-[1fr_auto]">
+          <Sticker className="right-4 top-2 rotate-[-4deg] bg-[#f6b8d0] text-black md:right-10">don't stop fighting</Sticker>
+          <div className="flex flex-col gap-3 p-5 md:border-r-2 md:border-black md:p-8">
+            <Label className="text-[#666]">ТВОЙ ПРОГРЕСС · SEASON 001</Label>
+            <h1 className="font-display text-4xl uppercase leading-[0.9] md:text-6xl lg:text-7xl">
+              Привет, <span className="text-[#ff4b26]">{data.user.name}</span>.
             </h1>
           </div>
-          <Link
-            href="/profile"
-            className="bg-[#5866f2] text-white px-5 py-4 flex items-center justify-between gap-4 text-[11px] font-bold tracking-widest uppercase hover:bg-black transition-colors"
-          >
-            <span>Go to<br />profile</span>
-            <span>→</span>
+          <Link href="/profile" className="flex items-center justify-between gap-4 bg-[#5866f2] px-5 py-4 text-[11px] font-bold uppercase tracking-widest text-white transition-colors hover:bg-black">
+            <span>Профиль<br />атлета</span><span>→</span>
           </Link>
-        </div>
+        </header>
 
         {dashboardError && <ErrorState message={dashboardError} onRetry={() => window.location.reload()} />}
 
-        {/* Статистика */}
-        <div className="grid md:grid-cols-3 border-b-2 border-black">
-          <div className="md:border-r-2 border-black">
+        <section className="grid border-b-2 border-black md:grid-cols-3">
+          <div className="md:border-r-2 md:border-black">
             <SectionTitle>Level</SectionTitle>
             <div className="p-5 md:p-6">
               <p className="font-display text-5xl md:text-7xl">{data.user.level}</p>
-              <div className="w-full bg-black/10 h-3 mt-4 border border-black/20">
-                <div className="bg-[#ffd500] h-full transition-all" style={{ width: `${xpProgress}%` }}></div>
+              <div className="mt-4 h-3 w-full border border-black/20 bg-black/10">
+                <div className="h-full bg-[#ffd500] transition-all" style={{ width: `${xpProgress}%` }} />
               </div>
-              <Label className="text-[#666] mt-3">
-                {isEmpty ? "100 XP to next" : `${Math.round(data.user.xp_to_next_level)} XP to next level`}
-              </Label>
+              <Label className="mt-3 text-[#666]">{isEmpty ? "100 XP до следующего" : `${Math.round(Number(data.user.xp_to_next_level) || 0)} XP до следующего уровня`}</Label>
             </div>
           </div>
-
-          <div className="md:border-r-2 border-black border-t-2 md:border-t-0">
+          <div className="border-t-2 border-black md:border-r-2 md:border-t-0">
             <SectionTitle tone="yellow">Streak</SectionTitle>
             <div className="p-5 md:p-6">
-              <p className="font-display text-5xl md:text-7xl text-[#ff4b26]">{stats.day_streak}</p>
-              <Label className="text-[#666] mt-2">Days in a row</Label>
-              <div className="mt-4 pt-3 border-t border-black/20">
-                <Label className="text-[#666]">{stats.week_streak} weeks streak</Label>
-              </div>
+              <p className="font-display text-5xl text-[#ff4b26] md:text-7xl">{stats.day_streak}</p>
+              <Label className="mt-2 text-[#666]">Дней подряд</Label>
+              <div className="mt-4 border-t border-black/20 pt-3"><Label className="text-[#666]">{stats.week_streak} недель подряд</Label></div>
             </div>
           </div>
-
-          <div className="border-t-2 md:border-t-0 border-black">
+          <div className="border-t-2 border-black md:border-t-0">
             <SectionTitle>Week goal</SectionTitle>
             <div className="p-5 md:p-6">
-              <p className="font-display text-5xl md:text-7xl">
-                {stats.week_hours}<span className="text-xl md:text-2xl text-[#666]"> / {stats.week_goal_hours}h</span>
-              </p>
-              <div className="w-full bg-black/10 h-3 mt-4 border border-black/20">
-                <div
-                  className="bg-[#5866f2] h-full transition-all"
-                  style={{ width: `${Math.min(100, (stats.week_hours / stats.week_goal_hours) * 100)}%` }}
-                ></div>
+              <p className="font-display text-5xl md:text-7xl">{stats.week_hours}<span className="text-xl text-[#666] md:text-2xl"> / {stats.week_goal_hours}h</span></p>
+              <div className="mt-4 h-3 w-full border border-black/20 bg-black/10">
+                <div className="h-full bg-[#5866f2] transition-all" style={{ width: `${Math.min(100, (Number(stats.week_hours) || 0) / goalHours * 100)}%` }} />
               </div>
-              <Label className="text-[#666] mt-3">
-                {Math.min(100, Math.round((stats.week_hours / stats.week_goal_hours) * 100))}% complete
-              </Label>
+              <Label className="mt-3 text-[#666]">{Math.min(100, Math.round((Number(stats.week_hours) || 0) / goalHours * 100))}% цели</Label>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* ── Твоя неделя + события (v6) — ВНУТРИ основной рамки ── */}
         {isAuthed && !isEmpty && (
           <>
-            <WeekBlock
-              weekData={weekData}
-              weekOptions={weekOptions}
-              selectedWeekStart={selectedWeekStart || weekData?.week_start || ""}
-              onWeekChange={setSelectedWeekStart}
-              onPreviousWeek={() => navigateWeek("previous")}
-              onNextWeek={() => navigateWeek("next")}
-              canGoPrevious={canGoPrevious}
-              canGoNext={canGoNext}
-              onPauseClick={() => { setPauseNow(Date.now()); setPauseError(""); setPauseDialogOpen(true); }}
-            />
-            <AnimatePresence>
-              {pauseDialogOpen && (
-                <PauseDialog
-                  onClose={() => setPauseDialogOpen(false)}
-                  onSubmit={handlePauseSubmit}
-                  busy={pauseBusy}
-                  error={pauseError}
-                  now={pauseNow}
-                  pauseSetAt={userData?.user?.pause_set_at ?? null}
-                  pausedUntil={userData?.user?.paused_until ?? null}
-                />
-              )}
-            </AnimatePresence>
-            <SeasonWeeksChart weeks={seasonWeeks} />
+            {weekLoading ? (
+              <section className="border-b-2 border-black bg-white p-5 md:p-6"><Skeleton label="Загружаем недельную сводку" rows={4} /></section>
+            ) : (
+              <WeekBlock
+                weekData={weekData}
+                weekOptions={weekOptions}
+                selectedWeekStart={selectedWeekStart || weekData?.week_start || ""}
+                onWeekChange={setSelectedWeekStart}
+                onPreviousWeek={() => navigateWeek("previous")}
+                onNextWeek={() => navigateWeek("next")}
+                canGoPrevious={canGoPrevious}
+                canGoNext={canGoNext}
+                onPauseClick={openPause}
+              />
+            )}
+
             <EventsFeed events={events} />
             <QuestsBoard quests={quests} />
+
+            <section className="border-b-2 border-black bg-white">
+              <SectionTitle tone="indigo">Ближайшая дуэль</SectionTitle>
+              <div className="p-4 md:p-6">
+                {duelLoading ? (
+                  <Skeleton label="Загружаем дуэль" rows={2} />
+                ) : duelError ? (
+                  <ErrorState message={duelError} onRetry={() => void loadNextDuel()} />
+                ) : nextDuel ? (
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="font-display text-2xl uppercase">vs {nextDuel.other?.display_name ?? "Соперник"}</p>
+                      <Label className="mt-1 text-[#666]">{nextDuel.status === "active" ? "Идёт сейчас" : "Ожидает ответа"} · неделя {nextDuel.week_start || "—"}</Label>
+                    </div>
+                    {nextDuel.status === "active" && <p className="font-display text-2xl">{nextDuel.my_xp ?? 0} : {nextDuel.other_xp ?? 0} XP</p>}
+                    <Link href="/compete?tab=duels" className="border-2 border-black bg-[#ffd500] px-4 py-3 text-[10px] font-bold uppercase tracking-widest hover:bg-black hover:text-white">Открыть дуэль →</Link>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <EmptyState>Пока нет ближайших дуэлей. Вызови друга и проверь прогресс недели.</EmptyState>
+                    <Link href="/compete?tab=duels" className="border-2 border-black px-4 py-3 text-[10px] font-bold uppercase tracking-widest hover:bg-[#ffd500]">Дуэли →</Link>
+                  </div>
+                )}
+              </div>
+            </section>
           </>
         )}
 
-        <RatingBoard
-          leaderboardTab={leaderboardTab}
-          setLeaderboardTab={setLeaderboardTab}
-          isAuthed={isAuthed}
-          boardsLoaded={boardsLoaded}
-          rows={rows}
-          yourRank={yourRank}
-          weeklyEntries={weeklyEntries}
-          weeklyBoard={weeklyBoard}
-          handleInvite={handleInvite}
-          inviteMessage={inviteMessage}
-        />
-
-        <XpDynamics
-          chartData={chartData}
-          chartKey={chartKey}
-          isTouch={isTouch}
-          touchTooltipActive={touchTooltipActive}
-          tooltipPortal={tooltipPortal}
-          cursorY={cursorY}
-          handleChartTouchStart={handleChartTouchStart}
-          handleChartTouchMove={handleChartTouchMove}
-          handleChartTouchEnd={handleChartTouchEnd}
-          handleMouseMove={handleMouseMove}
-        />
-
-        <WorkoutsList
-          weekLoading={weekLoading}
-          weekActivities={weekActivities}
-          selectedWeekStart={selectedWeekStart}
-        />
-
+        <section className="border-b-2 border-black bg-[#f4f4f0] p-4 md:p-6">
+          <h2 className="font-display text-xl uppercase">Быстрые действия</h2>
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <button type="button" onClick={() => void handleSync()} disabled={syncing} className="border-2 border-black bg-[#5866f2] px-4 py-3 text-xs font-bold uppercase tracking-widest text-white transition-colors hover:bg-black disabled:opacity-50">
+              {syncing ? "Синхронизация…" : "Синхронизировать"}
+            </button>
+            <button type="button" onClick={() => setUploadOpen(true)} className="border-2 border-black bg-[#ffd500] px-4 py-3 text-xs font-bold uppercase tracking-widest transition-colors hover:bg-black hover:text-white">Загрузить тренировку</button>
+            <button type="button" onClick={openPause} disabled={!isAuthed} className="border-2 border-black bg-white px-4 py-3 text-xs font-bold uppercase tracking-widest transition-colors hover:bg-[#ff4b26] hover:text-white disabled:opacity-50">Пауза</button>
+          </div>
+          {syncMessage && <p role="status" className="mt-3 border-2 border-[#16803c] bg-white px-3 py-2 text-sm font-bold text-[#16803c]">{syncMessage}</p>}
+          {syncError && <ErrorState message={syncError} onRetry={() => void handleSync()} />}
+        </section>
       </div>
+
+      <AnimatePresence>
+        {pauseDialogOpen && (
+          <PauseDialog
+            onClose={() => setPauseDialogOpen(false)}
+            onSubmit={handlePauseSubmit}
+            busy={pauseBusy}
+            error={pauseError}
+            now={pauseNow}
+            pauseSetAt={userData?.user?.pause_set_at ?? null}
+            pausedUntil={userData?.user?.paused_until ?? null}
+          />
+        )}
+        {uploadOpen && (
+          <Modal title="Загрузить тренировку" onClose={() => setUploadOpen(false)}>
+            <ActivityUpload />
+          </Modal>
+        )}
+      </AnimatePresence>
     </main>
   );
 }
