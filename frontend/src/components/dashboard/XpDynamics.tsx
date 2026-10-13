@@ -24,6 +24,7 @@ export default function XpDynamics({
   handleChartTouchStart, handleChartTouchMove, handleChartTouchEnd, handleMouseMove,
 }: XpDynamicsProps) {
   return (
+    <>
     
         {chartData.length > 0 && (
           <div className="border-b-2 border-black">
@@ -91,5 +92,6 @@ export default function XpDynamics({
             </div>
           </div>
         )}
+    </>
   );
 }
