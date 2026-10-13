@@ -7,7 +7,8 @@
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..config import get_settings
 
@@ -45,7 +46,7 @@ QUEST_REGISTRY = [
     {
         "slug": "sleep_connected",
         "title": "Сон имеет значение",
-        "desc": "Подключить сон: 3+ ночи со sleep score",
+        "desc": "Три ночи с данными о сне (продолжительность или sleep score)",
         "reward": 25.0,
     },
     {
@@ -131,9 +132,10 @@ def _cond_goal_streak_3(ctx):
 def _cond_first_50km_ride_week(ctx):
     per_week = {}
     for a in ctx["acts"]:
-        if str(a.sport_type or "").upper() != "RIDE" or not a.start_date:
+        activity_day = _local_activity_day(a)
+        if str(a.sport_type or "").upper() != "RIDE" or activity_day is None:
             continue
-        ws = a.start_date.date() - timedelta(days=a.start_date.date().weekday())
+        ws = _trainer_week_start(activity_day)
         per_week[ws] = per_week.get(ws, 0) + (a.distance or 0)
     return any(v >= 50000 for v in per_week.values())
 
@@ -141,8 +143,10 @@ def _cond_first_50km_ride_week(ctx):
 def _cond_record_duration(ctx):
     # История до даты запуска нужна как база личного рекорда, но не может сама
     # выдать награду. Засчитываем только новый рекорд, установленный после cutoff.
-    acts = sorted([a for a in ctx["all_acts"] if a.start_date],
-                  key=lambda a: (a.start_date, a.id))
+    acts = sorted(
+        [a for a in ctx["all_acts"] if _local_activity_day(a) is not None],
+        key=lambda a: (_local_activity_day(a), a.id),
+    )
     activation_date = ctx["activation_date"]
     prev_max = 0
     seen = 0
@@ -150,7 +154,7 @@ def _cond_record_duration(ctx):
         if getattr(a, "is_manual", False):
             continue
         dur = a.moving_time or 0
-        is_after_cutoff = a.start_date.date() >= activation_date
+        is_after_cutoff = _local_activity_day(a) >= activation_date
         if is_after_cutoff and seen >= 3 and prev_max > 0 and dur >= prev_max * 1.1:
             return True
         prev_max = max(prev_max, dur)
@@ -159,7 +163,7 @@ def _cond_record_duration(ctx):
 
 
 def _cond_sleep_connected(ctx):
-    return ctx["sleep_score_count"] >= 3
+    return ctx["sleep_nights_count"] >= 3
 
 
 CONDS = {
@@ -184,14 +188,16 @@ def grant_quests(db, user, acts, summaries) -> int:
     ]
     eligible_acts = [
         a for a in acts
-        if a.start_date and a.start_date.date() >= activation_date
+        if _local_activity_day(a) is not None and _local_activity_day(a) >= activation_date
     ]
-    sleep_score_count = (
+    from sqlalchemy import or_
+
+    sleep_nights_count = (
         db.query(Wellness)
         .filter(
             Wellness.user_id == user.id,
             Wellness.date >= activation_date.isoformat(),
-            Wellness.sleep_score > 0,
+            or_(Wellness.sleep_secs > 0, Wellness.sleep_score > 0),
         )
         .count()
     )
@@ -200,9 +206,13 @@ def grant_quests(db, user, acts, summaries) -> int:
         "acts": eligible_acts,
         "all_acts": acts,
         "activation_date": activation_date,
-        "sleep_score_count": sleep_score_count,
+        "sleep_nights_count": sleep_nights_count,
     }
-    today = datetime.utcnow().date()
+    try:
+        local_zone = ZoneInfo(getattr(user, "timezone_name", None) or "UTC")
+    except (ZoneInfoNotFoundError, TypeError, ValueError):
+        local_zone = ZoneInfo("UTC")
+    today = datetime.now(timezone.utc).astimezone(local_zone).date()
     granted = 0
     for q in QUEST_REGISTRY:
         slug = q["slug"]
@@ -263,40 +273,208 @@ def grant_quests(db, user, acts, summaries) -> int:
     return granted
 
 
+def _local_activity_day(activity) -> date | None:
+    stamp = getattr(activity, "start_date_local", None) or getattr(activity, "start_date", None)
+    if stamp is None:
+        return None
+    return stamp.date() if isinstance(stamp, datetime) else stamp
+
+
+def _user_local_today(user) -> date:
+    try:
+        zone = ZoneInfo(getattr(user, "timezone_name", None) or "UTC")
+    except (ZoneInfoNotFoundError, TypeError, ValueError):
+        zone = ZoneInfo("UTC")
+    return datetime.now(timezone.utc).astimezone(zone).date()
+
+
 def quest_states(db, user) -> list:
-    """Статусы для API: earned | open | unavailable."""
-    from ..models import XPEvent, Wellness
+    """Quest statuses and measurable progress for the authenticated user's data."""
+    from sqlalchemy import or_
+    from ..models import Activity, XPEvent, Wellness, WeeklySummary
+
+    today = _user_local_today(user)
+    activation_date: date = get_settings().XP_QUESTS_ACTIVATION_DATE
+    current_week = _trainer_week_start(today)
 
     earned = {
-        e.event_key: e
-        for e in db.query(XPEvent)
-        .filter(XPEvent.user_id == user.id, XPEvent.event_type == "quest")
+        event.event_key: event
+        for event in db.query(XPEvent)
+        .filter(XPEvent.user_id == user.id, XPEvent.event_type.in_(("quest", "achievement")))
         .all()
     }
+    activities = db.query(Activity).filter(Activity.user_id == user.id).all()
+    summaries = (
+        db.query(WeeklySummary)
+        .filter(WeeklySummary.user_id == user.id)
+        .order_by(WeeklySummary.week_start.asc())
+        .all()
+    )
+    eligible_summaries = [
+        summary for summary in summaries
+        if summary.week_start and summary.week_start.date() >= activation_date
+    ]
+    eligible_activities = [
+        activity for activity in activities
+        if (_local_activity_day(activity) is not None
+            and _local_activity_day(activity) >= activation_date)
+    ]
+
+    sleep_records = (
+        db.query(Wellness)
+        .filter(
+            Wellness.user_id == user.id,
+            Wellness.date >= activation_date.isoformat(),
+            or_(Wellness.sleep_secs > 0, Wellness.sleep_score > 0),
+        )
+        .order_by(Wellness.date.asc())
+        .all()
+    )
+    sleep_dates = sorted({row.date for row in sleep_records if row.date})
+    night_count = len(sleep_dates)
+
+    best_training_days = max(
+        (int(summary.training_days or 0) for summary in eligible_summaries),
+        default=0,
+    )
+    finalized = sorted(
+        [summary for summary in eligible_summaries if summary.finalized and summary.week_start],
+        key=lambda summary: summary.week_start,
+    )
+    best_goal_pct = max(
+        (max(0.0, float(summary.completion_ratio or 0.0)) * 100 for summary in eligible_summaries),
+        default=0.0,
+    )
+
+    # Count the current consecutive run backwards from the most recent finalized week.
+    goal_streak = 0
+    if finalized:
+        by_week = {summary.week_start.date(): summary for summary in finalized}
+        cursor = max(by_week)
+        while True:
+            row = by_week.get(cursor)
+            if row is None or float(row.completion_ratio or 0.0) < 1.0:
+                break
+            goal_streak += 1
+            cursor -= timedelta(days=7)
+
+    ride_km_by_week: dict[date, float] = {}
+    for activity in eligible_activities:
+        activity_day = _local_activity_day(activity)
+        if activity_day is None or str(activity.sport_type or "").upper() != "RIDE":
+            continue
+        week = _trainer_week_start(activity_day)
+        ride_km_by_week[week] = ride_km_by_week.get(week, 0.0) + max(float(activity.distance or 0.0), 0.0) / 1000.0
+    best_ride_km = max(ride_km_by_week.values(), default=0.0)
+
+    recent_start = today - timedelta(days=29)
+    dated_nonmanual = [
+        (activity, _local_activity_day(activity))
+        for activity in activities
+        if not bool(getattr(activity, "is_manual", False))
+        and _local_activity_day(activity) is not None
+        and int(getattr(activity, "moving_time", 0) or 0) > 0
+    ]
+    recent_durations = [
+        int(activity.moving_time or 0)
+        for activity, day in dated_nonmanual
+        if recent_start <= day <= today and day >= activation_date
+    ]
+    previous_record = max(
+        (
+            int(activity.moving_time or 0)
+            for activity, day in dated_nonmanual
+            if day < recent_start
+        ),
+        default=0,
+    )
+    recent_longest = max(recent_durations, default=0)
+    target_duration = previous_record * 1.1
+    if target_duration <= 0 and recent_longest > 0:
+        # With no pre-window baseline, use the current recent record as a provisional PB.
+        target_duration = recent_longest * 1.1
+    duration_progress = (recent_longest / target_duration * 100.0) if target_duration > 0 else 0.0
+
+    trainer_key = _trainer_week_key(current_week)
+    trainer_event = earned.get(trainer_key)
+    trainer_qualifies = any(
+        _is_qualifying_trainer_activity(activity)
+        and _local_activity_day(activity) is not None
+        and _trainer_week_start(_local_activity_day(activity)) == current_week
+        for activity in activities
+    )
+    trainer_done = bool(trainer_event or trainer_qualifies)
+    trainer_season_active = _trainer_season_active(today)
+
+    progress_by_slug = {
+        "first_three_day_week": {
+            "current": min(best_training_days, 3), "target": 3, "unit": "дней",
+        },
+        "goal_met": {
+            "current": round(min(best_goal_pct, 100.0), 1), "target": 100, "unit": "%",
+        },
+        "goal_streak_3": {
+            "current": min(goal_streak, 3), "target": 3, "unit": "недель",
+        },
+        "first_50km_ride_week": {
+            "current": round(min(best_ride_km, 50.0), 1), "target": 50, "unit": "км",
+        },
+        "record_duration": {
+            "current": round(min(duration_progress, 100.0), 1), "target": 100, "unit": "%",
+            "recent_duration_secs": recent_longest,
+            "record_before_recent_secs": previous_record,
+            "required_duration_secs": round(target_duration),
+        },
+        "sleep_connected": {
+            "current": min(night_count, 3), "target": 3, "unit": "ночей",
+            "steps": [
+                {
+                    "slot": index + 1,
+                    "label": f"Ночь {index + 1}",
+                    "filled": index < min(night_count, 3),
+                    "date": sleep_dates[-3:][index] if len(sleep_dates[-3:]) > index else None,
+                }
+                for index in range(3)
+            ],
+        },
+        "trainer_week": {
+            "current": 1 if trainer_done else 0, "target": 1, "unit": "тренировка",
+            "season_active": trainer_season_active,
+            "season_window": {"starts_month": 10, "ends_month": 4},
+        },
+    }
+
     out = []
-    for q in QUEST_REGISTRY:
-        if q["slug"] == "trainer_week":
-            today = datetime.utcnow().date()
-            trainer_key = _trainer_week_key(_trainer_week_start(today))
-            ev = earned.get(trainer_key)
-        else:
-            key = _quest_key(q["slug"])
-            ev = earned.get(key)
-        if ev:
+    for quest in QUEST_REGISTRY:
+        slug = quest["slug"]
+        event_key = trainer_key if slug == "trainer_week" else _quest_key(slug)
+        event = earned.get(event_key)
+        trainer_earned = slug == "trainer_week" and trainer_done
+        if event or trainer_earned:
             status = "earned"
-            earned_at = ev.date.strftime("%d.%m.%Y") if ev.date else None
-        elif q.get("requires"):
+            earned_at = event.date.strftime("%d.%m.%Y") if event and event.date else None
+        elif quest.get("requires"):
             status = "unavailable"
             earned_at = None
         else:
             status = "open"
             earned_at = None
-        out.append({
-            "slug": q["slug"],
-            "title": q["title"],
-            "desc": q["desc"],
-            "reward": int(q["reward"]),
+
+        item = {
+            "slug": slug,
+            "title": quest["title"],
+            "desc": quest["desc"],
+            "reward": int(quest["reward"]),
             "status": status,
             "earned_at": earned_at,
-        })
+        }
+        if quest.get("requires"):
+            item["progress"] = None
+            item["progress_reason"] = (
+                "Для этого квеста нужны данные мощности." if quest["requires"] == "power"
+                else "Для этого квеста нужны данные FTP в Вт/кг."
+            )
+        else:
+            item["progress"] = progress_by_slug[slug]
+        out.append(item)
     return out

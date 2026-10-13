@@ -89,5 +89,53 @@ class LeaderboardQueryContractTests(unittest.TestCase):
         ))
 
 
+    def test_weekly_payload_keeps_division_fields(self):
+        weekly_branch = next(
+            node for node in ast.walk(self.endpoint)
+            if isinstance(node, ast.If) and ast.unparse(node.test) == "scope == 'weekly'"
+        )
+        dictionaries = [
+            node for node in ast.walk(weekly_branch)
+            if isinstance(node, ast.Dict)
+        ]
+        entry_dicts = []
+        for dictionary in dictionaries:
+            keys = {
+                key.value for key in dictionary.keys
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            }
+            if {"division", "division_source", "score", "is_you"}.issubset(keys):
+                entry_dicts.append(keys)
+        self.assertTrue(entry_dicts, "weekly leaderboard entries must include division metadata")
+
+    def test_global_payload_has_no_weekly_specific_fields(self):
+        direct_returns = [
+            node for node in self.endpoint.body
+            if isinstance(node, ast.Return) and isinstance(node.value, ast.Dict)
+        ]
+        self.assertTrue(direct_returns)
+        global_return = direct_returns[-1]
+        top_keys = {
+            key.value for key in global_return.value.keys
+            if isinstance(key, ast.Constant) and isinstance(key.value, str)
+        }
+        self.assertNotIn("week", top_keys)
+        self.assertNotIn("formed", top_keys)
+        self.assertNotIn("min_size", top_keys)
+        self.assertNotIn("last_closed", top_keys)
+
+        entries_value = next(
+            value for key, value in zip(global_return.value.keys, global_return.value.values)
+            if isinstance(key, ast.Constant) and key.value == "entries"
+        )
+        entry_keys = {
+            key.value for key in entries_value.elt.keys
+            if isinstance(key, ast.Constant) and isinstance(key.value, str)
+        }
+        self.assertNotIn("division", entry_keys)
+        self.assertNotIn("division_source", entry_keys)
+        self.assertNotIn("score", entry_keys)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -170,27 +170,58 @@ def consistency_xp_week(qualifying_days: int) -> float:
     return round_xp(min(max(qualifying_days, 0), CONSISTENCY_DAYS_CAP) * CONSISTENCY_XP_PER_DAY)
 
 
+def quality_event_activity_ids(day_acts_by_date: dict, medians_by_sport: dict) -> dict[str, object]:
+    """Return the first workout of the week qualifying for each quality event.
+
+    Hard effort is at least 15 minutes in HR zones Z4+ or a reliable IF >= 0.75.
+    Manual records and workouts shorter than the normal 20-minute minimum do not
+    qualify. Long-workout quality uses the existing personal-median rule.
+    """
+    hard_id = None
+    long_id = None
+    ordered_days = sorted(day_acts_by_date.items(), key=lambda item: str(item[0]))
+    for _day, day_acts in ordered_days:
+        ordered_acts = sorted(
+            day_acts,
+            key=lambda activity: (
+                str(activity.get("start_date") or ""),
+                int(activity.get("id") or 0),
+            ),
+        )
+        for activity in ordered_acts:
+            moving_time = float(activity.get("moving_time") or 0.0)
+            source = activity.get("load_source")
+            if moving_time < 15 * 60:
+                continue
+            hard_secs = int(activity.get("hard_secs") or 0)
+            is_hard = (
+                source != "manual" and hard_secs >= 15 * 60
+            ) or (
+                source == "real"
+                and float(activity.get("intensity") or 0.0) >= QUALITY_IF_THRESHOLD
+            )
+            if hard_id is None and is_hard:
+                hard_id = activity.get("id")
+            median_duration = medians_by_sport.get(str(activity.get("sport_type") or "").upper())
+            if (
+                long_id is None
+                and source != "manual"
+                and median_duration
+                and moving_time >= median_duration * LONG_WORKOUT_MEDIAN_MULTIPLIER
+            ):
+                long_id = activity.get("id")
+            if hard_id is not None and long_id is not None:
+                return {"quality_hard": hard_id, "quality_long": long_id}
+    return {"quality_hard": hard_id, "quality_long": long_id}
+
+
 def quality_events_week(day_acts_by_date: dict, medians_by_sport: dict) -> list[tuple[str, float]]:
     """[('quality_hard', 15), ('quality_long', 15)] с недельным капом."""
-    hard = long_ = False
-    for acts in day_acts_by_date.values():
-        for a in acts:
-            if float(a.get("moving_time") or 0.0) < MIN_TRAINING_DURATION_SECONDS:
-                continue
-            hr_hard = int(a.get("hard_secs") or 0) >= 300 and a.get("load_source") != "manual"
-            if hr_hard or (a.get("load_source") == "real" and float(a.get("intensity") or 0.0) >= QUALITY_IF_THRESHOLD):
-                hard = True
-            med = medians_by_sport.get(str(a.get("sport_type") or "").upper())
-            if (
-                a.get("load_source") != "manual"
-                and med
-                and float(a.get("moving_time") or 0.0) >= med * LONG_WORKOUT_MEDIAN_MULTIPLIER
-            ):
-                long_ = True
+    activity_ids = quality_event_activity_ids(day_acts_by_date, medians_by_sport)
     events = []
-    if hard:
+    if activity_ids["quality_hard"] is not None:
         events.append(("quality_hard", QUALITY_HARD_WORKOUT_XP))
-    if long_:
+    if activity_ids["quality_long"] is not None:
         events.append(("quality_long", QUALITY_LONG_WORKOUT_XP))
     out, budget = [], QUALITY_WEEKLY_XP_CAP
     for kind, amount in events:

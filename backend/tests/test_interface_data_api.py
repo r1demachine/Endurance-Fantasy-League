@@ -1,0 +1,366 @@
+"""Backend interface-data endpoint regression tests.
+
+Run from backend/: python -m unittest tests.test_interface_data_api -v
+"""
+import os
+import unittest
+from datetime import date, datetime, timedelta
+from unittest.mock import patch
+from types import SimpleNamespace
+
+from cryptography.fernet import Fernet
+from fastapi import HTTPException
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+os.environ.setdefault("DATABASE_URL", "sqlite:////tmp/efl-interface-data-api-tests.db")
+os.environ.setdefault("JWT_SECRET", "unit-test-jwt-secret-value-longer-than-32-characters")
+os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
+os.environ.setdefault("REDIS_URL", "")
+
+from app.database import Base
+from app.models import Activity, User, Wellness, WeeklySummary, XPEvent
+from app.routers import sync as sync_router
+from app.services import quests as quest_service
+from app.services import xp_v6 as X6
+
+
+class InterfaceDataApiTests(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(self.engine)
+        self.Session = sessionmaker(bind=self.engine, autoflush=False, autocommit=False, expire_on_commit=False)
+        self.db = self.Session()
+        self.user = User(
+            username="interface-data-user",
+            password_hash="test-hash",
+            display_name="Interface Data",
+            timezone_name="UTC",
+        )
+        self.db.add(self.user)
+        self.db.commit()
+        self.db.refresh(self.user)
+
+    def tearDown(self):
+        self.db.close()
+        Base.metadata.drop_all(self.engine)
+        self.engine.dispose()
+
+    def add_activity(
+        self, key, *, user=None, stamp=datetime(2026, 10, 13, 9, 0),
+        tss=0, xp=0, manual=False, sport="RIDE", distance=0,
+        moving_time=1800, elevation=0, hard_secs=0, indoor=False,
+        intensity=0.5, source="INTERVALS",
+    ):
+        owner = user or self.user
+        activity = Activity(
+            user_id=owner.id,
+            intervals_activity_id=key,
+            source=source,
+            name=key,
+            sport_type=sport,
+            distance=distance,
+            moving_time=moving_time,
+            elevation_gain=elevation,
+            training_load=tss,
+            intensity=intensity,
+            tss=tss,
+            tss_estimated=False,
+            xp_earned=xp,
+            is_manual=manual,
+            hard_secs=hard_secs,
+            is_indoor=indoor,
+            indoor=indoor,
+            start_date=stamp,
+            start_date_local=stamp,
+        )
+        self.db.add(activity)
+        self.db.flush()
+        return activity
+
+    def add_summary(
+        self, week, *, effort=0, consistency=0, quality=0, goal=0,
+        recovery=0, quest=0, total=0, training_days=0, ratio=0.0,
+        finalized=True, actual_load=0, target_load=100,
+        paused=False, is_deload=False,
+    ):
+        row = WeeklySummary(
+            user_id=self.user.id,
+            week_start=datetime.combine(week, datetime.min.time()),
+            effort_xp=effort,
+            consistency_xp=consistency,
+            quality_xp=quality,
+            goal_xp=goal,
+            recovery_xp=recovery,
+            quest_xp=quest,
+            total_xp=total,
+            training_days=training_days,
+            completion_ratio=ratio,
+            finalized=finalized,
+            actual_load=actual_load,
+            target_load=target_load,
+            paused=paused,
+            is_deload=is_deload,
+        )
+        self.db.add(row)
+        self.db.flush()
+        return row
+
+    def add_event(self, key, event_type, amount, *, day, week=None, scope="week", source_id=None, title=None):
+        week = week or day - timedelta(days=day.weekday())
+        event = XPEvent(
+            user_id=self.user.id,
+            week_start=datetime.combine(week, datetime.min.time()),
+            date=datetime.combine(day, datetime.min.time()),
+            event_type=event_type,
+            event_key=key,
+            amount=amount,
+            source_type=scope,
+            source_id=str(source_id) if source_id is not None else None,
+            title=title or event_type,
+        )
+        self.db.add(event)
+        self.db.flush()
+        return event
+
+    def add_sleep(self, day, *, secs=None, score=None):
+        row = Wellness(
+            user_id=self.user.id,
+            date=day.isoformat(),
+            sleep_secs=secs,
+            sleep_score=score,
+        )
+        self.db.add(row)
+        self.db.flush()
+        return row
+
+    def test_calendar_year_weeks_include_boundary_and_empty_future_weeks(self):
+        today = date(2026, 10, 14)
+        current_week = date(2026, 10, 12)
+        self.add_summary(current_week, effort=42, total=42, actual_load=210, target_load=230)
+        # Even if a future row exists, the public timeline must not leak its data.
+        future_week = current_week + timedelta(days=7)
+        self.add_summary(future_week, effort=99, total=99, actual_load=900, target_load=999)
+
+        with patch("app.routers.sync._user_local_today", return_value=today):
+            payload = sync_router.get_calendar_year_weeks(year=2026, current=self.user, db=self.db)
+            default_payload = sync_router.get_calendar_year_weeks(year=None, current=self.user, db=self.db)
+
+        self.assertEqual(default_payload["year"], 2026)
+        self.assertEqual(payload["weeks"][0]["week_start"], "2025-12-29")
+        self.assertEqual(payload["weeks"][0]["week_end"], "2026-01-04")
+        self.assertEqual(payload["weeks"][-1]["week_start"], "2026-12-28")
+        self.assertEqual(payload["weeks"][-1]["week_end"], "2027-01-03")
+        current_row = next(week for week in payload["weeks"] if week["week_start"] == current_week.isoformat())
+        self.assertTrue(current_row["is_current"])
+        self.assertFalse(current_row["is_future"])
+        self.assertEqual(current_row["total_xp"], 42)
+        future_row = next(week for week in payload["weeks"] if week["week_start"] == future_week.isoformat())
+        self.assertTrue(future_row["is_future"])
+        self.assertFalse(future_row["has_summary"])
+        self.assertEqual(future_row["total_xp"], 0)
+        self.assertEqual(future_row["actual_load"], 0)
+        self.assertEqual(future_row["target_load"], 0)
+
+    def test_activity_xp_breakdown_caps_daily_tss_scopes_bonuses_and_matches_summary(self):
+        manual = self.add_activity(
+            "manual-xp", stamp=datetime(2026, 10, 13, 8, 0), tss=150,
+            manual=True, source="UPLOAD_SITE", moving_time=1800, intensity=0.5,
+        )
+        hard = self.add_activity(
+            "hard-xp", stamp=datetime(2026, 10, 13, 9, 0), tss=200,
+            moving_time=3600, hard_secs=900, intensity=0.5,
+        )
+        self.db.flush()
+        daily_xp = X6.effort_xp_day(350)
+        shares = X6.allocate_daily_effort_xp([{"tss": 150}, {"tss": 200}], daily_xp)
+        manual.xp_earned = shares[0]
+        hard.xp_earned = shares[1]
+        total = X6.round_xp(daily_xp + 30 + 30 + 20 + 5 + 25)
+        self.add_summary(
+            date(2026, 10, 12), effort=daily_xp, consistency=30, quality=30,
+            goal=20, recovery=5, quest=25, total=total, training_days=1,
+        )
+        self.add_event(
+            "consistency:2026-10-13", "consistency", 30,
+            day=date(2026, 10, 13), scope="day", source_id="2026-10-13", title="Training day +30",
+        )
+        self.add_event(
+            "quality_hard:2026-10-12", "quality_hard", 15,
+            day=date(2026, 10, 13), source_id=hard.id, title="High intensity +15",
+        )
+        self.add_event(
+            "quality_long:2026-10-12", "quality_long", 15,
+            day=date(2026, 10, 13), source_id=hard.id, title="Long workout +15",
+        )
+        self.add_event(
+            "weekly_goal:2026-10-12", "weekly_goal", 20,
+            day=date(2026, 10, 12), source_id="2026-10-12",
+        )
+        self.add_event(
+            "recovery:2026-10-12", "recovery", 5,
+            day=date(2026, 10, 12), source_id="2026-10-12",
+        )
+        self.add_event(
+            "quest:first-three-day-week", "quest", 25,
+            day=date(2026, 10, 13), scope="quest", title="🏆 Первый шаг",
+        )
+        self.db.commit()
+
+        manual_payload = sync_router.get_activity_xp_breakdown(
+            activity_id=manual.id, current=self.user, db=self.db,
+        )
+        hard_payload = sync_router.get_activity_xp_breakdown(
+            activity_id=hard.id, current=self.user, db=self.db,
+        )
+
+        self.assertTrue(manual_payload["effort"]["cap_applied"])
+        self.assertEqual(manual_payload["effort"]["daily_tss_cap"], 300)
+        self.assertEqual(manual_payload["effort"]["day_tss"], 350)
+        self.assertEqual(manual_payload["effort"]["effective_day_tss"], 300)
+        self.assertEqual(manual_payload["effort"]["manual_coefficient"], 0.5)
+        self.assertEqual(manual_payload["effort"]["tss_before_manual_coefficient"], 300)
+        self.assertEqual(manual_payload["related"]["day"]["scope"], "day")
+        self.assertEqual(manual_payload["related"]["day"]["quest_xp"], 25)
+        self.assertEqual(len(manual_payload["related"]["day"]["quests"]), 1)
+        self.assertEqual(len(manual_payload["related"]["week"]["quality"]), 0)
+        self.assertEqual(len(hard_payload["related"]["week"]["quality"]), 2)
+        self.assertTrue(manual_payload["totals"]["weekly_summary_components_match"])
+        self.assertEqual(manual_payload["totals"]["weekly_summary_components_xp"], total)
+        self.assertEqual(manual_payload["totals"]["weekly_summary_total_xp"], total)
+        self.assertEqual(manual_payload["totals"]["for_this_activity_xp"], shares[0])
+
+    def test_activity_xp_breakdown_is_private_to_owner(self):
+        activity = self.add_activity("private-xp")
+        stranger = User(
+            username="other-interface-user",
+            password_hash="test-hash",
+            display_name="Other User",
+            timezone_name="UTC",
+        )
+        self.db.add(stranger)
+        self.db.commit()
+        foreign_activity = self.add_activity(
+            "foreign-xp", user=stranger, stamp=datetime(2026, 10, 13, 11, 0),
+        )
+        self.db.commit()
+        with self.assertRaises(HTTPException) as captured:
+            sync_router.get_activity_xp_breakdown(
+                activity_id=foreign_activity.id, current=self.user, db=self.db,
+            )
+        self.assertEqual(captured.exception.status_code, 404)
+        # The owner's activity still resolves normally.
+        self.assertEqual(
+            sync_router.get_activity_xp_breakdown(activity_id=activity.id, current=self.user, db=self.db)["activity_id"],
+            activity.id,
+        )
+
+    def test_profile_stats_excludes_manual_distance_and_duration_but_keeps_xp(self):
+        today = date(2026, 10, 14)
+        self.add_activity(
+            "measured-stats", stamp=datetime(2026, 10, 13, 10, 0), distance=10000,
+            moving_time=3600, elevation=100, xp=8, manual=False,
+        )
+        self.add_activity(
+            "manual-stats", stamp=datetime(2026, 10, 13, 11, 0), distance=7000,
+            moving_time=1800, elevation=50, xp=4, manual=True, source="UPLOAD_SITE",
+        )
+        self.add_event(
+            "day-bonus-stats", "consistency", 30, day=date(2026, 10, 13),
+            scope="day", source_id="2026-10-13",
+        )
+        self.db.commit()
+
+        with patch("app.routers.sync._user_local_today", return_value=today):
+            weekly = sync_router.get_profile_stats(range="week", current=self.user, db=self.db)
+            yearly = sync_router.get_profile_stats(range="year", current=self.user, db=self.db)
+            seasonal = sync_router.get_profile_stats(range="season", current=self.user, db=self.db)
+
+        for payload in (weekly, yearly, seasonal):
+            self.assertEqual(payload["distance_km"], 10)
+            self.assertEqual(payload["hours"], 1)
+            self.assertEqual(payload["elevation"], 150)
+            self.assertEqual(payload["workouts"], 2)
+            self.assertEqual(payload["xp"], 42)
+        self.assertEqual(weekly["start_date"], "2026-10-12")
+        self.assertEqual(yearly["start_date"], "2026-01-01")
+        self.assertEqual(seasonal["start_date"], "2026-09-01")
+
+    def test_quests_progress_and_sleep_duration_fulfill_three_nights(self):
+        activation = date(2026, 1, 1)
+        summary = self.add_summary(
+            date(2026, 10, 12), training_days=3, ratio=0.90, finalized=True,
+        )
+        self.add_sleep(date(2026, 10, 10), secs=8 * 3600, score=None)
+        self.add_sleep(date(2026, 10, 11), secs=7 * 3600, score=None)
+        self.add_sleep(date(2026, 10, 12), secs=6 * 3600, score=None)
+        self.add_activity(
+            "progress-ride-1", stamp=datetime(2026, 10, 13, 8, 0), distance=20000,
+            moving_time=3600, indoor=True,
+        )
+        self.add_activity(
+            "progress-ride-2", stamp=datetime(2026, 10, 13, 9, 0), distance=20000,
+            moving_time=2400,
+        )
+        self.add_activity(
+            "progress-ride-3", stamp=datetime(2026, 10, 13, 10, 0), distance=15000,
+            moving_time=1800,
+        )
+        self.db.commit()
+
+        fake_settings = SimpleNamespace(XP_QUESTS_ACTIVATION_DATE=activation)
+        with patch("app.services.quests.get_settings", return_value=fake_settings), patch(
+            "app.services.quests._user_local_today", return_value=date(2026, 10, 14)
+        ):
+            payload = sync_router.get_quests(current=self.user, db=self.db)
+            quest_service.grant_quests(self.db, self.user, [], [])
+            self.db.commit()
+
+        quests = {quest["slug"]: quest for quest in payload}
+        self.assertEqual(quests["first_three_day_week"]["progress"]["current"], 3)
+        self.assertEqual(quests["goal_met"]["progress"]["current"], 90)
+        self.assertEqual(quests["goal_streak_3"]["progress"]["current"], 0)
+        self.assertEqual(quests["first_50km_ride_week"]["progress"]["current"], 50)
+        self.assertEqual(quests["sleep_connected"]["progress"]["current"], 3)
+        self.assertEqual(len(quests["sleep_connected"]["progress"]["steps"]), 3)
+        self.assertTrue(all(step["filled"] for step in quests["sleep_connected"]["progress"]["steps"]))
+        self.assertEqual(quests["trainer_week"]["progress"]["current"], 1)
+        self.assertEqual(quests["trainer_week"]["status"], "earned")
+        self.assertTrue(quests["trainer_week"]["progress"]["season_active"])
+        self.assertIsNone(quests["power_record_20m"]["progress"])
+        self.assertTrue(quests["power_record_20m"]["progress_reason"])
+        sleep_event = self.db.query(XPEvent).filter(
+            XPEvent.user_id == self.user.id,
+            XPEvent.event_key == "quest:sleep_connected:lifetime",
+        ).first()
+        self.assertIsNotNone(sleep_event)
+
+    def test_quality_hard_requires_fifteen_minutes_and_attributes_first_qualifier(self):
+        day = date(2026, 10, 13)
+        rows = {
+            day: [
+                {
+                    "id": 1, "sport_type": "RIDE", "moving_time": 1800,
+                    "hard_secs": 5 * 60, "intensity": 0.5,
+                    "load_source": "real", "start_date": datetime(2026, 10, 13, 8, 0),
+                },
+                {
+                    "id": 2, "sport_type": "RIDE", "moving_time": 1800,
+                    "hard_secs": 15 * 60, "intensity": 0.5,
+                    "load_source": "real", "start_date": datetime(2026, 10, 13, 9, 0),
+                },
+            ]
+        }
+        sources = X6.quality_event_activity_ids(rows, {"RIDE": 9999})
+        self.assertEqual(sources["quality_hard"], 2)
+        self.assertIsNone(sources["quality_long"])
+        self.assertEqual(X6.quality_events_week(rows, {"RIDE": 9999}), [("quality_hard", 15.0)])
+
+
+if __name__ == "__main__":
+    unittest.main()
