@@ -30,7 +30,8 @@ test("the calendar-year chart and weekly summary use the same selectedWeekStart 
   assert.match(dashboard, /selectedWeekStart=\{selectedWeekStart \|\| weekData\?\.week_start \|\| ""\}/);
   assert.match(dashboard, /onWeekChange=\{setSelectedWeekStart\}/);
   assert.match(dashboard, /selectedWeekStart=\{selectedWeekStart \|\| weekData\?\.week_start \|\| ""\}[\s\S]*?<WeekBlock/);
-  assert.match(yearChart, /authApi\.get\("\/api\/season\/weeks", \{[\s\S]*params: \{ year \}/);
+  assert.match(yearChart, /authApi\.get\("\/api\/season\/weeks", \{[\s\S]*params: year === null \? \{\} : \{ year \}/);
+  assert.match(yearChart, /setYear\(Number\(response\.data\.year\)\)/);
   assert.match(yearChart, /onClick=\{\(\) => onWeekChange\(week\.week_start\)\}/);
   assert.match(yearChart, /aria-label=\{label\}/);
   assert.match(yearChart, /week\.is_future \? "opacity-30"/);

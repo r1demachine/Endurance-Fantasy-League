@@ -60,7 +60,8 @@ function barStyle(week: CalendarWeek, height: number): CSSProperties {
 }
 
 export default function YearWeeksChart({ selectedWeekStart, onWeekChange }: Props) {
-  const [year, setYear] = useState(() => new Date().getFullYear());
+  const [year, setYear] = useState<number | null>(null);
+  const displayYear = year ?? new Date().getFullYear();
   const [weeks, setWeeks] = useState<CalendarWeek[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -70,11 +71,14 @@ export default function YearWeeksChart({ selectedWeekStart, onWeekChange }: Prop
     setError("");
     try {
       const response = await authApi.get("/api/season/weeks", {
-        params: { year },
+        params: year === null ? {} : { year },
         ...(signal ? { signal } : {}),
       });
       if (signal?.aborted) return;
       setWeeks(Array.isArray(response.data.weeks) ? response.data.weeks : []);
+      if (year === null && Number.isInteger(response.data.year)) {
+        setYear(Number(response.data.year));
+      }
     } catch (requestError: unknown) {
       if (!signal?.aborted) {
         setError(getApiErrorMessage(requestError, "Не удалось загрузить недели календарного года."));
@@ -92,7 +96,7 @@ export default function YearWeeksChart({ selectedWeekStart, onWeekChange }: Prop
 
   const monthMarkers = useMemo(() => {
     return Array.from({ length: 12 }, (_, month) => {
-      const markerDate = new Date(year, month, 1);
+      const markerDate = new Date(displayYear, month, 1);
       const firstMonthWeek = localIso(mondayForDate(markerDate));
       const index = weeks.findIndex((week) => week.week_start === firstMonthWeek);
       return {
@@ -103,14 +107,14 @@ export default function YearWeeksChart({ selectedWeekStart, onWeekChange }: Prop
         index: Math.max(0, index),
       };
     });
-  }, [year, weeks]);
+  }, [displayYear, weeks]);
 
   const selectedWeek = weeks.find((week) => week.week_start === selectedWeekStart)
     ?? (!selectedWeekStart ? weeks.find((week) => week.is_current) ?? null : null);
   const maxXp = Math.max(1, ...weeks.map((week) => Number(week.total_xp) || 0));
 
   const changeYear = (delta: number) => {
-    const nextYear = year + delta;
+    const nextYear = displayYear + delta;
     setYear(nextYear);
     onWeekChange(mondayForYear(nextYear));
   };
@@ -129,7 +133,7 @@ export default function YearWeeksChart({ selectedWeekStart, onWeekChange }: Prop
             onClick={() => changeYear(-1)}
             className="h-10 w-10 border-2 border-black bg-white font-bold transition-colors hover:bg-[#ffd500]"
           >←</button>
-          <span className="min-w-16 text-center font-display text-xl tabular-nums" aria-live="polite">{year}</span>
+          <span className="min-w-16 text-center font-display text-xl tabular-nums" aria-live="polite">{displayYear}</span>
           <button
             type="button"
             aria-label="Следующий год"
@@ -154,7 +158,7 @@ export default function YearWeeksChart({ selectedWeekStart, onWeekChange }: Prop
                   className="grid h-52 items-end gap-[3px] border-b-2 border-black/20 pb-1"
                   style={{ gridTemplateColumns: `repeat(${weeks.length}, minmax(0, 1fr))` }}
                   role="group"
-                  aria-label={`XP по неделям ${year} года. Нажмите столбец, чтобы выбрать неделю.`}
+                  aria-label={`XP по неделям ${displayYear} года. Нажмите столбец, чтобы выбрать неделю.`}
                 >
                   {weeks.map((week) => {
                     const xp = Math.round(Number(week.total_xp) || 0);
