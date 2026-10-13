@@ -12,7 +12,6 @@ import ActivityUpload from "@/components/ActivityUpload";
 import { getApiErrorMessage, parsePauseDate, parsePauseWeeks } from "@/components/dialog-utils";
 import { ErrorState, Label, SectionTitle, Skeleton } from "@/components/ui";
 import WeekBlock from "@/components/dashboard/WeekBlock";
-import EventsFeed from "@/components/dashboard/EventsFeed";
 import QuestsBoard from "@/components/dashboard/QuestsBoard";
 import YearWeeksChart from "@/components/dashboard/YearWeeksChart";
 import DashboardWorkoutsSection from "@/components/dashboard/DashboardWorkoutsSection";
@@ -22,7 +21,6 @@ export default function Dashboard() {
   const router = useRouter();
   const [userData, setUserData] = useState<any>(null);
   const [weekData, setWeekData] = useState<any>(null);
-  const [events, setEvents] = useState<any[]>([]);
   const [weekOptions, setWeekOptions] = useState<{ week_start: string; label: string }[]>([]);
   const [weekActivities, setWeekActivities] = useState<any[]>([]);
   const [selectedWeekStart, setSelectedWeekStart] = useState("");
@@ -50,7 +48,6 @@ export default function Dashboard() {
     if (cached) {
       setUserData(cached);
       setWeekData(cached.week || null);
-      setEvents(cached.recent_events || []);
     }
     const unsubscribe = subscribeUser((user) => {
       setUserData(user);
@@ -71,7 +68,6 @@ export default function Dashboard() {
     }).then((response) => {
       const result = response.data;
       setWeekData(result.week || null);
-      setEvents(result.events || []);
       setWeekActivities(Array.isArray(result.activities) ? result.activities : []);
       setWeekOptions(result.week_options || []);
       if (!selectedWeekStart && result.week?.week_start) {
@@ -351,7 +347,6 @@ export default function Dashboard() {
               />
             )}
 
-            <EventsFeed events={events} />
             <QuestsBoard
               quests={quests}
               loading={questsLoading}
@@ -364,6 +359,7 @@ export default function Dashboard() {
               weekOptions={weekOptions}
               selectedWeekStart={selectedWeekStart || weekData?.week_start || ""}
               onWeekChange={setSelectedWeekStart}
+              onOpenSources={openSourceSettings}
             />
           </>
         )}
@@ -396,7 +392,7 @@ export default function Dashboard() {
         )}
         {uploadOpen && (
           <Modal title="Загрузить тренировку" onClose={() => setUploadOpen(false)}>
-            <ActivityUpload />
+            <ActivityUpload onUploaded={() => void loadQuests()} />
           </Modal>
         )}
       </AnimatePresence>
@@ -408,6 +404,7 @@ export default function Dashboard() {
           onClose={() => setSettingsTab(null)}
           onTabChange={setSettingsTab}
           onLogout={handleSettingsLogout}
+          onDataUpdated={() => void loadQuests()}
         />
       )}
     </main>
