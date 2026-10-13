@@ -4,7 +4,14 @@ from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from app.routers.privacy import _cleanup_social_for_user, DeleteAccountInput, delete_account
+from app.database import Base
+from app.routers.privacy import (
+    _USER_FK_TABLES_CLEANED_EXPLICITLY,
+    _cleanup_remaining_user_fk_rows,
+    _cleanup_social_for_user,
+    DeleteAccountInput,
+    delete_account,
+)
 from app.models import ClubMemberRole
 
 
@@ -47,6 +54,37 @@ class CleanupSocialTests(unittest.TestCase):
         _cleanup_social_for_user(db, uid)
         db.delete.assert_called()
 
+    def test_dynamic_cleanup_covers_every_users_fk_table(self):
+        users_table_name = "users"
+        all_user_fk_tables = {
+            table.name
+            for table in Base.metadata.tables.values()
+            if any(
+                fk.column.table.name == users_table_name and fk.column.name == "id"
+                for column in table.columns
+                for fk in column.foreign_keys
+            )
+        }
+        self.assertIn("sync_progress", all_user_fk_tables)
+        self.assertIn("heart_rate_settings_history", all_user_fk_tables)
+
+        db = MagicMock()
+        cleaned = _cleanup_remaining_user_fk_rows(db, 987)
+        executed = {
+            call.args[0].table.name
+            for call in db.execute.call_args_list
+        }
+
+        # Domain-specific tables are cleaned by _cleanup_social_for_user and
+        # the explicit delete statements in delete_account.
+        self.assertEqual(cleaned, executed)
+        self.assertEqual(
+            all_user_fk_tables,
+            _USER_FK_TABLES_CLEANED_EXPLICITLY | executed,
+        )
+        self.assertIn("sync_progress", executed)
+        self.assertIn("heart_rate_settings_history", executed)
+
     def test_delete_account_requires_password(self):
         user = SimpleNamespace(id=1, password_hash="x", api_key_encrypted=None, intervals_id=None)
         data = DeleteAccountInput(confirmation="DELETE", password="wrong")
@@ -54,7 +92,7 @@ class CleanupSocialTests(unittest.TestCase):
         with patch("app.routers.privacy.verify_password", return_value=False):
             from fastapi import HTTPException
             with self.assertRaises(HTTPException) as ctx:
-                delete_account(data, user, db)
+                delete_account.__wrapped__(MagicMock(), data, user, db)
             self.assertEqual(ctx.exception.status_code, 403)
 
     def test_delete_account_happy_path_commits(self):
@@ -70,7 +108,7 @@ class CleanupSocialTests(unittest.TestCase):
         q.all.return_value = []
         with patch("app.routers.privacy.verify_password", return_value=True):
             with patch("app.routers.privacy._cleanup_social_for_user") as clean:
-                result = delete_account(data, user, db)
+                result = delete_account.__wrapped__(MagicMock(), data, user, db)
                 clean.assert_called_once()
                 db.delete.assert_called_once_with(user)
                 db.commit.assert_called_once()
