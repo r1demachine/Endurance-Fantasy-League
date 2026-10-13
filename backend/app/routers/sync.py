@@ -2852,6 +2852,8 @@ async def set_deload(
         summary.paused = False
         current.last_deload_week_start = ws
         _log_deload_event(db, current, ws, "enabled", "Ручной Deload установлен")
+        if get_settings().XP_ENGINE == "v6":
+            _recalculate_user_xp_v6(db, current)
         db.commit()
         state = _get_current_deload_state(db, current, ws, today, summary)
         return {"message": "Ручной Deload установлен на текущую неделю.", **{k: v for k, v in state.items() if not k.startswith("_")}}
@@ -2876,6 +2878,8 @@ async def set_deload(
             .first()
         )
         current.last_deload_week_start = previous_deload.week_start.date() if previous_deload and previous_deload.week_start else None
+        if get_settings().XP_ENGINE == "v6":
+            _recalculate_user_xp_v6(db, current)
         db.commit()
         state = _get_current_deload_state(db, current, ws, today, summary)
         return {"message": "Ручной Deload снят; автоматический Deload на этой неделе отключён.", **{k: v for k, v in state.items() if not k.startswith("_")}}
@@ -2891,6 +2895,8 @@ async def set_deload(
     summary.deload_source = None
     summary.deload_manual_decision = True
     _log_deload_event(db, current, ws, "dismissed", "Предложение Deload отклонено")
+    if get_settings().XP_ENGINE == "v6":
+        _recalculate_user_xp_v6(db, current)
     db.commit()
     state = _get_current_deload_state(db, current, ws, today, summary)
     return {"message": "Предложение отклонено; автоматический Deload на этой неделе отключён.", **{k: v for k, v in state.items() if not k.startswith("_")}}
@@ -2946,6 +2952,8 @@ async def set_pause(
         current.pause_set_at = datetime.utcnow()
         current.paused_until = datetime.utcnow() + timedelta(weeks=weeks)
         message = f"Пауза установлена на {weeks} нед."
+    if get_settings().XP_ENGINE == "v6":
+        _recalculate_user_xp_v6(db, current)
     db.commit()
     return {
         "message": message,
