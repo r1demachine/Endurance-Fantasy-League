@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from app.services.quests import (
     _best_activity_training_days,
+    _cond_first_three_day_week,
     _cond_record_duration,
     _max_goal_streak,
     _quest_status,
@@ -68,3 +69,12 @@ def test_achievement_status_comes_from_progress_not_xp_event_presence():
     assert _quest_status(quest, {"current": 40, "target": 100}) == "open"
     assert _quest_status(quest, {"current": 100, "target": 100}) == "earned"
     assert _quest_status({"slug": "power_record_20m", "requires": "power"}, None) == "unavailable"
+
+def test_three_day_achievement_can_be_recomputed_from_activity_history():
+    activities = [
+        activity("2020-04-06T08:00:00", 1, 1800),
+        activity("2020-04-07T08:00:00", 2, 1800),
+        activity("2020-04-08T08:00:00", 3, 1800),
+    ]
+
+    assert _cond_first_three_day_week({"weeks": [], "acts": activities, "all_acts": activities})
