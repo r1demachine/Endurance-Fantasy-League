@@ -1793,130 +1793,130 @@ from ..services.leaderboard_privacy import (
 @router.get("/leaderboard")
 async def leaderboard(
     scope: str = Query("global", regex="^(global|friends|weekly)$"),
-    limit: int = Query(50, ge=1, le=100),
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer),
+    limit: int = Query(10, ge=1, le=10),
+    current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Рейтинг: global — все (публично), friends — только принятые друзья (авторизация)."""
-    current: Optional[User] = None
-    if credentials is not None:
-        claims = decode_access_token_claims(credentials.credentials)
-        if claims is not None:
-            uid, token_version = claims
-            candidate = db.get(User, uid)
-            if candidate is not None and int(candidate.token_version or 0) == token_version:
-                current = candidate
+    """Authenticated leaderboards; visibility filtering and top-10 selection run in SQL."""
+    from ..services import xp_v6 as X6
+    from ..models import LeagueWeek, WeeklySummary
 
-    # ── Weekly League (текущая неделя, live-борд по дивизионам) ──
+    friend_ids = _viewer_friend_ids(db, current)
+    visible_ids = friend_ids | {current.id}
+    visible_filter = or_(
+        User.profile_visibility.is_(None),
+        User.profile_visibility == "authenticated",
+        and_(
+            User.profile_visibility == "friends",
+            User.id.in_(visible_ids),
+        ),
+        and_(
+            User.profile_visibility == "private",
+            User.id == current.id,
+        ),
+    )
+    rank_expr = func.coalesce(User.total_xp, 0.0)
+
+    def _rank_before_user(scope_filter):
+        score = float(current.total_xp or 0)
+        ahead = (
+            db.query(func.count(User.id))
+            .filter(
+                scope_filter,
+                or_(
+                    rank_expr > score,
+                    and_(rank_expr == score, User.id < current.id),
+                ),
+            )
+            .scalar()
+        )
+        return int(ahead or 0) + 1
+
     if scope == "weekly":
-        from ..services import xp_v6 as X6
-        from ..models import LeagueWeek, WeeklySummary
         today = _user_local_today(current)
         this_ws_d = X6.week_start(today)
         this_ws = datetime.combine(this_ws_d, datetime.min.time())
-        sums = (
-            db.query(WeeklySummary)
-            .filter(WeeklySummary.week_start == this_ws)
+        rows = (
+            db.query(WeeklySummary, User)
+            .join(User, User.id == WeeklySummary.user_id)
+            .filter(WeeklySummary.week_start == this_ws, visible_filter)
+            .order_by(
+                func.coalesce(WeeklySummary.league_score, 0.0).desc(),
+                User.id.asc(),
+            )
+            .limit(limit)
             .all()
         )
         entries = []
-        friend_ids = _viewer_friend_ids(db, current)
-        for s in sums:
-            u = db.get(User, s.user_id)
-            if not u:
-                continue
-            if not _profile_visible_on_leaderboard(u, current, friend_ids):
-                continue
-            div, src = _user_division(db, u, this_ws_d, s.actual_load or 0)
+        for summary, user in rows:
+            div, source = _user_division(
+                db, user, this_ws_d, summary.actual_load or 0
+            )
             entries.append({
-                "id": u.id,
-                "username": u.username,
-                "display_name": u.display_name,
-                "level": u.level,
-                "score": round(s.league_score or 0, 1),
+                "id": user.id,
+                "username": user.username,
+                "display_name": user.display_name,
+                "level": user.level,
+                "score": round(summary.league_score or 0, 1),
                 "division": div,
-                "division_source": src,
-                "is_you": current is not None and current.id == u.id,
+                "division_source": source,
+                "is_you": user.id == current.id,
             })
-        order = {name: i for i, name in enumerate(X6.DIVISION_NAMES)}
-        order["Open"] = len(order)
-        order[None] = len(order) + 1
-        entries.sort(key=lambda e: (order.get(e["division"], 99), -e["score"]))
-        per_div: dict = {}
-        for e in entries:
-            per_div[e["division"]] = per_div.get(e["division"], 0) + 1
-            e["rank"] = per_div[e["division"]]
-        last_lw = (
+        division_order = {name: i for i, name in enumerate(X6.DIVISION_NAMES)}
+        division_order["Open"] = len(division_order)
+        division_order[None] = len(division_order) + 1
+        entries.sort(key=lambda entry: (
+            division_order.get(entry["division"], 99),
+            -entry["score"],
+            entry["id"],
+        ))
+        per_division: dict = {}
+        for entry in entries:
+            div = entry["division"]
+            per_division[div] = per_division.get(div, 0) + 1
+            entry["rank"] = per_division[div]
+
+        last_week = (
             db.query(LeagueWeek)
             .order_by(LeagueWeek.week_start.desc())
             .first()
         )
-        your_rank = next((entry["rank"] for entry in entries if entry["is_you"]), None)
         return {
             "scope": "weekly",
-            "your_rank": your_rank,
+            "your_rank": next(
+                (entry["rank"] for entry in entries if entry["is_you"]), None
+            ),
             "week": this_ws_d.isoformat(),
             "formed": len(entries) >= X6.MIN_LEAGUE_SIZE,
             "min_size": X6.MIN_LEAGUE_SIZE,
-            "last_closed": last_lw.week_start.strftime("%d.%m") if last_lw else None,
+            "last_closed": last_week.week_start.strftime("%d.%m") if last_week else None,
             "entries": entries,
         }
 
-    your_rank = None
-    rank_expr = func.coalesce(User.total_xp, 0.0)
-
     if scope == "global":
-        friend_ids = _viewer_friend_ids(db, current)
-        candidates = (
+        users = (
             db.query(User)
+            .filter(visible_filter)
             .order_by(rank_expr.desc(), User.id.asc())
+            .limit(limit)
             .all()
         )
-        users = [
-            u for u in candidates
-            if _profile_visible_on_leaderboard(u, current, friend_ids)
-        ][:limit]
-        if current is not None and _profile_visible_on_leaderboard(current, current, friend_ids):
-            visible_ids = [
-                u.id for u in candidates
-                if _profile_visible_on_leaderboard(u, current, friend_ids)
-            ]
-            try:
-                your_rank = visible_ids.index(current.id) + 1
-            except ValueError:
-                your_rank = None
-
+        your_rank = _rank_before_user(visible_filter)
     else:
-        if current is None:
-            raise HTTPException(status_code=401, detail="Friends-рейтинг доступен после входа")
-        # друзья = accepted с обеих сторон; нет друзей → пустой рейтинг
-        from ..models import Friendship, FriendshipStatus
-        friend_ids_rows = (
-            db.query(Friendship.to_user_id)
-            .filter(
-                Friendship.from_user_id == current.id,
-                Friendship.status == FriendshipStatus.ACCEPTED,
-            )
-            .union(
-                db.query(Friendship.from_user_id).filter(
-                    Friendship.to_user_id == current.id,
-                    Friendship.status == FriendshipStatus.ACCEPTED,
-                )
-            )
-            .all()
-        )
-        friend_ids = {r[0] for r in friend_ids_rows}
         if not friend_ids:
-            return {"scope": scope, "entries": [], "your_rank": None}
-        friend_ids.add(current.id)
-        all_friend_users = (
+            return {"scope": scope, "entries": [], "your_rank": 1}
+        friend_scope_filter = and_(
+            visible_filter,
+            User.id.in_(visible_ids),
+        )
+        users = (
             db.query(User)
-            .filter(User.id.in_(friend_ids))
+            .filter(friend_scope_filter)
             .order_by(rank_expr.desc(), User.id.asc())
+            .limit(limit)
             .all()
         )
-        your_rank = next((idx + 1 for idx, user in enumerate(all_friend_users) if user.id == current.id), None)
-        users = all_friend_users[:limit]
+        your_rank = _rank_before_user(friend_scope_filter)
 
     return {
         "scope": scope,
@@ -1924,14 +1924,14 @@ async def leaderboard(
         "entries": [
             {
                 "rank": i + 1,
-                "id": u.id,
-                "display_name": u.display_name,
-                "username": u.username,
-                "level": u.level,
-                "total_xp": round(float(u.total_xp or 0), 2),
-                "is_you": current is not None and u.id == current.id,
+                "id": user.id,
+                "display_name": user.display_name,
+                "username": user.username,
+                "level": user.level,
+                "total_xp": round(float(user.total_xp or 0), 2),
+                "is_you": user.id == current.id,
             }
-            for i, u in enumerate(users)
+            for i, user in enumerate(users)
         ],
     }
 
