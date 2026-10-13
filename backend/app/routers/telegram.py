@@ -245,7 +245,7 @@ async def telegram_webhook(
             await send_message(chat_id, HELP_TEXT)
         return {"ok": True}
     except Exception:
-        db.rollback()
+        await run_in_threadpool(db.rollback)
         await run_in_threadpool(_unmark_update_processed, db, update_id)
         raise
 
@@ -259,7 +259,9 @@ async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str =
         return
 
     if command == "/status":
-        user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+        user = await run_in_threadpool(
+            lambda: db.query(User).filter(User.telegram_chat_id == chat_id).first()
+        )
         if not user:
             await send_message(chat_id, "Аккаунт не привязан. Получи код в профиле на сайте и отправь /link КОД.")
             return
@@ -272,31 +274,36 @@ async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str =
         return
 
     if command == "/stop":
-        user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+        user = await run_in_threadpool(
+            lambda: db.query(User).filter(User.telegram_chat_id == chat_id).first()
+        )
         if user:
-            _unlink_user(user)
-            db.commit()
+            await run_in_threadpool(_unlink_user, user)
+            await run_in_threadpool(db.commit)
         await send_message(chat_id, "Привязка удалена, уведомления выключены. Чтобы снова связать — новый /link КОД из профиля.")
         return
 
     if command == "/notify":
-        user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+        user = await run_in_threadpool(
+            lambda: db.query(User).filter(User.telegram_chat_id == chat_id).first()
+        )
         if not user:
             await send_message(chat_id, "Сначала привяжи аккаунт: /link КОД из профиля на сайте.")
             return
         if len(parts) < 2 or parts[1].lower() not in {"on", "off"}:
             await send_message(chat_id, "Используй /notify on или /notify off.")
             return
-        user.telegram_notify = parts[1].lower() == "on"
-        db.commit()
-        await send_message(chat_id, "Уведомления включены." if user.telegram_notify else "Уведомления отключены.")
+        enabled = parts[1].lower() == "on"
+        await run_in_threadpool(setattr, user, "telegram_notify", enabled)
+        await run_in_threadpool(db.commit)
+        await send_message(chat_id, "Уведомления включены." if enabled else "Уведомления отключены.")
         return
 
     if command == "/link":
         if chat_type != "private":
             await send_message(chat_id, "Для безопасности /link можно использовать только в личном чате с ботом.")
             return
-        if _failed_link_attempts(db, chat_id) >= LINK_RATE_LIMIT:
+        if await run_in_threadpool(_failed_link_attempts, db, chat_id) >= LINK_RATE_LIMIT:
             await send_message(chat_id, "Слишком много неверных кодов. Попробуй через 15 минут.")
             return
         if len(parts) < 2:
@@ -305,20 +312,20 @@ async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str =
 
         code = parts[1].strip().upper()
         now = datetime.utcnow()
-        user = db.query(User).filter(
+        user = await run_in_threadpool(lambda: db.query(User).filter(
             User.telegram_link_code == _hash_link_code(code),
             User.telegram_link_expires.isnot(None),
             User.telegram_link_expires > now,
-        ).first()
+        ).first())
         if not user:
-            _record_failed_link_attempt(db, chat_id)
+            await run_in_threadpool(_record_failed_link_attempt, db, chat_id)
             await send_message(chat_id, "Код неверный или истёк. Сгенерируй новый в профиле на сайте.")
             return
 
-        other_owner = db.query(User).filter(
+        other_owner = await run_in_threadpool(lambda: db.query(User).filter(
             User.telegram_chat_id == chat_id,
             User.id != user.id,
-        ).first()
+        ).first())
         if other_owner:
             await send_message(
                 chat_id,
@@ -326,15 +333,19 @@ async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str =
             )
             return
 
-        old_chat_id = user.telegram_chat_id if user.telegram_chat_id and user.telegram_chat_id != chat_id else None
-        user.telegram_chat_id = chat_id
-        user.telegram_notify = False  # consent must be given separately
-        user.telegram_link_code = None
-        user.telegram_link_expires = None
-        last_completed = _latest_completed_week_start()
-        if user.telegram_last_notified_week is None or user.telegram_last_notified_week < last_completed:
-            user.telegram_last_notified_week = last_completed
-        db.commit()
+        def _save_link():
+            old = user.telegram_chat_id if user.telegram_chat_id and user.telegram_chat_id != chat_id else None
+            user.telegram_chat_id = chat_id
+            user.telegram_notify = False  # consent must be given separately
+            user.telegram_link_code = None
+            user.telegram_link_expires = None
+            last_completed = _latest_completed_week_start()
+            if user.telegram_last_notified_week is None or user.telegram_last_notified_week < last_completed:
+                user.telegram_last_notified_week = last_completed
+            db.commit()
+            return old, user.username
+
+        old_chat_id, username = await run_in_threadpool(_save_link)
 
         if old_chat_id:
             await send_message(
@@ -343,7 +354,7 @@ async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str =
             )
         await send_message(
             chat_id,
-            f"Готово! Привязан аккаунт @{user.username}.\n"
+            f"Готово! Привязан аккаунт @{username}.\n"
             "Уведомления пока выключены — включи их командой /notify on.\n"
             "Можно присылать .fit / .gpx / .tcx.\n"
             "/stop — отвязать.",
@@ -354,7 +365,9 @@ async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str =
 
 
 async def _handle_document(db: Session, chat_id: str, document: dict) -> None:
-    user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+    user = await run_in_threadpool(
+        lambda: db.query(User).filter(User.telegram_chat_id == chat_id).first()
+    )
     if not user:
         await send_message(chat_id, "Сначала привяжи аккаунт: /link КОД из профиля на сайте.")
         return
@@ -415,7 +428,8 @@ async def _handle_document(db: Session, chat_id: str, document: dict) -> None:
 
     before_xp = float(user.total_xp or 0)
     file_sha256 = hashlib.sha256(content).hexdigest()
-    status, activity, reason = create_activity_from_upload(
+    status, activity, reason = await run_in_threadpool(
+        create_activity_from_upload,
         db,
         user,
         parsed,
@@ -430,7 +444,6 @@ async def _handle_document(db: Session, chat_id: str, document: dict) -> None:
         return
 
     from ..services.xp import round_xp
-    db.refresh(user)
     gained = round_xp(float(user.total_xp or 0) - before_xp)
     minutes = round((activity.moving_time or 0) / 60)
     started = activity.start_date.strftime("%d.%m.%Y %H:%M") if activity.start_date else "дата неизвестна"
