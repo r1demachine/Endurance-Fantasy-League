@@ -507,6 +507,33 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
     user.total_xp = round_xp(float(user.legacy_xp_offset or 0) + acts_sum + events_sum)
     user.level = level_from_xp(user.total_xp)
 
+    # Retry any past pending/active duel weeks even when their dates fall
+    # outside this user's activity timeline (for example, a 0:0 week with no
+    # workouts). Failed finalization therefore cannot strand duels permanently.
+    from ..models import Duel
+    this_week_dt = datetime.combine(this_week, datetime.min.time())
+    open_duel_weeks = (
+        db.query(Duel.week_start)
+        .filter(
+            Duel.week_start < this_week_dt,
+            Duel.status.in_(["pending", "active"]),
+        )
+        .distinct()
+        .order_by(Duel.week_start.asc())
+        .all()
+    )
+    for (duel_week_start,) in open_duel_weeks:
+        if duel_week_start is None:
+            continue
+        try:
+            from .duels import finalize_duels_for_week
+            finalize_duels_for_week(db, duel_week_start.date())
+        except Exception as exc:  # noqa: BLE001
+            print(
+                "Unfinished duel retry failed for "
+                f"{duel_week_start.date()}: {type(exc).__name__}"
+            )
+
 
 def _is_paused_week(user: User, ws: _date) -> bool:
     from ..services import xp_v6 as X6
