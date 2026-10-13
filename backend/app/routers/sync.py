@@ -1857,6 +1857,94 @@ from ..services.leaderboard_privacy import (
     profile_visible_on_leaderboard as _profile_visible_on_leaderboard,
 )
 
+def _user_divisions_for_week(
+    db: Session, user_ids: list[int], week_start_d: _date
+) -> dict[int, tuple[Optional[str], str]]:
+    """Resolve leaderboard divisions in a small fixed number of aggregate queries."""
+    from ..services import xp_v6 as X6
+    from ..models import Wellness, WeeklySummary
+
+    if not user_ids:
+        return {}
+
+    week_end_d = week_start_d + timedelta(days=7)
+    divisions: dict[int, tuple[Optional[str], str]] = {
+        user_id: (None, "provisional") for user_id in user_ids
+    }
+
+    ctl_rows = (
+        db.query(Wellness.user_id, func.avg(Wellness.ctl))
+        .filter(
+            Wellness.user_id.in_(user_ids),
+            Wellness.date >= week_start_d.isoformat(),
+            Wellness.date < week_end_d.isoformat(),
+            Wellness.ctl.isnot(None),
+            Wellness.ctl > 0,
+        )
+        .group_by(Wellness.user_id)
+        .all()
+    )
+    ctl_user_ids: set[int] = set()
+    for user_id, avg_ctl in ctl_rows:
+        if avg_ctl is None or float(avg_ctl) <= 0:
+            continue
+        ctl_user_ids.add(user_id)
+        divisions[user_id] = (
+            X6.division_name(X6.division_index_from_ctl(float(avg_ctl))),
+            "ctl",
+        )
+
+    fallback_ids = [user_id for user_id in user_ids if user_id not in ctl_user_ids]
+    if not fallback_ids:
+        return divisions
+
+    count_rows = (
+        db.query(WeeklySummary.user_id, func.count(WeeklySummary.user_id))
+        .filter(
+            WeeklySummary.user_id.in_(fallback_ids),
+            WeeklySummary.finalized.is_(True),
+        )
+        .group_by(WeeklySummary.user_id)
+        .all()
+    )
+    eligible_ids = [
+        user_id for user_id, count in count_rows if int(count or 0) >= 3
+    ]
+    if not eligible_ids:
+        return divisions
+
+    ranked_loads = (
+        db.query(
+            WeeklySummary.user_id.label("user_id"),
+            WeeklySummary.actual_load.label("actual_load"),
+            func.row_number().over(
+                partition_by=WeeklySummary.user_id,
+                order_by=WeeklySummary.week_start.desc(),
+            ).label("row_num"),
+        )
+        .filter(
+            WeeklySummary.user_id.in_(eligible_ids),
+            WeeklySummary.finalized.is_(True),
+        )
+        .subquery()
+    )
+    load_rows = (
+        db.query(
+            ranked_loads.c.user_id,
+            func.coalesce(func.avg(ranked_loads.c.actual_load), 0.0),
+        )
+        .filter(ranked_loads.c.row_num <= 12)
+        .group_by(ranked_loads.c.user_id)
+        .all()
+    )
+    for user_id, avg_load in load_rows:
+        divisions[user_id] = (
+            X6.division_name(X6.division_index_from_load(float(avg_load or 0))),
+            "load_fallback",
+        )
+    return divisions
+
+
 @router.get("/leaderboard")
 async def leaderboard(
     scope: str = Query("global", regex="^(global|friends|weekly)$"),
@@ -1914,11 +2002,12 @@ async def leaderboard(
             .limit(limit)
             .all()
         )
+        divisions_by_user = _user_divisions_for_week(
+            db, [user.id for _summary, user in rows], this_ws_d
+        )
         entries = []
         for summary, user in rows:
-            div, source = _user_division(
-                db, user, this_ws_d, summary.actual_load or 0
-            )
+            div, source = divisions_by_user.get(user.id, (None, "provisional"))
             entries.append({
                 "id": user.id,
                 "username": user.username,
