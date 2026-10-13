@@ -1942,7 +1942,7 @@ async def leaderboard(
         your_rank = _rank_before_user(visible_filter)
     else:
         if not friend_ids:
-            return {"scope": scope, "entries": [], "your_rank": 1}
+            return {"scope": scope, "entries": [], "your_rank": None}
         friend_scope_filter = and_(
             visible_filter,
             User.id.in_(visible_ids),
