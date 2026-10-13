@@ -109,7 +109,9 @@ def _is_qualifying_trainer_activity(activity) -> bool:
 # ── Условия квестов (чистые функции от контекста) ──
 
 def _cond_first_three_day_week(ctx):
-    return any((s.training_days or 0) >= 3 for s in ctx["weeks"])
+    summary_days = max((int(s.training_days or 0) for s in ctx["weeks"]), default=0)
+    activity_days = _best_activity_training_days(ctx.get("all_acts", ctx["acts"]))
+    return max(summary_days, activity_days) >= 3
 
 
 def _cond_goal_met(ctx):
