@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Card from "@/components/ui/Card";
 export default function QuestsBoard({ quests }: { quests: any[] }) {
   const [showAll, setShowAll] = useState(false);
   const visibleQuests = showAll ? quests : quests.slice(0, 4);
