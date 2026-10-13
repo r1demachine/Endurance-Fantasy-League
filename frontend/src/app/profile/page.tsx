@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { logout } from "@/lib/auth";
 import { clearUserCache, getCachedUser, refreshUser, subscribeUser } from "@/lib/apiCache";
 import ProfileSettingsModal, { type SettingsTab } from "@/components/ProfileSettingsModal";
+import SocialHub from "@/components/SocialHub";
 
 type ProfileData = {
   user?: {
@@ -27,7 +28,7 @@ type ProfileData = {
   recent_events?: { id: number | string; type: string; title?: string; amount?: number; date?: string }[];
 };
 
-const SETTINGS_TABS: SettingsTab[] = ["account", "sources", "training", "privacy", "danger"];
+const SETTINGS_TABS: SettingsTab[] = ["account", "appearance", "sources", "training", "privacy", "danger"];
 
 function readSettingsTab(): SettingsTab | null {
   if (typeof window === "undefined") return null;
@@ -82,12 +83,12 @@ export default function Profile() {
     .slice(0, 3);
 
   return (
-    <main className="relative min-h-[calc(100dvh-72px)] overflow-hidden bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] px-3 pb-28 pt-4 text-[#111] sm:px-5 sm:pt-6 md:min-h-[calc(100dvh-88px)] md:px-8 md:pb-10">
+    <main className="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] px-2 pb-24 text-[#111] sm:px-4 md:px-6 md:pb-6">
       <div aria-hidden="true" className="pointer-events-none absolute left-[8%] top-[12%] h-3 w-3 animate-pulse rounded-full bg-[#ffd500]" />
       <div aria-hidden="true" className="pointer-events-none absolute right-[10%] top-[26%] h-2 w-2 rounded-full bg-white/80" />
       <div aria-hidden="true" className="pointer-events-none absolute bottom-[18%] right-[15%] h-4 w-4 animate-pulse rounded-full bg-white/70" />
 
-      <div className="relative mx-auto w-full max-w-5xl border-2 border-black bg-[#f4f4f0] shadow-[8px_8px_0_rgba(0,0,0,0.3)]">
+      <div className="breathe-table relative mx-auto flex w-full max-w-[1400px] flex-1 flex-col border-2 border-t-0 border-black bg-[#f4f4f0]">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-black bg-[#171a38] px-4 py-5 text-white sm:px-6 md:px-8">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/65">Endurance Fantasy League</p>
@@ -194,6 +195,14 @@ export default function Profile() {
               <p className="text-sm text-[#666]">Здесь появятся выполненные достижения и значимые спортивные вехи.</p>
             </div>
           )}
+        </section>
+
+        <section className="border-t-2 border-black bg-white">
+          <div className="border-b-2 border-black px-4 py-3 sm:px-6">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Community</p>
+            <h3 className="font-display text-xl uppercase sm:text-2xl">Друзья и клубы</h3>
+          </div>
+          <SocialHub />
         </section>
       </div>
 

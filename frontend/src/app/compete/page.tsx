@@ -5,18 +5,16 @@ import { useRouter } from "next/navigation";
 import { Tabs, Skeleton } from "@/components/ui";
 import RatingPanel from "@/components/compete/RatingPanel";
 import DuelsPanel from "@/components/compete/DuelsPanel";
-import { ClubsPanel } from "@/components/SocialHub";
 
-type CompeteTab = "rating" | "duels" | "clubs" | "teams";
+type CompeteTab = "rating" | "duels" | "teams";
 const tabs: { value: CompeteTab; label: string }[] = [
   { value: "rating", label: "Рейтинг" },
   { value: "duels", label: "Дуэли" },
-  { value: "clubs", label: "Клубы" },
   { value: "teams", label: "Командные сражения" },
 ];
 
 function isCompeteTab(value: string | null): value is CompeteTab {
-  return value === "rating" || value === "duels" || value === "clubs" || value === "teams";
+  return value === "rating" || value === "duels" || value === "teams";
 }
 
 export default function CompetePage() {
@@ -41,11 +39,14 @@ export default function CompetePage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#f4f4f0] px-2 pb-24 text-[#111] sm:px-4 md:px-6 md:pb-8">
-      <div className="mx-auto min-h-screen max-w-[1400px] border-2 border-t-0 border-black bg-white">
+    <main className="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] px-2 pb-24 text-[#111] sm:px-4 md:px-6 md:pb-6">
+      <div aria-hidden="true" className="pointer-events-none absolute left-[8%] top-[12%] h-3 w-3 animate-pulse rounded-full bg-[#ffd500]" />
+      <div aria-hidden="true" className="pointer-events-none absolute right-[10%] top-[26%] h-2 w-2 rounded-full bg-white/80" />
+      <div aria-hidden="true" className="pointer-events-none absolute bottom-[18%] right-[15%] h-4 w-4 animate-pulse rounded-full bg-white/70" />
+      <div className="breathe-table relative mx-auto flex w-full max-w-[1400px] flex-1 flex-col border-2 border-t-0 border-black bg-[#f4f4f0]">
         <header className="border-b-2 border-black bg-[#5866f2] px-5 py-6 text-white md:px-8">
           <p className="font-display text-4xl uppercase leading-none md:text-6xl">Соревнования.</p>
-          <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-white/80">Рейтинг · дуэли · клубы · команды</p>
+          <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-white/80">Рейтинг · дуэли · команды</p>
         </header>
 
         <Tabs
@@ -65,12 +66,11 @@ export default function CompetePage() {
           <>
             {visitedTabs.rating && <div hidden={activeTab !== "rating"}><RatingPanel /></div>}
             {visitedTabs.duels && <div hidden={activeTab !== "duels"}><DuelsPanel /></div>}
-            {visitedTabs.clubs && <div hidden={activeTab !== "clubs"}><ClubsPanel /></div>}
             {visitedTabs.teams && (
               <div hidden={activeTab !== "teams"} className="p-4 md:p-6">
                 <section className="border-2 border-black bg-white p-6 md:p-8">
                   <h2 className="font-display text-2xl uppercase md:text-3xl">Командные сражения</h2>
-                  <p className="mt-2 text-sm text-[#666]">Скоро. Сражения клубов появятся в одном из следующих обновлений.</p>
+                  <p className="mt-2 text-sm text-[#666]">Скоро. Командные сражения появятся в одном из следующих обновлений.</p>
                 </section>
               </div>
             )}

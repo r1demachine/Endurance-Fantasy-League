@@ -14,6 +14,7 @@ import { EmptyState, ErrorState, Label, SectionTitle, Skeleton } from "@/compone
 import WeekBlock from "@/components/dashboard/WeekBlock";
 import EventsFeed from "@/components/dashboard/EventsFeed";
 import QuestsBoard from "@/components/dashboard/QuestsBoard";
+import DashboardTrainingSections from "@/components/dashboard/DashboardTrainingSections";
 
 type DuelSummary = {
   id: number;
@@ -30,6 +31,7 @@ export default function Dashboard() {
   const [weekData, setWeekData] = useState<any>(null);
   const [events, setEvents] = useState<any[]>([]);
   const [weekOptions, setWeekOptions] = useState<{ week_start: string; label: string }[]>([]);
+  const [weekActivities, setWeekActivities] = useState<any[]>([]);
   const [selectedWeekStart, setSelectedWeekStart] = useState("");
   const [quests, setQuests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,6 +79,7 @@ export default function Dashboard() {
       const result = response.data;
       setWeekData(result.week || null);
       setEvents(result.events || []);
+      setWeekActivities(Array.isArray(result.activities) ? result.activities : []);
       setWeekOptions(result.week_options || []);
       if (!selectedWeekStart && result.week?.week_start) {
         setSelectedWeekStart(result.week.week_start);
@@ -84,6 +87,7 @@ export default function Dashboard() {
     }).catch((error: unknown) => {
       const name = (error as { name?: string }).name;
       if (name !== "CanceledError" && name !== "AbortError") {
+        setWeekActivities([]);
         setDashboardError(getApiErrorMessage(error, "Не удалось загрузить данные недели."));
       }
     }).finally(() => {
@@ -190,7 +194,7 @@ export default function Dashboard() {
       return;
     }
     if (!data.user?.has_intervals_key) {
-      router.push("/training?tab=sources");
+      router.push("/profile?settings=sources");
       return;
     }
 
@@ -228,7 +232,7 @@ export default function Dashboard() {
                 <p className="font-display text-4xl uppercase md:text-6xl">Добро пожаловать.</p>
                 <Label className="text-[#666]">Уровень 1 · 0 XP · 0 тренировок</Label>
                 <p className="mx-auto max-w-md text-sm text-[#666]">Синхронизируй первую тренировку — и прогресс появится здесь.</p>
-                <Link href="/training?tab=sources" className="inline-block bg-[#ff4b26] px-6 py-3 text-xs font-bold uppercase tracking-widest text-white transition-colors hover:bg-[#5866f2]">Подключить источник →</Link>
+                <Link href="/profile?settings=sources" className="inline-block bg-[#ff4b26] px-6 py-3 text-xs font-bold uppercase tracking-widest text-white transition-colors hover:bg-[#5866f2]">Подключить источник →</Link>
               </>
             ) : (
               <>
@@ -333,6 +337,18 @@ export default function Dashboard() {
               </div>
             </section>
           </>
+        )}
+
+        {isAuthed && !isEmpty && (
+          <DashboardTrainingSections
+            userData={data}
+            weekLoading={weekLoading}
+            weekActivities={weekActivities}
+            weekOptions={weekOptions}
+            weekData={weekData}
+            selectedWeekStart={selectedWeekStart}
+            onWeekChange={setSelectedWeekStart}
+          />
         )}
 
         <section className="border-b-2 border-black bg-[#f4f4f0] p-4 md:p-6">

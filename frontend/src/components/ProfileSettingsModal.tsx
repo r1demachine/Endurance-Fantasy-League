@@ -13,11 +13,13 @@ import IntervalsDisconnectAction from "@/components/IntervalsDisconnectAction";
 import { Modal, PauseDialog } from "@/components/Modal";
 import TrainingDataActions from "@/components/TrainingDataActions";
 import { getApiErrorMessage } from "@/components/dialog-utils";
+import { useTheme } from "@/lib/theme";
 
-export type SettingsTab = "account" | "sources" | "training" | "privacy" | "danger";
+export type SettingsTab = "account" | "appearance" | "sources" | "training" | "privacy" | "danger";
 
 const TABS: { id: SettingsTab; label: string; emoji: string }[] = [
   { id: "account", label: "Аккаунт", emoji: "👤" },
+  { id: "appearance", label: "Оформление", emoji: "🎨" },
   { id: "sources", label: "Источники данных", emoji: "🔌" },
   { id: "training", label: "Тренировки и пульс", emoji: "🚴" },
   { id: "privacy", label: "Приватность", emoji: "🔒" },
@@ -55,6 +57,7 @@ export default function ProfileSettingsModal({
   const [pauseBusy, setPauseBusy] = useState(false);
   const [pauseError, setPauseError] = useState("");
   const [pauseNow, setPauseNow] = useState(Date.now());
+  const { theme, toggle } = useTheme();
 
   useEffect(() => {
     setDisplayName(userData?.user?.name ?? "");
@@ -229,6 +232,37 @@ export default function ProfileSettingsModal({
                       Настроить паузу
                     </button>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {tab === "appearance" && (
+              <div className="max-w-2xl border-2 border-black bg-white p-4 sm:p-5">
+                <h4 className="font-display text-lg uppercase">Тема оформления</h4>
+                <p className="mt-2 text-sm text-[#666]">
+                  Выбери, как будет выглядеть приложение. Настройка сохраняется на этом устройстве.
+                </p>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => { if (theme !== "light") toggle(); }}
+                    aria-pressed={theme === "light"}
+                    className={"flex items-center justify-between gap-3 border-2 px-4 py-4 text-left text-sm font-bold uppercase tracking-wide transition-colors " +
+                      (theme === "light" ? "border-black bg-[#ffd500] text-[#111]" : "border-black/20 bg-[#f4f4f0] hover:border-black")}
+                  >
+                    <span>☀ Светлая</span>
+                    {theme === "light" && <span aria-hidden="true">✓</span>}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { if (theme !== "dark") toggle(); }}
+                    aria-pressed={theme === "dark"}
+                    className={"flex items-center justify-between gap-3 border-2 px-4 py-4 text-left text-sm font-bold uppercase tracking-wide transition-colors " +
+                      (theme === "dark" ? "border-black bg-[#5866f2] text-white" : "border-black/20 bg-[#f4f4f0] hover:border-black")}
+                  >
+                    <span>☾ Тёмная</span>
+                    {theme === "dark" && <span aria-hidden="true">✓</span>}
+                  </button>
                 </div>
               </div>
             )}
