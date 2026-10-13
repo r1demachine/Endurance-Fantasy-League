@@ -16,6 +16,7 @@ export default function RatingBoard({
   weeklyEntries, weeklyBoard, handleInvite, inviteMessage,
 }: RatingBoardProps) {
   return (
+    <>
     
         <div className="border-b-2 border-black">
           <div className="relative grid md:grid-cols-[200px_1fr]">
@@ -161,5 +162,6 @@ export default function RatingBoard({
             </div>
           </div>
         </div>
+    </>
   );
 }
