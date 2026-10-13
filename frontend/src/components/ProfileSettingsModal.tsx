@@ -3,14 +3,15 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { AnimatePresence } from "framer-motion";
 import { authApi } from "@/lib/auth";
-import { clearUserCache, refreshUser } from "@/lib/apiCache";
+import { refreshUser } from "@/lib/apiCache";
 import ConnectSources, { type ConnectMessage } from "@/components/ConnectSources";
 import TelegramBind from "@/components/TelegramBind";
 import HeartRateSettings from "@/components/HeartRateSettings";
 import ActivityUpload from "@/components/ActivityUpload";
 import AccountPrivacy from "@/components/AccountPrivacy";
 import IntervalsDisconnectAction from "@/components/IntervalsDisconnectAction";
-import { ConfirmDialog, Modal, PauseDialog } from "@/components/Modal";
+import { Modal, PauseDialog } from "@/components/Modal";
+import TrainingDataActions from "@/components/TrainingDataActions";
 import { getApiErrorMessage } from "@/components/dialog-utils";
 
 export type SettingsTab = "account" | "sources" | "training" | "privacy" | "danger";
@@ -50,9 +51,6 @@ export default function ProfileSettingsModal({
   const [displayName, setDisplayName] = useState(userData?.user?.name ?? "");
   const [nameSaving, setNameSaving] = useState(false);
   const [notice, setNotice] = useState<ConnectMessage | null>(null);
-  const [resetDialogOpen, setResetDialogOpen] = useState(false);
-  const [resetBusy, setResetBusy] = useState(false);
-  const [resetError, setResetError] = useState("");
   const [pauseDialogOpen, setPauseDialogOpen] = useState(false);
   const [pauseBusy, setPauseBusy] = useState(false);
   const [pauseError, setPauseError] = useState("");
@@ -81,23 +79,6 @@ export default function ProfileSettingsModal({
       setNotice({ type: "error", text: getApiErrorMessage(error, "Не удалось сохранить имя.") });
     } finally {
       setNameSaving(false);
-    }
-  };
-
-  const resetTraining = async () => {
-    setResetBusy(true);
-    setResetError("");
-    setNotice(null);
-    try {
-      await authApi.delete("/api/reset");
-      clearUserCache();
-      await refreshUser(true);
-      setResetDialogOpen(false);
-      setNotice({ type: "success", text: "Тренировочные данные удалены, XP и уровень пересчитаны." });
-    } catch (error: unknown) {
-      setResetError(getApiErrorMessage(error, "Не удалось сбросить тренировочные данные."));
-    } finally {
-      setResetBusy(false);
     }
   };
 
@@ -256,41 +237,14 @@ export default function ProfileSettingsModal({
 
             {tab === "danger" && (
               <div className="space-y-5">
-                <section className="border-2 border-[#ff4b26] bg-white">
-                  <div className="border-b-2 border-[#ff4b26] bg-[#ff4b26] px-4 py-3 text-white">
-                    <h4 className="font-display text-lg uppercase">Сброс тренировок</h4>
-                  </div>
-                  <div className="p-4">
-                    <p className="text-sm text-[#666]">Удаляет импортированные тренировки, wellness и недельные сводки; XP, уровень и лига сбрасываются. Аккаунт, приватность и ключ Intervals остаются.</p>
-                    <button type="button" onClick={() => { setResetError(""); setResetDialogOpen(true); }} disabled={resetBusy}
-                      className="mt-4 border-2 border-[#ff4b26] px-4 py-3 text-xs font-bold uppercase tracking-widest text-[#ff4b26] hover:bg-[#ff4b26] hover:text-white disabled:opacity-50">
-                      Сбросить тренировочные данные
-                    </button>
-                  </div>
-                </section>
-
                 <IntervalsDisconnectAction hasKey={Boolean(userData?.user?.has_intervals_key)} />
+                <TrainingDataActions />
                 <AccountPrivacy section="danger" />
               </div>
             )}
           </section>
         </div>
       </Modal>
-
-      <AnimatePresence>
-        {resetDialogOpen && (
-          <ConfirmDialog
-            title="Удалить все тренировки?"
-            text="Будут удалены импортированные тренировки, wellness и недельные сводки; XP, уровень и лига будут сброшены. Аккаунт и ключ Intervals останутся."
-            confirmLabel="Удалить тренировки"
-            danger
-            busy={resetBusy}
-            error={resetError}
-            onClose={() => setResetDialogOpen(false)}
-            onConfirm={resetTraining}
-          />
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {pauseDialogOpen && (
