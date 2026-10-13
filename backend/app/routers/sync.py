@@ -2125,12 +2125,13 @@ def get_calendar_year_weeks(
 
 @router.get("/quests")
 def get_quests(
+    week_start: _date | None = None,
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Authenticated quest list with live progress values."""
+    """Quest list; week_start optionally selects a historical weekly pool."""
     from ..services.quests import quest_states
-    return quest_states(db, current)
+    return quest_states(db, current, selected_week=week_start)
 
 
 @router.get("/season-weeks")
