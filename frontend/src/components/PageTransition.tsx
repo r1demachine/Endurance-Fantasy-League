@@ -51,27 +51,40 @@ const variants: Record<Dir, Variants> = {
 export default function PageTransition({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
-  const cache = useRef<Record<string, ReactNode>>({});
+  const pageRef = useRef<HTMLDivElement>(null);
   const lastPath = useRef(pathname);
   const dir = useRef<Dir>("fade");
 
-  cache.current[pathname] = children;
+  // Query-only changes keep the same pathname/key, so they update the page without
+  // replaying the full-page transition. Exited routes are not kept in a custom cache.
   if (pathname !== lastPath.current) {
     dir.current = getDir(lastPath.current, pathname);
     lastPath.current = pathname;
   }
-  
+
+  const clearAnimationStyles = () => {
+    const node = pageRef.current;
+    if (!node) return;
+    // transform/filter establish containing blocks for position:fixed descendants.
+    // The settings modal is also portaled as an extra safeguard.
+    node.style.removeProperty("transform");
+    node.style.removeProperty("filter");
+    node.style.removeProperty("clip-path");
+  };
+
   return (
-    <AnimatePresence mode="popLayout" initial={false}>
+    <AnimatePresence mode="wait" initial={false}>
       <motion.div
+        ref={pageRef}
         key={pathname}
         variants={variants[dir.current]}
         initial="initial"
         animate="animate"
         exit="exit"
+        onAnimationComplete={clearAnimationStyles}
         className="w-full min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] relative overflow-hidden"
       >
-        {cache.current[pathname]}
+        {children}
       </motion.div>
     </AnimatePresence>
   );

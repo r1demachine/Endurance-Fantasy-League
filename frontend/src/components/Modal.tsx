@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { motion } from "framer-motion";
+import { createPortal } from "react-dom";
 import {
   buildConfirmPayload,
   formatPauseDate,
@@ -35,6 +36,7 @@ export function Modal({
   variant = "default",
 }: ModalProps) {
   const isSettings = variant === "settings";
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousActiveRef = useRef<HTMLElement | null>(null);
@@ -49,6 +51,12 @@ export function Modal({
   }, [onClose, closeOnEscape, preventClose]);
 
   useEffect(() => {
+    setPortalRoot(document.body);
+  }, []);
+
+  useEffect(() => {
+    if (!portalRoot) return;
+
     const previousOverflow = document.body.style.overflow;
     previousActiveRef.current = document.activeElement instanceof HTMLElement
       ? document.activeElement
@@ -84,9 +92,11 @@ export function Modal({
       document.body.style.overflow = previousOverflow;
       if (previousActiveRef.current?.isConnected) previousActiveRef.current.focus();
     };
-  }, []);
+  }, [portalRoot]);
 
-  return (
+  if (!portalRoot) return null;
+
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -130,7 +140,8 @@ export function Modal({
         </div>
         <div className={isSettings ? "flex min-h-0 flex-1 overflow-hidden p-0" : "overflow-y-auto p-4"}>{children}</div>
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    portalRoot,
   );
 }
 
