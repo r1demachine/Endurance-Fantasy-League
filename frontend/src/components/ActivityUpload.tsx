@@ -59,7 +59,7 @@ const LOAD_METHODS: Record<string, string> = {
   duration_sport_estimate: "по длительности и виду спорта (оценка)",
 };
 
-export default function ActivityUpload() {
+export default function ActivityUpload({ onUploaded }: { onUploaded?: () => void | Promise<void> } = {}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -125,6 +125,7 @@ export default function ActivityUpload() {
       setPreview(null);
       if (inputRef.current) inputRef.current.value = "";
       await refreshUser(true);
+      await onUploaded?.();
     } catch (caught) {
       setError(getErrorMessage(caught));
     } finally {
