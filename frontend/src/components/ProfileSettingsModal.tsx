@@ -43,12 +43,14 @@ export default function ProfileSettingsModal({
   onClose,
   onTabChange,
   onLogout,
+  onActivityUploaded,
 }: {
   tab: SettingsTab;
   userData: UserData | null;
   onClose: () => void;
   onTabChange: (tab: SettingsTab) => void;
   onLogout: () => void | Promise<void>;
+  onActivityUploaded?: () => void | Promise<void>;
 }) {
   const [displayName, setDisplayName] = useState(userData?.user?.name ?? "");
   const [nameSaving, setNameSaving] = useState(false);
@@ -215,7 +217,7 @@ export default function ProfileSettingsModal({
             {tab === "training" && (
               <div className="space-y-5">
                 <HeartRateSettings />
-                <ActivityUpload />
+                <ActivityUpload onUploaded={onActivityUploaded} />
                 <div className="border-2 border-black bg-white">
                   <div className="border-b-2 border-black bg-[#171a38] px-4 py-3 text-white">
                     <h4 className="font-display text-lg uppercase">Пауза тренировок</h4>

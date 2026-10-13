@@ -11,6 +11,7 @@ type Props = {
   weekOptions: WeekOption[];
   selectedWeekStart: string;
   onWeekChange: (weekStart: string) => void;
+  onOpenSources: () => void;
 };
 
 export default function DashboardWorkoutsSection({
@@ -19,6 +20,7 @@ export default function DashboardWorkoutsSection({
   weekOptions,
   selectedWeekStart,
   onWeekChange,
+  onOpenSources,
 }: Props) {
   const activeWeek = selectedWeekStart || weekOptions[0]?.week_start || "";
   const activeIndex = weekOptions.findIndex((week) => week.week_start === activeWeek);
@@ -70,6 +72,7 @@ export default function DashboardWorkoutsSection({
         weekLoading={weekLoading}
         weekActivities={weekActivities}
         selectedWeekStart={activeWeek}
+        onOpenSources={onOpenSources}
       />
     </section>
   );

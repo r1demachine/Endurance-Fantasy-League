@@ -11,55 +11,61 @@ const questsBoard = read("src/components/dashboard/QuestsBoard.tsx");
 const weekBlock = read("src/components/dashboard/WeekBlock.tsx");
 const workoutsSection = read("src/components/dashboard/DashboardWorkoutsSection.tsx");
 const workoutsList = read("src/components/dashboard/WorkoutsList.tsx");
+const activityUpload = read("src/components/ActivityUpload.tsx");
+const settingsModal = read("src/components/ProfileSettingsModal.tsx");
 
-test("dashboard blocks appear in order and duel fetching is removed", () => {
+test("dashboard removes weekly XP events and puts workouts after the complete achievements list", () => {
   const positions = [
-    dashboard.indexOf("<SectionTitle>Level</SectionTitle>"),
     dashboard.indexOf("<YearWeeksChart"),
     dashboard.indexOf("<WeekBlock"),
-    dashboard.indexOf("<EventsFeed"),
     dashboard.indexOf("<QuestsBoard"),
     dashboard.indexOf("<DashboardWorkoutsSection"),
   ];
   assert.ok(positions.every((position) => position >= 0));
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
-  assert.doesNotMatch(dashboard, /\/api\/duels|DuelSummary|Ближайшая дуэль/);
+  assert.doesNotMatch(dashboard, /EventsFeed|setEvents|recent_events/);
+  assert.match(questsBoard, /useState\(true\)/);
+  assert.match(questsBoard, /Показать все/);
+  assert.match(questsBoard, /quest\.status === "earned"/);
+  assert.match(questsBoard, /quest\.progress_reason/);
 });
 
-test("selected and current week frames have room and use full outlines", () => {
+test("year chart and weekly summary share week state without clipped outlines", () => {
+  assert.match(dashboard, /selectedWeekStart=\{selectedWeekStart \|\| weekData\?\.week_start \|\| ""\}/);
+  assert.match(dashboard, /onWeekChange=\{setSelectedWeekStart\}/);
   assert.match(yearChart, /overflow-x-auto overscroll-x-contain px-1 pb-2 pt-2/);
   assert.match(yearChart, /selected && week\.is_current \? "ring-2 ring-\[#5866f2\] ring-offset-1 outline outline-2 outline-black outline-offset-2"/);
   assert.match(yearChart, /week\.is_current \? "ring-2 ring-black ring-offset-1"/);
-  assert.match(yearChart, /onClick=\{\(\) => onWeekChange\(week\.week_start\)\}/);
   assert.match(yearChart, /aria-label=\{label\}/);
-  assert.match(yearChart, /week\.is_future \? "opacity-30"/);
   assert.match(yearChart, /repeating-linear-gradient/);
 });
 
-test("workout list is beneath achievements on dashboard and the Training navigation tab is removed", () => {
-  assert.match(dashboard, /<QuestsBoard[\s\S]*?<DashboardWorkoutsSection/);
-  assert.match(dashboard, /selectedWeekStart=\{selectedWeekStart \|\| weekData\?\.week_start \|\| ""\}[\s\S]*?onWeekChange=\{setSelectedWeekStart\}/);
-  assert.doesNotMatch(header, /href: "\/training"|label: "Тренировки"/);
-  assert.match(workoutsSection, /<WorkoutsList/);
-  assert.match(workoutsSection, /Выбрать неделю для списка тренировок/);
-  assert.match(workoutsList, /\/profile\?settings=sources/);
-  assert.doesNotMatch(workoutsList, /\/training/);
-  assert.throws(() => fs.accessSync(path.join(__dirname, "..", "src/app/training/page.tsx")));
+test("sources open through the existing portal settings modal on the current page", () => {
+  assert.doesNotMatch(workoutsList, /\/profile\?settings=sources|href=.*settings=sources/);
+  assert.match(workoutsList, /<button type="button" onClick=\{onOpenSources\}/);
+  assert.match(workoutsSection, /onOpenSources: \(\) => void/);
+  assert.match(workoutsSection, /onOpenSources=\{onOpenSources\}/);
+  assert.match(dashboard, /onOpenSources=\{openSourceSettings\}/);
+  assert.match(dashboard, /setSettingsTab\("sources"\)/);
+  assert.match(dashboard, /<ProfileSettingsModal[\s\S]*?onActivityUploaded=\{refreshDashboardAfterDataChange\}/);
+  assert.match(settingsModal, /<Modal title="Настройки"[^>]*variant="settings"/);
+  assert.match(settingsModal, /<ActivityUpload onUploaded=\{onActivityUploaded\} \/>/);
+  assert.match(activityUpload, /onUploaded\?: \(\) => void \| Promise<void>/);
+  assert.match(activityUpload, /await onUploaded\(\)/);
+  assert.doesNotMatch(header, /href: "\/training"/);
+  assert.equal(fs.existsSync(path.join(__dirname, "..", "src/app/training/page.tsx")), false);
 });
 
-test("achievement cards render progress, sleep slots, unavailable reasons, and earned date", () => {
-  assert.match(dashboard, /authApi\.get\("\/api\/quests"\)/);
-  assert.match(dashboard, /loading=\{questsLoading\}/);
-  assert.match(dashboard, /error=\{questsError\}/);
-  assert.match(questsBoard, /role="progressbar"/);
-  assert.match(questsBoard, /quest\.slug === "sleep_connected"/);
-  assert.match(questsBoard, /\[0, 1, 2\]\.map/);
-  assert.match(questsBoard, /quest\.progress_reason/);
-  assert.match(questsBoard, /Получено \{quest\.earned_at\}/);
-  assert.match(questsBoard, /<ErrorState message=\{error\} onRetry=\{onRetry\}/);
+test("manual uploads and sync refresh current activities and achievements", () => {
+  assert.match(dashboard, /const refreshDashboardAfterDataChange = useCallback/);
+  assert.match(dashboard, /await loadQuests\(\)/);
+  assert.match(dashboard, /await refreshDashboardAfterDataChange\(\)/);
+  assert.match(dashboard, /<ActivityUpload onUploaded=\{refreshDashboardAfterDataChange\} \/>/);
+  assert.match(dashboard, /setQuests\(\[\]\)/);
+  assert.match(dashboard, /setQuestsError\(getApiErrorMessage/);
 });
 
-test("all week selectors and workout list use the single Russian week formatter", () => {
+test("all visible week selectors use the shared Russian week formatter", () => {
   assert.match(weekBlock, /formatWeekRange\(selectedWeekStart\)/);
   assert.match(weekBlock, /formatWeekRange\(option\.week_start\)/);
   assert.match(workoutsSection, /formatWeekRange\(week\.week_start\)/);
