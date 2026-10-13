@@ -588,12 +588,11 @@ def _close_league_week(
                 finalize_duels_for_week(db, week_start_d)
         except Exception as exc:  # noqa: BLE001
             print(f"finalize_duels_for_week retry failed: {type(exc).__name__}")
-        if allow_week_notifications:
-            try:
-                from ..services.telegram_week import notify_week_results
-                notify_week_results(db, week_start_d)
-            except Exception as exc:  # noqa: BLE001
-                print(f"telegram week notify retry failed: {type(exc).__name__}")
+        try:
+            from ..services.telegram_week import notify_week_results
+            notify_week_results(db, week_start_d)
+        except Exception as exc:  # noqa: BLE001
+            print(f"telegram week notify retry failed: {type(exc).__name__}")
         return existing_week.status == "closed"
     summaries = (
         db.query(WeeklySummary)
@@ -669,12 +668,11 @@ def _close_league_week(
     except Exception as exc:  # noqa: BLE001
         print(f"finalize_duels_for_week failed: {type(exc).__name__}")
 
-    if allow_week_notifications:
-        try:
-            from ..services.telegram_week import notify_week_results
-            notify_week_results(db, week_start_d)
-        except Exception as exc:  # noqa: BLE001
-            print(f"telegram week notify failed: {type(exc).__name__}")
+    try:
+        from ..services.telegram_week import notify_week_results
+        notify_week_results(db, week_start_d)
+    except Exception as exc:  # noqa: BLE001
+        print(f"telegram week notify failed: {type(exc).__name__}")
 
     return bool(formed)
 
