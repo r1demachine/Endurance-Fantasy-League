@@ -14,7 +14,6 @@ type LeaderboardEntry = {
   rank?: number | null;
   level?: number | null;
   total_xp?: number | null;
-  score?: number | null;
   is_you?: boolean;
 };
 type LeaderboardPayload = {
@@ -126,7 +125,7 @@ export default function RatingPanel() {
                     </div>
                   </div>
                   <span className="shrink-0 font-display text-lg text-[#ff4b26]">
-                    {Math.round(Number(entry.total_xp ?? entry.score) || 0).toLocaleString()}
+                    {Math.round(Number(entry.total_xp) || 0).toLocaleString()}
                   </span>
                 </div>
               ))}
