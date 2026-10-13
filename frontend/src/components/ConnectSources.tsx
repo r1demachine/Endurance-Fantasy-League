@@ -386,7 +386,7 @@ export default function ConnectSources({
         {disconnectDialogOpen && (
           <ConfirmDialog
             title="Отвязать Intervals?"
-            text="Будут удалены API-ключ, импортированные тренировки, данные сна и пульса, XP-события и недельные сводки. Аккаунт и друзья останутся."
+            text="Будут удалены API-ключ, все тренировки и wellness пользователя, XP-события и недельные сводки. Серверный endpoint также удаляет тренировки, загруженные из FIT/GPX/TCX. Аккаунт и друзья останутся."
             confirmLabel="Отвязать и удалить данные"
             danger
             busy={disconnecting}
