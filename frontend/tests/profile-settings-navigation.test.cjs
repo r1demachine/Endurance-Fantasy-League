@@ -39,6 +39,7 @@ test("completed page transitions clear fixed-position containing-block styles", 
 test("modal overlays use document.body portal and initialize after mount", () => {
   assert.match(modal, /createPortal/);
   assert.match(modal, /setPortalRoot\(document\.body\)/);
-  assert.match(modal, /if \(!portalRoot\) return null/);
+  assert.match(modal, /portalToBody = variant === "settings"/);
+  assert.match(modal, /return portalRoot \? createPortal\(modalContent, portalRoot\) : null/);
   assert.match(modal, /portalRoot,/);
 });
