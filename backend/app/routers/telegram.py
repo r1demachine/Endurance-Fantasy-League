@@ -3,12 +3,14 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import logging
 import secrets
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -26,6 +28,7 @@ from ..services.telegram import (
 )
 from ..services.activity_upload import create_activity_from_upload
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/telegram", tags=["Telegram"])
 
 LINK_TTL_MINUTES = 15
@@ -169,6 +172,18 @@ def _check_secret(header_value: Optional[str]) -> None:
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
+def _unmark_update_processed(db: Session, update_id: int) -> None:
+    """Release a webhook claim after handler failure so Telegram can retry it."""
+    try:
+        db.query(TelegramWebhookUpdate).filter(
+            TelegramWebhookUpdate.update_id == update_id
+        ).delete(synchronize_session=False)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to release Telegram webhook claim update_id=%s", update_id)
+
+
 def _mark_update_processed(db: Session, update_id: Any) -> bool:
     if isinstance(update_id, bool) or not isinstance(update_id, int) or update_id < 0:
         raise HTTPException(status_code=400, detail="Invalid or missing update_id")
@@ -201,30 +216,38 @@ async def telegram_webhook(
         raise HTTPException(status_code=400, detail="Invalid JSON") from exc
     if not isinstance(update, dict):
         raise HTTPException(status_code=400, detail="Invalid update")
-    if not _mark_update_processed(db, update.get("update_id")):
+    update_id = update.get("update_id")
+    # The SQLAlchemy session and claim operation are synchronous; keep the DB
+    # call off the ASGI event loop.
+    if not await run_in_threadpool(_mark_update_processed, db, update_id):
         return {"ok": True, "duplicate": True}
 
-    # Do not process edited_message; it is a separate update from Telegram.
-    message = update.get("message")
-    if not isinstance(message, dict):
-        return {"ok": True}
-    chat = message.get("chat") or {}
-    chat_id = str(chat.get("id") or "")
-    chat_type = str(chat.get("type") or "")
-    if not chat_id:
-        return {"ok": True}
+    try:
+        # Do not process edited_message; it is a separate update from Telegram.
+        message = update.get("message")
+        if not isinstance(message, dict):
+            return {"ok": True}
+        chat = message.get("chat") or {}
+        chat_id = str(chat.get("id") or "")
+        chat_type = str(chat.get("type") or "")
+        if not chat_id:
+            return {"ok": True}
 
-    text = (message.get("text") or "").strip()
-    document = message.get("document")
-    if text.startswith("/"):
-        await _handle_command(db, chat_id, text, chat_type)
+        text = (message.get("text") or "").strip()
+        document = message.get("document")
+        if text.startswith("/"):
+            await _handle_command(db, chat_id, text, chat_type)
+            return {"ok": True}
+        if document:
+            await _handle_document(db, chat_id, document)
+            return {"ok": True}
+        if text:
+            await send_message(chat_id, HELP_TEXT)
         return {"ok": True}
-    if document:
-        await _handle_document(db, chat_id, document)
-        return {"ok": True}
-    if text:
-        await send_message(chat_id, HELP_TEXT)
-    return {"ok": True}
+    except Exception:
+        db.rollback()
+        await run_in_threadpool(_unmark_update_processed, db, update_id)
+        raise
 
 
 async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str = "private") -> None:
