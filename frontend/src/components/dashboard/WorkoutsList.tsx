@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import ActivityCard from "@/components/ActivityCard";
 import { EmptyState } from "@/components/ui";
