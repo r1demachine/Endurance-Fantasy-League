@@ -72,7 +72,8 @@ test("manual uploads and sync refresh current activities and achievements", () =
   assert.match(dashboard, /await loadQuests\(\)/);
   assert.match(dashboard, /await refreshDashboardAfterDataChange\(\)/);
   assert.match(weekBlock, /Квесты и бонусы/);
-  assert.match(weekBlock, /WORKOUT_BONUS_XP/);
+  assert.match(weekBlock, /\+12 XP/);
+  assert.match(weekBlock, /\+6 XP/);
   assert.match(dashboard, /<ActivityUpload onUploaded=\{refreshDashboardAfterDataChange\} \/>/);
   assert.match(dashboard, /setQuests\(\[\]\)/);
   assert.match(dashboard, /setQuestsError\(getApiErrorMessage/);
