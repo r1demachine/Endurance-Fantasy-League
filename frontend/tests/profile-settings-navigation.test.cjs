@@ -7,6 +7,7 @@ const profile = read("src/app/profile/page.tsx");
 const transition = read("src/components/PageTransition.tsx");
 const modal = read("src/components/Modal.tsx");
 const dashboard = read("src/app/dashboard/page.tsx");
+const compete = read("src/app/compete/page.tsx");
 
 test("profile settings state is read from Next URL search params only", () => {
   assert.match(profile, /useSearchParams/);
@@ -44,4 +45,21 @@ test("modal overlays use document.body portal and initialize after mount", () =>
   assert.match(modal, /portalToBody = variant === "settings"/);
   assert.match(modal, /return portalRoot \? createPortal\(modalContent, portalRoot\) : null/);
   assert.match(modal, /portalRoot,/);
+});
+
+
+test("competition tab follows the URL and active panels render immediately", () => {
+  assert.match(compete, /useSearchParams/);
+  assert.match(compete, /searchParams\.get\("tab"\)/);
+  assert.doesNotMatch(compete, /window\.location\.search/);
+  assert.doesNotMatch(compete, /useState<CompeteTab>/);
+  assert.doesNotMatch(compete, /initialized/);
+  assert.match(compete, /visitedTabs\.rating \|\| activeTab === "rating"/);
+  assert.match(compete, /visitedTabs\.duels \|\| activeTab === "duels"/);
+  assert.match(compete, /visitedTabs\.teams \|\| activeTab === "teams"/);
+  assert.match(compete, /<Suspense fallback={<CompeteFallback \/>}>/);
+});
+
+test("settings dialog establishes a theme-aware foreground instead of inheriting body text-white", () => {
+  assert.match(modal, /bg-\[\#f4f4f0\] text-\[\#111\] shadow-none/);
 });
