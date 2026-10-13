@@ -4,8 +4,8 @@
 
 | Контейнер | Было (файл: строки в main) | Станет (целевая страница / место) |
 |---|---|---|
-| Dashboard: guest / empty state | `frontend/src/app/dashboard/page.tsx:557–?` | `/dashboard` — empty state |
-| Dashboard: Progress header / athlete identity | `frontend/src/app/dashboard/page.tsx:?–613` | `/dashboard` — status header |
+| Dashboard: guest / empty state | `frontend/src/app/dashboard/page.tsx:557–595` | `/dashboard` — empty state |
+| Dashboard: Progress header / athlete identity | `frontend/src/app/dashboard/page.tsx:596–613` | `/dashboard` — status header |
 | Dashboard: Level / streak / weekly goal | `frontend/src/app/dashboard/page.tsx:616–660` | `/dashboard` — compact progress summary |
 | WeekBlock: week picker, load goal, XP split, pause | `frontend/src/app/dashboard/page.tsx:57–189` | `/dashboard` — weekly goal |
 | EventsFeed: weekly XP events | `frontend/src/app/dashboard/page.tsx:190–215` | `/dashboard` — XP events |
@@ -25,7 +25,7 @@
 | TelegramBind: link code, notify, unlink | `frontend/src/components/TelegramBind.tsx:1–149` | Settings → Sources → Telegram |
 | ActivityUpload: file selection, preview, validation, confirm | `frontend/src/components/ActivityUpload.tsx:1–249` | `/training` → upload file |
 | HeartRateSettings: LTHR / max HR / resting HR / timezone | `frontend/src/components/HeartRateSettings.tsx:1–139` | Settings → Training and heart rate |
-| AccountPrivacy: consent and profile/activity visibility | `frontend/src/components/AccountPrivacy.tsx:95–167` | Settings → Privacy |
+| AccountPrivacy: consent and profile/activity visibility | `frontend/src/components/AccountPrivacy.tsx:95–165` | Settings → Privacy |
 | AccountPrivacy: TelegramBind mount | `frontend/src/components/AccountPrivacy.tsx:166` | Extract to Settings → Sources → Telegram |
 | AccountPrivacy: delete-account / confirmation | `frontend/src/components/AccountPrivacy.tsx:168–186` | Settings → Dangerous zone |
 | Profile: clear training data / logout / reset confirmation | `frontend/src/app/profile/page.tsx:266–293` | Settings → Account / Dangerous zone |
