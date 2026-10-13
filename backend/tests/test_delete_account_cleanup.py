@@ -70,6 +70,41 @@ class CleanupSocialTests(unittest.TestCase):
         self.assertIn("sync_progress", all_user_fk_tables)
         self.assertIn("heart_rate_settings_history", all_user_fk_tables)
 
+        # Verify every table declared "explicitly cleaned" is referenced by
+        # the account cleanup routines, rather than trusting that set alone.
+        privacy_path = Path(__file__).resolve().parents[1] / "app" / "routers" / "privacy.py"
+        privacy_source = privacy_path.read_text(encoding="utf-8")
+        privacy_module = ast.parse(privacy_source, filename=str(privacy_path))
+        cleanup_functions = {
+            node.name: node
+            for node in privacy_module.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name in {"_cleanup_social_for_user", "delete_account"}
+        }
+        queried_models = {
+            node.args[0].id
+            for function in cleanup_functions.values()
+            for node in ast.walk(function)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "query"
+            and node.args
+            and isinstance(node.args[0], ast.Name)
+        }
+        mapped_tables = {
+            mapper.class_.__name__: mapper.local_table.name
+            for mapper in Base.registry.mappers
+        }
+        explicitly_referenced_fk_tables = {
+            mapped_tables[model_name]
+            for model_name in queried_models
+            if model_name in mapped_tables and mapped_tables[model_name] in all_user_fk_tables
+        }
+        self.assertEqual(
+            _USER_FK_TABLES_CLEANED_EXPLICITLY,
+            explicitly_referenced_fk_tables,
+        )
+
         db = MagicMock()
         cleaned = _cleanup_remaining_user_fk_rows(db, 987)
         executed = {
