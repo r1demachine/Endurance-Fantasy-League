@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..database import get_db
 from ..dependencies import get_current_user
-from ..models import TelegramLinkAttempt, TelegramWebhookUpdate, User
+from ..models import TelegramLinkAttempt, TelegramWebhookUpdate, User, WeeklySummary
 from ..rate_limit import limiter
 from ..services.telegram import (
     TelegramFileTooLarge,
@@ -71,6 +71,26 @@ def _latest_completed_week_start(today: date | None = None) -> date:
     today = today or date.today()
     current_week_start = today - timedelta(days=today.weekday())
     return current_week_start - timedelta(days=7)
+
+
+def _advance_week_marker_on_link(db: Session, user: User) -> None:
+    """Suppress historical backfill but keep a not-yet-finalized latest week eligible."""
+    last_completed = _latest_completed_week_start()
+    week_datetime = datetime.combine(last_completed, datetime.min.time())
+    latest_summary = db.query(WeeklySummary).filter(
+        WeeklySummary.user_id == user.id,
+        WeeklySummary.week_start == week_datetime,
+    ).first()
+    summary_finalized = bool(latest_summary and latest_summary.finalized)
+    marker_target = last_completed if summary_finalized else last_completed - timedelta(days=7)
+    current_marker = user.telegram_last_notified_week
+
+    if current_marker is None or current_marker < marker_target:
+        user.telegram_last_notified_week = marker_target
+    elif not summary_finalized and current_marker >= last_completed:
+        # Older deployments advanced this marker at link time even without a
+        # finalized summary, which made the eventual result impossible to send.
+        user.telegram_last_notified_week = marker_target
 
 
 def _record_failed_link_attempt(db: Session, chat_id: str) -> int:
@@ -339,9 +359,7 @@ async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str =
             user.telegram_notify = False  # consent must be given separately
             user.telegram_link_code = None
             user.telegram_link_expires = None
-            last_completed = _latest_completed_week_start()
-            if user.telegram_last_notified_week is None or user.telegram_last_notified_week < last_completed:
-                user.telegram_last_notified_week = last_completed
+            _advance_week_marker_on_link(db, user)
             db.commit()
             return old, user.username
 
