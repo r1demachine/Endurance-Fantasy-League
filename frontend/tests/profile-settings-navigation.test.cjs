@@ -78,10 +78,10 @@ test("dashboard opens source settings in a portal without navigating away from d
 
 
 test("source CTA keeps the current page and opens the shared settings portal", () => {
-  assert.match(workoutsList, /onClick=\\{onOpenSources\\}/);
-  assert.doesNotMatch(workoutsList, /\\/profile\\?settings=sources/);
-  assert.match(workoutsSection, /onOpenSources=\\{onOpenSources\\}/);
-  assert.match(dashboard, /onOpenSources=\\{openSourceSettings\\}/);
-  assert.match(dashboard, /setSettingsTab\\("sources"\\)/);
-  assert.match(dashboard, /onDataUpdated=\\{\\(\\) => void loadQuests\\(\\)\\}/);
+  assert.match(workoutsList, /onClick=\{onOpenSources\}/);
+  assert.doesNotMatch(workoutsList, /\/profile\?settings=sources/);
+  assert.match(workoutsSection, /onOpenSources=\{onOpenSources\}/);
+  assert.match(dashboard, /onOpenSources=\{openSourceSettings\}/);
+  assert.match(dashboard, /setSettingsTab\("sources"\)/);
+  assert.match(dashboard, /onDataUpdated=\{\(\) => void loadQuests\(\)\}/);
 });
