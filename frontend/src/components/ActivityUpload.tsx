@@ -59,7 +59,11 @@ const LOAD_METHODS: Record<string, string> = {
   duration_sport_estimate: "по длительности и виду спорта (оценка)",
 };
 
-export default function ActivityUpload() {
+type ActivityUploadProps = {
+  onUploaded?: () => void | Promise<void>;
+};
+
+export default function ActivityUpload({ onUploaded }: ActivityUploadProps = {}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -125,6 +129,13 @@ export default function ActivityUpload() {
       setPreview(null);
       if (inputRef.current) inputRef.current.value = "";
       await refreshUser(true);
+      if (onUploaded) {
+        try {
+          await onUploaded();
+        } catch {
+          // The upload is already saved; a parent refresh failure must not report it as a failed upload.
+        }
+      }
     } catch (caught) {
       setError(getErrorMessage(caught));
     } finally {
