@@ -56,6 +56,19 @@ class LeaderboardQueryContractTests(unittest.TestCase):
                 self.assertEqual(limited_query.func.attr, "limit")
                 self.assertEqual(ast.unparse(limited_query.args[0]), "limit")
 
+    def test_weekly_divisions_are_resolved_in_bulk_not_per_user(self):
+        helper = next(
+            node for node in self.module.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_user_divisions_for_week"
+        )
+        helper_source = ast.get_source_segment(self.source, helper)
+        endpoint_source = ast.get_source_segment(self.source, self.endpoint)
+        self.assertIn("group_by(Wellness.user_id)", helper_source)
+        self.assertIn("func.row_number().over", helper_source)
+        self.assertIn("_user_divisions_for_week", endpoint_source)
+        self.assertNotIn("_user_division(", endpoint_source)
+
     def test_profile_visibility_is_filtered_in_sql_and_weekly_uses_join(self):
         attrs = {
             node.attr for node in ast.walk(self.endpoint)
