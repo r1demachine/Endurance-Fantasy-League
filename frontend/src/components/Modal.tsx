@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 import { motion } from "framer-motion";
+import { createPortal } from "react-dom";
 import {
   buildConfirmPayload,
   formatPauseDate,
@@ -13,6 +14,10 @@ import {
   shouldCloseFromBackdrop,
 } from "./dialog-utils";
 
+const subscribeToPortalRoot = () => () => {};
+const getPortalRootSnapshot = () => typeof document === "undefined" ? null : document.body;
+const getServerPortalRootSnapshot = () => null;
+
 export interface ModalProps {
   title: string;
   onClose: () => void;
@@ -22,6 +27,7 @@ export interface ModalProps {
   closeOnEscape?: boolean;
   preventClose?: boolean;
   variant?: "default" | "settings";
+  portalToBody?: boolean;
 }
 
 export function Modal({
@@ -33,8 +39,14 @@ export function Modal({
   closeOnEscape = true,
   preventClose = false,
   variant = "default",
+  portalToBody = variant === "settings",
 }: ModalProps) {
   const isSettings = variant === "settings";
+  const portalRoot = useSyncExternalStore(
+    subscribeToPortalRoot,
+    getPortalRootSnapshot,
+    getServerPortalRootSnapshot,
+  );
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousActiveRef = useRef<HTMLElement | null>(null);
@@ -49,6 +61,8 @@ export function Modal({
   }, [onClose, closeOnEscape, preventClose]);
 
   useEffect(() => {
+    if (portalToBody && !portalRoot) return;
+
     const previousOverflow = document.body.style.overflow;
     previousActiveRef.current = document.activeElement instanceof HTMLElement
       ? document.activeElement
@@ -84,9 +98,9 @@ export function Modal({
       document.body.style.overflow = previousOverflow;
       if (previousActiveRef.current?.isConnected) previousActiveRef.current.focus();
     };
-  }, []);
+  }, [portalRoot, portalToBody]);
 
-  return (
+  const modalContent = (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -132,6 +146,11 @@ export function Modal({
       </motion.div>
     </motion.div>
   );
+
+  // Only dialogs with portalToBody enabled are moved outside transformed page containers.
+  // Settings uses this by default; other dialogs preserve their existing inline behavior.
+  if (!portalToBody) return modalContent;
+  return portalRoot ? createPortal(modalContent, portalRoot) : null;
 }
 
 export interface ConfirmPayload {

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { logout } from "@/lib/auth";
 import { clearUserCache, getCachedUser, refreshUser, subscribeUser } from "@/lib/apiCache";
 import ProfileSettingsModal, { type SettingsTab } from "@/components/ProfileSettingsModal";
@@ -36,16 +36,19 @@ type ProfileData = {
 
 const SETTINGS_TABS: SettingsTab[] = ["account", "appearance", "sources", "training", "privacy", "danger"];
 
-function readSettingsTab(): SettingsTab | null {
-  if (typeof window === "undefined") return null;
-  const value = new URLSearchParams(window.location.search).get("settings");
-  return SETTINGS_TABS.includes(value as SettingsTab) ? value as SettingsTab : null;
+function isSettingsTab(value: string | null): value is SettingsTab {
+  return value !== null && SETTINGS_TABS.includes(value as SettingsTab);
 }
 
-export default function Profile() {
+function ProfileContent() {
   const [userData, setUserData] = useState<ProfileData | null>(null);
-  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const queryString = searchParams.toString();
+  const queryTab = searchParams.get("settings");
+  const settingsTab = isSettingsTab(queryTab) ? queryTab : null;
+  const pendingSettingsUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     const cached = getCachedUser();
@@ -53,28 +56,33 @@ export default function Profile() {
     const unsubscribe = subscribeUser(setUserData);
     void refreshUser(true);
 
-    const syncSettingsFromUrl = () => setSettingsTab(readSettingsTab());
-    syncSettingsFromUrl();
-    window.addEventListener("popstate", syncSettingsFromUrl);
     return () => {
       unsubscribe();
-      window.removeEventListener("popstate", syncSettingsFromUrl);
     };
   }, []);
 
+  useEffect(() => {
+    // Release the duplicate-click guard after Next reflects the URL update.
+    pendingSettingsUrlRef.current = null;
+  }, [pathname, queryString]);
+
   const updateSettingsUrl = (tab: SettingsTab | null, historyMode: "push" | "replace" = "replace") => {
-    const url = new URL(window.location.href);
-    if (tab) url.searchParams.set("settings", tab);
-    else url.searchParams.delete("settings");
-    const target = url.pathname + url.search + url.hash;
-    if (historyMode === "push") window.history.pushState(window.history.state, "", target);
-    else window.history.replaceState(window.history.state, "", target);
-    setSettingsTab(tab);
+    const nextParams = new URLSearchParams(queryString);
+    if (tab) nextParams.set("settings", tab);
+    else nextParams.delete("settings");
+
+    const nextQuery = nextParams.toString();
+    if (nextQuery === queryString || pendingSettingsUrlRef.current === nextQuery) return;
+
+    pendingSettingsUrlRef.current = nextQuery;
+    const target = pathname + (nextQuery ? "?" + nextQuery : "");
+    if (historyMode === "push") router.push(target, { scroll: false });
+    else router.replace(target, { scroll: false });
   };
 
   const openSettings = () => updateSettingsUrl("account", "push");
-  const closeSettings = () => updateSettingsUrl(null);
-  const selectSettingsTab = (tab: SettingsTab) => updateSettingsUrl(tab);
+  const closeSettings = () => updateSettingsUrl(null, "replace");
+  const selectSettingsTab = (tab: SettingsTab) => updateSettingsUrl(tab, "replace");
 
   const handleLogout = async () => {
     await logout();
@@ -235,5 +243,13 @@ export default function Profile() {
         />
       )}
     </main>
+  );
+}
+
+export default function Profile() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2]" />}>
+      <ProfileContent />
+    </Suspense>
   );
 }
