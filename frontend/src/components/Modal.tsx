@@ -94,9 +94,7 @@ export function Modal({
     };
   }, [portalRoot]);
 
-  if (!portalRoot) return null;
-
-  return createPortal(
+  const modalContent = (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -140,9 +138,12 @@ export function Modal({
         </div>
         <div className={isSettings ? "flex min-h-0 flex-1 overflow-hidden p-0" : "overflow-y-auto p-4"}>{children}</div>
       </motion.div>
-    </motion.div>,
-    portalRoot,
+    </motion.div>
   );
+
+  // Keep server-rendered dialog markup stable for hydration and SSR consumers.
+  // Once mounted in the browser, move the same modal tree into document.body.
+  return portalRoot ? createPortal(modalContent, portalRoot) : modalContent;
 }
 
 export interface ConfirmPayload {
