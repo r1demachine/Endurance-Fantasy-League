@@ -2,7 +2,7 @@ name: Frontend checks
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, "refactor/ui-*"]
     paths:
       - "frontend/**"
       - ".github/workflows/frontend-checks.yml"
@@ -26,7 +26,12 @@ jobs:
         run: npm ci
       - name: Run dialog logic and render tests
         run: npm test
-      - name: Lint shared modal and dialog utilities
-        run: npm run lint -- src/components/Modal.tsx src/components/dialog-utils.ts
+      - name: Full frontend lint (informational; legacy violations tracked separately)
+        run: npm run lint
+        continue-on-error: true
+      - name: Lint shared UI and dialog utilities
+        run: npm run lint -- src/components/Modal.tsx src/components/dialog-utils.ts src/components/ui
+      - name: Type-check frontend
+        run: npx tsc --noEmit
       - name: Build frontend
         run: npm run build
