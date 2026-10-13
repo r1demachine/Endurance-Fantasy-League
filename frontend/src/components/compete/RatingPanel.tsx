@@ -6,7 +6,7 @@ import { authApi, isAuthenticated } from "@/lib/auth";
 import { getApiErrorMessage } from "@/components/dialog-utils";
 import { EmptyState, ErrorState, Label, Skeleton, Tabs } from "@/components/ui";
 
-type Scope = "global" | "friends" | "weekly";
+type Scope = "global" | "friends";
 type LeaderboardEntry = {
   id?: number;
   username?: string | null;
@@ -16,30 +16,27 @@ type LeaderboardEntry = {
   total_xp?: number | null;
   score?: number | null;
   is_you?: boolean;
-  division?: string | null;
-  division_source?: string | null;
 };
 type LeaderboardPayload = {
   entries?: LeaderboardEntry[];
   your_rank?: number | null;
-  formed?: boolean;
-  min_size?: number;
 };
 
 const scopeTabs: { value: Scope; label: string }[] = [
   { value: "global", label: "Global" },
   { value: "friends", label: "Друзья" },
-  { value: "weekly", label: "Weekly" },
 ];
 
 export default function RatingPanel() {
   const [scope, setScope] = useState<Scope>("global");
   const [boards, setBoards] = useState<Partial<Record<Scope, LeaderboardPayload>>>({});
   const [attempted, setAttempted] = useState<Record<Scope, boolean>>({
-    global: false, friends: false, weekly: false,
+    global: false,
+    friends: false,
   });
   const [loading, setLoading] = useState<Record<Scope, boolean>>({
-    global: true, friends: false, weekly: false,
+    global: true,
+    friends: false,
   });
   const [errors, setErrors] = useState<Partial<Record<Scope, string>>>({});
 
@@ -55,8 +52,9 @@ export default function RatingPanel() {
     }
 
     try {
-      const params = { scope: requestedScope, limit: 10 };
-      const response = await authApi.get("/api/leaderboard", { params });
+      const response = await authApi.get("/api/leaderboard", {
+        params: { scope: requestedScope, limit: 10 },
+      });
       const payload = response.data as LeaderboardPayload;
       setBoards((previous) => ({
         ...previous,
@@ -84,18 +82,17 @@ export default function RatingPanel() {
   const yourRank = typeof board?.your_rank === "number" ? board.your_rank : null;
 
   return (
-    <section className="bg-white">
+    <section className="border-2 border-black bg-white" aria-labelledby="rating-heading">
       <div className="border-b-2 border-black bg-[#f4f4f0] p-4 md:p-6">
-        <h2 className="font-display text-2xl uppercase">Рейтинг</h2>
-        <p className="mt-1 text-sm text-[#666]">Первые 10 участников и твоё место в таблице.</p>
-        {scope === "weekly" && <p className="mt-2 max-w-3xl text-xs leading-relaxed text-[#555]">Weekly League считает недельный League Score и группирует участников по дивизионам. Если участников пока меньше минимального состава, лига формируется; Global и Friends показывают общий XP и не используют недельные дивизионы.</p>}
+        <h2 id="rating-heading" className="font-display text-2xl uppercase">Рейтинг</h2>
+        <p className="mt-1 text-sm text-[#666]">Global и друзья — общий XP без недельных дивизионов. Показаны первые 10 участников и твоё место.</p>
       </div>
       <Tabs
-        ariaLabel="Рейтинг"
+        ariaLabel="Общий рейтинг"
         value={scope}
         onChange={setScope}
         className="flex border-b-2 border-black"
-        tabClassName="flex-1 border-r-2 border-black px-3 py-3 text-[10px] font-bold uppercase tracking-widest md:px-5 md:text-xs"
+        tabClassName="flex-1 border-r-2 border-black px-3 py-3 text-[10px] font-bold uppercase tracking-widest last:border-r-0 md:px-5 md:text-xs"
         activeClassName="bg-[#5866f2] text-white"
         inactiveClassName="hover:bg-black/5"
         items={scopeTabs}
@@ -109,43 +106,28 @@ export default function RatingPanel() {
         ) : errors[scope] ? (
           <ErrorState message={errors[scope] || "Не удалось загрузить рейтинг."} onRetry={() => void loadScope(scope)} />
         ) : entries.length === 0 ? (
-          <EmptyState>
-            {scope === "friends" ? "Нет данных для рейтинга друзей. Добавь друзей в профиле." : scope === "weekly" ? "Лига формируется: недельных результатов пока недостаточно для таблицы." : "Рейтинг пока пуст."}
-          </EmptyState>
+          <EmptyState>{scope === "friends" ? "Нет данных для рейтинга друзей. Добавь друзей в профиле." : "Рейтинг пока пуст."}</EmptyState>
         ) : (
           <div>
-            {scope === "weekly" && !board?.formed && (
-              <p className="mb-3 border-2 border-black bg-[#ffd500]/25 px-3 py-2 text-[10px] font-bold uppercase tracking-widest">
-                Лига формируется: {entries.length}/{board?.min_size ?? 5} атлетов
-              </p>
-            )}
             <div className="space-y-0">
               {entries.map((entry, index) => (
-                <div key={entry.id ?? entry.username ?? index}>
-                  {scope === "weekly" && (index === 0 || entries[index - 1]?.division !== entry.division) && (
-                    <div className="flex justify-between gap-2 bg-[#171a38] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-white">
-                      <span>{entry.division ?? "Open · provisional"}</span>
-                      {entry.division_source && <span className="text-white/60">{entry.division_source}</span>}
+                <div key={entry.id ?? entry.username ?? index} className={`flex items-center justify-between gap-3 border-b border-black/10 px-3 py-3 ${entry.is_you ? "bg-[#ffd500]/20" : "hover:bg-black/5"}`}>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="w-8 shrink-0 font-display text-lg text-[#999]">{String(entry.rank ?? index + 1).padStart(2, "0")}</span>
+                    <div className="min-w-0">
+                      {entry.username ? (
+                        <Link href={`/u/${encodeURIComponent(entry.username)}`} className="block truncate text-sm font-bold uppercase hover:text-[#5866f2]">
+                          {entry.display_name || entry.username}{entry.is_you ? " (ТЫ)" : ""}
+                        </Link>
+                      ) : (
+                        <p className="truncate text-sm font-bold uppercase">{entry.display_name || "Атлет"}{entry.is_you ? " (ТЫ)" : ""}</p>
+                      )}
+                      <Label className="mt-1 text-[#666]">LVL {entry.level ?? "—"}</Label>
                     </div>
-                  )}
-                  <div className={`flex items-center justify-between gap-3 border-b border-black/10 px-3 py-3 ${entry.is_you ? "bg-[#ffd500]/20" : "hover:bg-black/5"}`}>
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="w-8 shrink-0 font-display text-lg text-[#999]">{String(entry.rank ?? index + 1).padStart(2, "0")}</span>
-                      <div className="min-w-0">
-                        {entry.username ? (
-                          <Link href={`/u/${entry.username}`} className="block truncate text-sm font-bold uppercase hover:text-[#5866f2]">
-                            {entry.display_name || entry.username}{entry.is_you ? " (ТЫ)" : ""}
-                          </Link>
-                        ) : (
-                          <p className="truncate text-sm font-bold uppercase">{entry.display_name || "Атлет"}</p>
-                        )}
-                        {scope !== "weekly" && <Label className="mt-1 text-[#666]">LVL {entry.level ?? "—"}</Label>}
-                      </div>
-                    </div>
-                    <span className="shrink-0 font-display text-lg text-[#ff4b26]">
-                      {Math.round(Number(scope === "weekly" ? entry.score : entry.total_xp ?? entry.score) || 0).toLocaleString()}
-                    </span>
                   </div>
+                  <span className="shrink-0 font-display text-lg text-[#ff4b26]">
+                    {Math.round(Number(entry.total_xp ?? entry.score) || 0).toLocaleString()}
+                  </span>
                 </div>
               ))}
             </div>
