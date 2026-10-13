@@ -174,7 +174,8 @@ try:
             WITH ranked AS (
                 SELECT id, ROW_NUMBER() OVER (
                     PARTITION BY pair_low_id, pair_high_id, week_start
-                    ORDER BY created_at NULLS LAST, id
+                    ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END,
+                             created_at NULLS LAST, id
                 ) AS pair_rank
                 FROM duels
                 WHERE status IN ('pending', 'active')
