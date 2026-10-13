@@ -29,7 +29,7 @@ type Props = {
 };
 
 export default function QuestsBoard({ quests, loading, error, onRetry }: Props) {
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = useState(true);
   const visibleQuests = showAll ? quests : quests.slice(0, 4);
 
   return (
