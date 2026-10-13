@@ -60,6 +60,7 @@ class User(Base):
     division_placed_at = Column(DateTime, nullable=True)
     pause_set_at = Column(DateTime, nullable=True)         # PR8: окно паузы
     paused_until = Column(DateTime, nullable=True)
+    last_deload_week_start = Column(Date, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -274,8 +275,10 @@ class WeeklySummary(Base):
     division = Column(String, nullable=True)
     division_source = Column(String, nullable=True)        # ctl | load_fallback | provisional
     finalized = Column(Boolean, default=False)
-    is_deload = Column(Boolean, default=False)             # PR8: разгрузочная неделя
-    paused = Column(Boolean, default=False)                # PR8: неделя паузы
+    is_deload = Column(Boolean, default=False)             # разгрузочная неделя
+    deload_source = Column(String(10), nullable=True)      # auto | manual
+    deload_manual_decision = Column(Boolean, nullable=False, default=False, server_default="false")
+    paused = Column(Boolean, default=False)                # неделя паузы
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from starlette.concurrency import run_in_threadpool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, func
@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Optional, Literal
 
 from ..rate_limit import limiter
+from ..services.deload import cooldown_passed, manual_deload_block_reason, suggestion_is_appropriate
 
 router = APIRouter(prefix="/api", tags=["Sync"])
 settings = get_settings()
@@ -404,20 +405,41 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
 
     medians = X6.medians_by_sport(hist, set())
 
-    # 5) недели: сводки + недельные события
+    # 5) недели: сводки + недельные события. История обходится хронологически,
+    # поэтому любой Deload (manual/auto) одинаково запускает трёхнедельный cooldown.
+    last_deload_week_start: _date | None = None
     for ws in all_weeks:
         finalized = ws < this_week
         prior = [p for p in all_weeks if p < ws]
         paused = _is_paused_week(user, ws)
-        # паузы исключаются из базы цели: болезнь не повышает будущую норму
         prior_loads = [week_load[p] for p in prior if not _is_paused_week(user, p)]
         baseline = X6.weekly_baseline(prior_loads)
         target = baseline or X6.starter_target()
         ratio = (week_load[ws] / target) if target else 0.0
-        deload = (not paused) and X6.is_deload_week(
-            week_load[ws], baseline or 0.0, [week_load[p] for p in prior]
-        )
-        eff_ratio = max(ratio, X6.DELOAD_GOAL_FLOOR) if deload else ratio
+        summ = (db.query(WeeklySummary)
+                .filter(WeeklySummary.user_id == user.id,
+                        WeeklySummary.week_start == datetime.combine(ws, datetime.min.time()))
+                .first())
+        prev_for_deload = [
+            week_load[p] if not _is_paused_week(user, p) else 0.0
+            for p in prior
+        ]
+        if paused:
+            deload, deload_source = False, None
+        elif summ and summ.is_deload and getattr(summ, "deload_source", None) == "manual":
+            deload, deload_source = True, "manual"
+        elif summ and getattr(summ, "deload_manual_decision", False):
+            deload, deload_source = False, None
+        else:
+            can_auto = (
+                finalized
+                and cooldown_passed(ws, last_deload_week_start)
+                and X6.is_deload_week(week_load[ws], baseline or 0.0, prev_for_deload)
+            )
+            deload, deload_source = bool(can_auto), ("auto" if can_auto else None)
+        if deload:
+            last_deload_week_start = ws
+        eff_ratio = X6.effective_goal_ratio(ratio, deload)
         days = week_days[ws]
         t_days = X6.target_training_days([week_days[p] for p in prior])
 
@@ -445,9 +467,9 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         goal_xp = 0.0
         recovery = 0.0
         if finalized and ws >= activation_ws:
-            goal_xp = X6.weekly_goal_xp(ratio)
+            goal_xp = X6.weekly_goal_xp(eff_ratio)
             upsert_event(f"weekly_goal:{ws.isoformat()}", "weekly_goal", goal_xp, ws, ws,
-                         f"Weekly goal {int(ratio * 100)}%")
+                         f"Weekly goal {int(eff_ratio * 100)}%")
             recovery = X6.recovery_xp_week(scores_by_week.get(ws, []))
             upsert_event(f"recovery:{ws.isoformat()}", "recovery", recovery, ws, ws,
                          "Recovery (sleep score)")
@@ -457,10 +479,6 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         effort_week = round_xp(sum(i["day_xp"] for d, i in day_info.items() if X6.week_start(d) == ws))
         total_week = round_xp(effort_week + consistency_xp + quality_xp + goal_xp + recovery + quest_xp)
 
-        summ = (db.query(WeeklySummary)
-                .filter(WeeklySummary.user_id == user.id,
-                        WeeklySummary.week_start == datetime.combine(ws, datetime.min.time()))
-                .first())
         if not summ:
             summ = WeeklySummary(user_id=user.id, week_start=datetime.combine(ws, datetime.min.time()))
             db.add(summ)
@@ -478,8 +496,11 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         summ.total_xp = total_week
         summ.league_score = None if paused else X6.league_score(eff_ratio, days, t_days, quality_xp)
         summ.is_deload = bool(deload)
+        summ.deload_source = deload_source
         summ.paused = bool(paused)
         summ.finalized = finalized
+
+    user.last_deload_week_start = last_deload_week_start
 
     # Remove regularity/quality events that no longer correspond to the current
     # activity history (for example, an Intervals update makes a workout
@@ -1335,14 +1356,16 @@ async def get_user_profile(
             else X6.starter_target()
         )
         week_data = {
+            "week_start": this_week_start.isoformat(),
             "actual_load": 0, "target_load": fallback_target, "completion_ratio": 0,
             "training_days": 0, "effort_xp": 0, "goal_xp": 0,
             "consistency_xp": 0, "quality_xp": 0, "recovery_xp": 0,
             "quest_xp": 0, "total_xp": 0, "league_score": 0,
-            "state": "no_data", "is_deload": False, "paused": False,
+            "state": "no_data", "is_deload": False, "deload_source": None, "paused": False,
         }
     else:
         week_data = {
+            "week_start": this_week_start.isoformat(),
             "actual_load": round(current_summary.actual_load or 0, 1),
             "target_load": round(current_summary.target_load or 0, 1),
             "completion_ratio": round((current_summary.completion_ratio or 0) * 100, 1),
@@ -1360,6 +1383,10 @@ async def get_user_profile(
             "paused": bool(current_summary.paused),
         }
 
+    deload_state = _get_current_deload_state(
+        db, user, this_week_start, today, current_summary, all_activities
+    )
+    week_data.update({key: value for key, value in deload_state.items() if not key.startswith("_")})
     div, div_src = _user_division(db, user, this_week_start, week_data["actual_load"])
     week_data["division"] = div
     week_data["division_source"] = div_src
@@ -1406,6 +1433,7 @@ async def get_user_profile(
             "privacy_consent_current": bool(user.privacy_consent_version == get_settings().PRIVACY_CONSENT_VERSION and user.privacy_consent_at),
             "pause_set_at": user.pause_set_at.isoformat() if user.pause_set_at else None,
             "paused_until": user.paused_until.isoformat() if user.paused_until else None,
+            "last_deload_week_start": user.last_deload_week_start.isoformat() if user.last_deload_week_start else None,
         },
         "stats": {
             "day_streak": day_streak,
@@ -1458,6 +1486,140 @@ async def get_user_profile(
 
 def _monday_for_day(day: _date) -> _date:
     return day - timedelta(days=day.weekday())
+
+
+def _get_current_deload_state(
+    db: Session,
+    user: User,
+    current_week_start: _date,
+    today: _date,
+    summary: WeeklySummary | None = None,
+    activities: list[Activity] | None = None,
+) -> dict:
+    """Проверяет Deload по актуальной нагрузке, baseline и предыдущим календарным неделям."""
+    from ..services import xp_v6 as X6
+
+    if activities is None:
+        activities = db.query(Activity).filter(Activity.user_id == user.id).all()
+    week_load: dict[_date, float] = {}
+    first_week = current_week_start
+    for activity in activities:
+        stamp = activity.start_date_local or activity.start_date
+        if stamp is None:
+            continue
+        activity_week = _monday_for_day(stamp.date())
+        if activity_week > current_week_start:
+            continue
+        tss, _source = X6.resolve_training_load({
+            "training_load": activity.training_load,
+            "moving_time": activity.moving_time,
+            "intensity": activity.intensity,
+            "sport_type": activity.sport_type,
+            "is_manual": bool(activity.is_manual),
+            "source": getattr(activity, "source", None),
+        })
+        week_load[activity_week] = week_load.get(activity_week, 0.0) + tss
+        first_week = min(first_week, activity_week)
+
+    all_weeks: list[_date] = []
+    cursor = first_week
+    while cursor <= current_week_start:
+        all_weeks.append(cursor)
+        week_load.setdefault(cursor, 0.0)
+        cursor += timedelta(days=7)
+    prior_loads = [
+        week_load[week] for week in all_weeks
+        if week < current_week_start and not _is_paused_week(user, week)
+    ]
+    baseline = X6.weekly_baseline(prior_loads)
+    current_load = week_load.get(current_week_start, 0.0)
+    previous_starts = [
+        current_week_start - timedelta(weeks=2),
+        current_week_start - timedelta(weeks=1),
+    ]
+    previous_loads: list[float | None] = [
+        None if _is_paused_week(user, week) else week_load.get(week, 0.0)
+        for week in previous_starts
+    ]
+
+    current_dt = datetime.combine(current_week_start, datetime.min.time())
+    if summary is None:
+        summary = (
+            db.query(WeeklySummary)
+            .filter(WeeklySummary.user_id == user.id, WeeklySummary.week_start == current_dt)
+            .first()
+        )
+    last_deload = (
+        db.query(WeeklySummary)
+        .filter(
+            WeeklySummary.user_id == user.id,
+            WeeklySummary.week_start < current_dt,
+            WeeklySummary.is_deload.is_(True),
+        )
+        .order_by(WeeklySummary.week_start.desc())
+        .first()
+    )
+    last_deload_week_start = last_deload.week_start.date() if last_deload and last_deload.week_start else None
+    paused = _is_paused_week(user, current_week_start)
+    is_deload = bool(summary and summary.is_deload)
+    source = getattr(summary, "deload_source", None) if summary else None
+    manual_decision = bool(getattr(summary, "deload_manual_decision", False)) if summary else False
+
+    if paused:
+        can_set, block_reason = False, "Неделя уже на паузе."
+    elif is_deload and source == "manual":
+        can_set = not bool(summary and summary.finalized)
+        block_reason = None if can_set else "Завершённую неделю нельзя изменить."
+    elif is_deload and source == "auto":
+        can_set, block_reason = False, "Автоматический Deload нельзя снять вручную."
+    else:
+        block_reason = manual_deload_block_reason(
+            current_week_start=current_week_start,
+            current_load=current_load,
+            baseline=baseline,
+            previous_two_loads=previous_loads,
+            last_deload_week_start=last_deload_week_start,
+            paused=paused,
+            manual_decision=manual_decision,
+        )
+        can_set = block_reason is None
+
+    suggestion = suggestion_is_appropriate(
+        current_week_start=current_week_start,
+        current_load=current_load,
+        baseline=baseline,
+        previous_two_loads=previous_loads,
+        current_day_index=today.weekday(),
+        last_deload_week_start=last_deload_week_start,
+        paused=paused,
+        manual_decision=manual_decision,
+        already_deload=is_deload,
+    )
+    return {
+        "is_deload": is_deload,
+        "deload_source": source if is_deload else None,
+        "can_set_deload": bool(can_set),
+        "deload_block_reason": block_reason,
+        "deload_suggestion": bool(suggestion and can_set),
+        "_actual_load": current_load,
+        "_baseline": baseline,
+    }
+
+
+def _log_deload_event(db: Session, user: User, week_start: _date, action: str, title: str) -> None:
+    import uuid
+
+    db.add(XPEvent(
+        user_id=user.id,
+        week_start=datetime.combine(week_start, datetime.min.time()),
+        date=datetime.utcnow(),
+        event_type="deload_manual",
+        event_key=f"deload_manual:{week_start.isoformat()}:{action}:{uuid.uuid4().hex}",
+        amount=0.0,
+        source_type="week",
+        source_id=week_start.isoformat(),
+        title=title,
+    ))
 
 
 def _week_activity_payload(act: Activity) -> dict:
@@ -1548,6 +1710,7 @@ def get_weekly_summary(
             "league_score": round(summary.league_score or 0, 1),
             "state": "ready" if summary.finalized else "in_progress",
             "is_deload": bool(summary.is_deload),
+            "deload_source": getattr(summary, "deload_source", None) if summary.is_deload else None,
             "paused": bool(summary.paused),
             "division": summary.division or (f"Division {current.division_current}" if current.division_current else None),
             "division_source": summary.division_source,
@@ -1565,6 +1728,18 @@ def get_weekly_summary(
             "division": f"Division {current.division_current}" if current.division_current else None,
             "division_source": "ladder" if current.division_current else "provisional",
         }
+
+    # Editing and suggestions apply only to the current calendar week; history is read-only.
+    if selected_start == current_start:
+        deload_state = _get_current_deload_state(db, current, current_start, today, summary)
+        week.update({key: value for key, value in deload_state.items() if not key.startswith("_")})
+    else:
+        week.update({
+            "deload_source": getattr(summary, "deload_source", None) if summary and summary.is_deload else None,
+            "can_set_deload": False,
+            "deload_block_reason": "Изменить Deload можно только на текущей неделе.",
+            "deload_suggestion": False,
+        })
 
     # Match the existing current-week placement logic, without recalculating a user's division from a historical week.
     if selected_start == current_start:
@@ -2164,6 +2339,97 @@ async def leaderboard(
     }
 
 
+class DeloadIn(BaseModel):
+    enable: StrictBool
+
+
+@router.post("/deload")
+@limiter.limit("10/hour")
+async def set_deload(
+    request: Request,
+    payload: DeloadIn,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Ручной Deload только на текущую календарную неделю."""
+    from ..services import xp_v6 as X6
+
+    today = _user_local_today(current)
+    ws = _monday_for_day(today)
+    week_dt = datetime.combine(ws, datetime.min.time())
+    summary = (
+        db.query(WeeklySummary)
+        .filter(WeeklySummary.user_id == current.id, WeeklySummary.week_start == week_dt)
+        .first()
+    )
+    state = _get_current_deload_state(db, current, ws, today, summary)
+
+    if payload.enable:
+        if state["is_deload"]:
+            if state["deload_source"] == "manual":
+                return {"message": "Ручной Deload уже включён.", **{k: v for k, v in state.items() if not k.startswith("_")}}
+            raise HTTPException(status_code=409, detail=state["deload_block_reason"] or "Снять автоматический Deload вручную нельзя.")
+        if not state["can_set_deload"]:
+            raise HTTPException(status_code=409, detail=state["deload_block_reason"] or "Сейчас нельзя поставить Deload.")
+        if summary is None:
+            summary = WeeklySummary(user_id=current.id, week_start=week_dt)
+            db.add(summary)
+        current_load = float(state["_actual_load"])
+        baseline = state["_baseline"]
+        target = baseline or X6.starter_target()
+        summary.actual_load = round_xp(current_load)
+        summary.target_load = round_xp(target)
+        summary.completion_ratio = round(current_load / target, 4) if target else 0.0
+        summary.is_deload = True
+        summary.deload_source = "manual"
+        summary.deload_manual_decision = True
+        summary.paused = False
+        current.last_deload_week_start = ws
+        _log_deload_event(db, current, ws, "enabled", "Ручной Deload установлен")
+        db.commit()
+        state = _get_current_deload_state(db, current, ws, today, summary)
+        return {"message": "Ручной Deload установлен на текущую неделю.", **{k: v for k, v in state.items() if not k.startswith("_")}}
+
+    if state["is_deload"]:
+        if state["deload_source"] != "manual":
+            raise HTTPException(status_code=409, detail="Автоматический Deload нельзя снять вручную.")
+        if summary is None or summary.finalized:
+            raise HTTPException(status_code=409, detail="Снять Deload можно только до конца текущей недели.")
+        summary.is_deload = False
+        summary.deload_source = None
+        summary.deload_manual_decision = True
+        _log_deload_event(db, current, ws, "removed", "Ручной Deload снят")
+        previous_deload = (
+            db.query(WeeklySummary)
+            .filter(
+                WeeklySummary.user_id == current.id,
+                WeeklySummary.week_start < week_dt,
+                WeeklySummary.is_deload.is_(True),
+            )
+            .order_by(WeeklySummary.week_start.desc())
+            .first()
+        )
+        current.last_deload_week_start = previous_deload.week_start.date() if previous_deload and previous_deload.week_start else None
+        db.commit()
+        state = _get_current_deload_state(db, current, ws, today, summary)
+        return {"message": "Ручной Deload снят; автоматический Deload на этой неделе отключён.", **{k: v for k, v in state.items() if not k.startswith("_")}}
+
+    if summary is not None and getattr(summary, "deload_manual_decision", False):
+        return {"message": "Решение по Deload на этой неделе уже сохранено.", **{k: v for k, v in state.items() if not k.startswith("_")}}
+    if not state["deload_suggestion"]:
+        raise HTTPException(status_code=409, detail="Нет активного предложения Deload, которое можно отклонить.")
+    if summary is None:
+        summary = WeeklySummary(user_id=current.id, week_start=week_dt)
+        db.add(summary)
+    summary.is_deload = False
+    summary.deload_source = None
+    summary.deload_manual_decision = True
+    _log_deload_event(db, current, ws, "dismissed", "Предложение Deload отклонено")
+    db.commit()
+    state = _get_current_deload_state(db, current, ws, today, summary)
+    return {"message": "Предложение отклонено; автоматический Deload на этой неделе отключён.", **{k: v for k, v in state.items() if not k.startswith("_")}}
+
+
 class PauseIn(BaseModel):
     weeks: int = Field(default=0, ge=0, le=8)
 
@@ -2183,6 +2449,34 @@ async def set_pause(
         current.paused_until = None
         message = "Пауза снята"
     else:
+        today = _user_local_today(current)
+        ws = _monday_for_day(today)
+        week_dt = datetime.combine(ws, datetime.min.time())
+        current_summary = (
+            db.query(WeeklySummary)
+            .filter(WeeklySummary.user_id == current.id, WeeklySummary.week_start == week_dt)
+            .first()
+        )
+        if current_summary and current_summary.is_deload:
+            old_source = getattr(current_summary, "deload_source", None)
+            current_summary.is_deload = False
+            current_summary.deload_source = None
+            current_summary.deload_manual_decision = True
+            if old_source == "manual":
+                _log_deload_event(db, current, ws, "removed_by_pause", "Ручной Deload снят при установке паузы")
+            else:
+                _log_deload_event(db, current, ws, "cancelled_by_pause", "Deload отменён из-за установки паузы")
+            previous_deload = (
+                db.query(WeeklySummary)
+                .filter(
+                    WeeklySummary.user_id == current.id,
+                    WeeklySummary.week_start < week_dt,
+                    WeeklySummary.is_deload.is_(True),
+                )
+                .order_by(WeeklySummary.week_start.desc())
+                .first()
+            )
+            current.last_deload_week_start = previous_deload.week_start.date() if previous_deload and previous_deload.week_start else None
         current.pause_set_at = datetime.utcnow()
         current.paused_until = datetime.utcnow() + timedelta(weeks=weeks)
         message = f"Пауза установлена на {weeks} нед."
