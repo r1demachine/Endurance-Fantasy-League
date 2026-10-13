@@ -14,7 +14,11 @@ os.environ.setdefault("JWT_SECRET", "unit-test-jwt-secret-value-longer-than-32-c
 os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
 os.environ.setdefault("REDIS_URL", "")
 
-from app.routers.telegram import TelegramWebhookUpdate, _unmark_update_processed
+from app.routers.telegram import (
+    TelegramWebhookUpdate,
+    _advance_week_marker_on_link,
+    _unmark_update_processed,
+)
 from app.services.telegram_week import latest_completed_week_start, notify_week_results
 
 
@@ -48,6 +52,38 @@ class TelegramWebhookRetryTests(unittest.TestCase):
         self.assertIn("await run_in_threadpool(_failed_link_attempts", source)
         self.assertIn("await run_in_threadpool(_record_failed_link_attempt", source)
         self.assertIn("await run_in_threadpool(\n        create_activity_from_upload", source)
+
+
+class TelegramLinkMarkerTests(unittest.TestCase):
+    def test_link_does_not_mark_an_unfinalized_week_as_delivered(self):
+        from datetime import date
+
+        last_completed = date(2026, 10, 5)
+        user = SimpleNamespace(id=12, telegram_last_notified_week=last_completed)
+        db = MagicMock()
+        query = db.query.return_value
+        query.filter.return_value = query
+        query.first.return_value = SimpleNamespace(finalized=False)
+
+        with patch("app.routers.telegram._latest_completed_week_start", return_value=last_completed):
+            _advance_week_marker_on_link(db, user)
+
+        self.assertEqual(user.telegram_last_notified_week, last_completed - timedelta(days=7))
+
+    def test_link_skips_backfill_when_latest_week_is_already_finalized(self):
+        from datetime import date
+
+        last_completed = date(2026, 10, 5)
+        user = SimpleNamespace(id=12, telegram_last_notified_week=None)
+        db = MagicMock()
+        query = db.query.return_value
+        query.filter.return_value = query
+        query.first.return_value = SimpleNamespace(finalized=True)
+
+        with patch("app.routers.telegram._latest_completed_week_start", return_value=last_completed):
+            _advance_week_marker_on_link(db, user)
+
+        self.assertEqual(user.telegram_last_notified_week, last_completed)
 
 
 class TelegramLateSummaryTests(unittest.TestCase):
