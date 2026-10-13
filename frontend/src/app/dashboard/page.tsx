@@ -85,12 +85,14 @@ export default function Dashboard() {
     return () => controller.abort();
   }, [selectedWeekStart]);
 
-  const loadQuests = useCallback(async () => {
+  const loadQuests = useCallback(async (weekStart = selectedWeekStart) => {
     setQuestsLoading(true);
     setQuests([]);
     setQuestsError("");
     try {
-      const response = await authApi.get("/api/quests");
+      const response = await authApi.get("/api/quests", {
+        params: weekStart ? { week_start: weekStart } : {},
+      });
       setQuests(Array.isArray(response.data) ? response.data : []);
     } catch (error: unknown) {
       setQuests([]);
@@ -98,7 +100,7 @@ export default function Dashboard() {
     } finally {
       setQuestsLoading(false);
     }
-  }, []);
+  }, [selectedWeekStart]);
 
   const refreshDashboardAfterDataChange = useCallback(async () => {
     setWeekLoading(true);
@@ -199,7 +201,7 @@ export default function Dashboard() {
     try {
       await authApi.post("/api/pause", { weeks: validWeeks });
       await refreshUser(true);
-      setWeekData((previous: any) => previous ? { ...previous, paused: validWeeks > 0 } : previous);
+      await refreshDashboardAfterDataChange();
       setPauseDialogOpen(false);
     } catch (error: unknown) {
       setPauseError(getApiErrorMessage(error, "Не удалось обновить паузу. Проверь соединение и попробуй ещё раз."));
@@ -213,11 +215,8 @@ export default function Dashboard() {
     setDeloadError("");
     try {
       await authApi.post("/api/deload", { enable });
-      const response = await authApi.get("/api/weekly-summary", {
-        params: selectedWeekStart ? { week_start: selectedWeekStart } : {},
-      });
-      setWeekData(response.data.week || null);
       await refreshUser(true);
+      await refreshDashboardAfterDataChange();
     } catch (error: unknown) {
       setDeloadError(getApiErrorMessage(error, "Не удалось обновить Deload. Проверь условия недели и попробуй ещё раз."));
       try {

@@ -23,6 +23,7 @@ from ..services.deload import cooldown_passed, manual_deload_block_reason, sugge
 
 router = APIRouter(prefix="/api", tags=["Sync"])
 settings = get_settings()
+WEEKLY_XP_EVENT_TYPES = ("quest", "achievement", "activity_bonus", "sleep_bonus")
 _optional_bearer = HTTPBearer(auto_error=False)
 
 def _user_local_today(user: User | None) -> _date:
@@ -274,6 +275,7 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
             .filter(Activity.user_id == user.id)
             .order_by(Activity.start_date.asc(), Activity.id.asc())
             .all())
+    wellness_rows = db.query(Wellness).filter(Wellness.user_id == user.id).all()
 
     # 1) нагрузка каждой активности + источник + гашение legacy-полей
     for a in acts:
@@ -336,8 +338,14 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
 
     # 4) ВСЕ календарные недели, включая нулевые (справедливо после перерыва)
     this_week = X6.week_start(_user_local_today(user))
-    if day_info:
-        first_week = min(X6.week_start(d) for d in day_info)
+    source_days = list(day_info)
+    for wellness in wellness_rows:
+        try:
+            source_days.append(_date.fromisoformat(str(wellness.date)[:10]))
+        except (TypeError, ValueError):
+            continue
+    if source_days:
+        first_week = min(X6.week_start(day) for day in source_days)
         all_weeks: list[_date] = []
         w = first_week
         while w <= this_week:
@@ -355,11 +363,11 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
             week_days[ws] += 1
 
     scores_by_week: dict[_date, list] = defaultdict(list)
-    for wrow in db.query(Wellness).filter(Wellness.user_id == user.id).all():
+    for wrow in wellness_rows:
         if wrow.date and wrow.sleep_score:
             try:
-                scores_by_week[X6.week_start(datetime.fromisoformat(wrow.date).date())].append(float(wrow.sleep_score))
-            except Exception:
+                scores_by_week[X6.week_start(_date.fromisoformat(str(wrow.date)[:10]))].append(float(wrow.sleep_score))
+            except (TypeError, ValueError):
                 continue
 
     # XP events are loaded for weekly accounting. Achievement progress is derived
@@ -368,7 +376,7 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
     events_by_key = {e.event_key: e for e in all_events}
     quest_by_week: dict = {}
     for e in all_events:
-        if e.event_type in ("quest", "achievement"):
+        if e.event_type in WEEKLY_XP_EVENT_TYPES:
             quest_by_week[e.week_start] = quest_by_week.get(e.week_start, 0.0) + e.amount
 
     generated_quality_consistency_keys: set[str] = set()
@@ -404,6 +412,62 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
             )
             db.add(ev)
             events_by_key[key] = ev
+
+    # Repeatable per-item bonuses live in the weekly "quests and bonuses" bucket.
+    generated_activity_bonus_keys: set[str] = set()
+    for activity in acts:
+        stamp = activity.start_date_local or activity.start_date
+        if stamp is None:
+            continue
+        activity_day = stamp.date() if isinstance(stamp, datetime) else stamp
+        key = f"activity_bonus:45m:{activity.id}"
+        if (
+            not bool(activity.is_manual)
+            and int(activity.moving_time or 0) >= X6.WORKOUT_BONUS_MIN_DURATION_SECONDS
+        ):
+            upsert_event(
+                key, "activity_bonus", X6.WORKOUT_BONUS_XP,
+                X6.week_start(activity_day), activity_day,
+                f"Тренировка ≥45 минут +{int(X6.WORKOUT_BONUS_XP)} XP",
+                source_type="activity", source_id=activity.id,
+            )
+            generated_activity_bonus_keys.add(key)
+    for event in all_events:
+        if event.event_type == "activity_bonus" and event.event_key not in generated_activity_bonus_keys:
+            db.delete(event)
+            events_by_key.pop(event.event_key, None)
+
+    generated_sleep_bonus_keys: set[str] = set()
+    for wellness in wellness_rows:
+        try:
+            sleep_day = _date.fromisoformat(str(wellness.date)[:10])
+        except (TypeError, ValueError):
+            continue
+        sleep_secs = float(wellness.sleep_secs or 0)
+        sleep_score = float(wellness.sleep_score or 0)
+        key = f"sleep_bonus:good_night:{sleep_day.isoformat()}"
+        if (
+            sleep_secs >= X6.GOOD_SLEEP_MIN_SECONDS
+            or sleep_score >= X6.GOOD_SLEEP_MIN_SCORE
+        ):
+            upsert_event(
+                key, "sleep_bonus", X6.GOOD_SLEEP_BONUS_XP,
+                X6.week_start(sleep_day), sleep_day,
+                f"Хороший сон +{int(X6.GOOD_SLEEP_BONUS_XP)} XP",
+                source_type="wellness", source_id=sleep_day.isoformat(),
+            )
+            generated_sleep_bonus_keys.add(key)
+    for event in all_events:
+        if event.event_type == "sleep_bonus" and event.event_key not in generated_sleep_bonus_keys:
+            db.delete(event)
+            events_by_key.pop(event.event_key, None)
+
+    # Rebuild from the in-memory upsert set so this pass includes new bonuses
+    # and never includes events just removed because their source no longer qualifies.
+    quest_by_week = defaultdict(float)
+    for event in events_by_key.values():
+        if event.event_type in WEEKLY_XP_EVENT_TYPES and event.week_start:
+            quest_by_week[event.week_start] += float(event.amount or 0.0)
 
     medians = X6.medians_by_sport(hist, set())
 
@@ -486,7 +550,9 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
 
         goal_xp = 0.0
         recovery = 0.0
-        if finalized and ws >= activation_ws:
+        if ws >= activation_ws:
+            # Keep the selected/current week live; upsert_event can revise an
+            # in-progress goal/recovery event as new training or wellness arrives.
             goal_xp = X6.weekly_goal_xp(eff_ratio)
             upsert_event(
                 f"weekly_goal:{ws.isoformat()}", "weekly_goal", goal_xp, ws, ws,
@@ -564,7 +630,7 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
     current_events = db.query(XPEvent).filter(XPEvent.user_id == user.id).all()
     quest_amount_by_week: dict[datetime, float] = defaultdict(float)
     for event in current_events:
-        if event.event_type in ("quest", "achievement") and event.week_start:
+        if event.event_type in WEEKLY_XP_EVENT_TYPES and event.week_start:
             quest_amount_by_week[event.week_start] += float(event.amount or 0.0)
     for week_start in all_weeks:
         week_dt = datetime.combine(week_start, datetime.min.time())
@@ -2786,6 +2852,8 @@ async def set_deload(
         summary.paused = False
         current.last_deload_week_start = ws
         _log_deload_event(db, current, ws, "enabled", "Ручной Deload установлен")
+        if get_settings().XP_ENGINE == "v6":
+            _recalculate_user_xp_v6(db, current)
         db.commit()
         state = _get_current_deload_state(db, current, ws, today, summary)
         return {"message": "Ручной Deload установлен на текущую неделю.", **{k: v for k, v in state.items() if not k.startswith("_")}}
@@ -2810,6 +2878,8 @@ async def set_deload(
             .first()
         )
         current.last_deload_week_start = previous_deload.week_start.date() if previous_deload and previous_deload.week_start else None
+        if get_settings().XP_ENGINE == "v6":
+            _recalculate_user_xp_v6(db, current)
         db.commit()
         state = _get_current_deload_state(db, current, ws, today, summary)
         return {"message": "Ручной Deload снят; автоматический Deload на этой неделе отключён.", **{k: v for k, v in state.items() if not k.startswith("_")}}
@@ -2825,6 +2895,8 @@ async def set_deload(
     summary.deload_source = None
     summary.deload_manual_decision = True
     _log_deload_event(db, current, ws, "dismissed", "Предложение Deload отклонено")
+    if get_settings().XP_ENGINE == "v6":
+        _recalculate_user_xp_v6(db, current)
     db.commit()
     state = _get_current_deload_state(db, current, ws, today, summary)
     return {"message": "Предложение отклонено; автоматический Deload на этой неделе отключён.", **{k: v for k, v in state.items() if not k.startswith("_")}}
@@ -2880,6 +2952,8 @@ async def set_pause(
         current.pause_set_at = datetime.utcnow()
         current.paused_until = datetime.utcnow() + timedelta(weeks=weeks)
         message = f"Пауза установлена на {weeks} нед."
+    if get_settings().XP_ENGINE == "v6":
+        _recalculate_user_xp_v6(db, current)
     db.commit()
     return {
         "message": message,

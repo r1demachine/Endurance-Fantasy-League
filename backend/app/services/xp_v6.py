@@ -62,6 +62,13 @@ LONG_WORKOUT_MEDIAN_MULTIPLIER = 1.30
 # ── Восстановление (sleep score): (порог, награда), проверяются сверху вниз ──
 RECOVERY_TIERS = ((90.0, 10.0), (80.0, 8.0), (70.0, 5.0), (60.0, 3.0))
 
+# ── Повторяемые бонусы за отдельные тренировки и ночи сна ──
+WORKOUT_BONUS_MIN_DURATION_SECONDS = 45 * 60
+WORKOUT_BONUS_XP = 12.0
+GOOD_SLEEP_MIN_SECONDS = 6 * 60 * 60
+GOOD_SLEEP_MIN_SCORE = 60.0
+GOOD_SLEEP_BONUS_XP = 6.0
+
 # ── League Score (фаза 5, функция готова уже сейчас) ──
 LEAGUE_GOAL_WEIGHT = 0.70
 LEAGUE_CONSISTENCY_WEIGHT = 0.20

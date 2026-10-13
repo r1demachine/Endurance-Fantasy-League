@@ -11,6 +11,8 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # ── Настройки недельных достижений ──
+LIFETIME_QUESTS_ACTIVATION_DATE = date(2026, 10, 19)
+
 WEEKLY_QUALIFYING_DAYS_TARGET = 5
 WEEKLY_QUALIFYING_DAYS_REWARD = 50.0
 WEEKLY_GOOD_SLEEP_NIGHTS_TARGET = 5
@@ -468,29 +470,59 @@ def grant_quests(db, user, acts, summaries) -> int:
         )
         .all()
     )
-    sleep_dates = {
-        day.isoformat()
-        for row in wellness_rows
-        if (day := _wellness_day(row)) is not None
-    }
     activities_by_week, wellness_by_week = _group_weekly_data(all_activities, wellness_rows)
 
-    ctx = {
-        "weeks": all_summaries,
-        "acts": [activity for activity in all_activities if _local_activity_day(activity) is not None],
-        "all_acts": all_activities,
-        "qualifying_days_by_week": _qualifying_training_days_by_week(all_activities),
-        "sleep_nights_count": len(sleep_dates),
+    today = _user_local_today(user)
+
+    # Lifetime progress starts on the activation date. Weekly/repeatable awards
+    # still use the complete source history for their own calendar weeks.
+    lifetime_activities = [
+        activity for activity in all_activities
+        if today >= LIFETIME_QUESTS_ACTIVATION_DATE
+        and (day := _local_activity_day(activity)) is not None
+        and LIFETIME_QUESTS_ACTIVATION_DATE <= day <= today
+    ]
+    lifetime_summaries = [
+        summary for summary in all_summaries
+        if today >= LIFETIME_QUESTS_ACTIVATION_DATE
+        and LIFETIME_QUESTS_ACTIVATION_DATE <= summary.week_start.date() <= today
+    ]
+    lifetime_sleep_dates = {
+        day for row in wellness_rows
+        if today >= LIFETIME_QUESTS_ACTIVATION_DATE
+        and (day := _wellness_day(row)) is not None
+        and LIFETIME_QUESTS_ACTIVATION_DATE <= day <= today
     }
-    try:
-        local_zone = ZoneInfo(getattr(user, "timezone_name", None) or "UTC")
-    except (ZoneInfoNotFoundError, TypeError, ValueError):
-        local_zone = ZoneInfo("UTC")
-    today = datetime.now(timezone.utc).astimezone(local_zone).date()
+    ctx = {
+        "weeks": lifetime_summaries,
+        "acts": lifetime_activities,
+        "all_acts": lifetime_activities,
+        "qualifying_days_by_week": _qualifying_training_days_by_week(lifetime_activities),
+        "sleep_nights_count": len(lifetime_sleep_dates),
+    }
+
+    # Reconcile any one-shot XP granted before the activation rule existed.
+    lifetime_keys = [_quest_key(quest["slug"]) for quest in QUEST_REGISTRY]
+    old_lifetime_events = (
+        db.query(XPEvent)
+        .filter(XPEvent.user_id == user.id, XPEvent.event_key.in_(lifetime_keys))
+        .all()
+    )
+    removed_old_lifetime_event = False
+    if today >= LIFETIME_QUESTS_ACTIVATION_DATE:
+        for event in old_lifetime_events:
+            if event.date is not None and event.date.date() < LIFETIME_QUESTS_ACTIVATION_DATE:
+                db.delete(event)
+                removed_old_lifetime_event = True
+    if removed_old_lifetime_event:
+        db.flush()
+
     granted = 0
 
     # Lifetime awards keep their stable quest:{slug}:lifetime keys.
     for quest in QUEST_REGISTRY:
+        if today < LIFETIME_QUESTS_ACTIVATION_DATE:
+            break
         slug = quest["slug"]
         if slug not in CONDS:
             continue
@@ -644,15 +676,27 @@ def quest_states(db, user, selected_week: date | None = None) -> list:
         })
 
     # Lifetime statuses/progress remain based on raw history, independent of XPEvent presence.
+    lifetime_activities = [
+        activity for activity in dated_activities
+        if today >= LIFETIME_QUESTS_ACTIVATION_DATE
+        and LIFETIME_QUESTS_ACTIVATION_DATE <= _local_activity_day(activity) <= today
+    ]
     sleep_dates = sorted({
         day for row in wellness_rows
-        if (day := _wellness_day(row)) is not None
+        if today >= LIFETIME_QUESTS_ACTIVATION_DATE
+        and (day := _wellness_day(row)) is not None
+        and LIFETIME_QUESTS_ACTIVATION_DATE <= day <= today
     })
     night_count = len(sleep_dates)
-    qualifying_days_by_week = _qualifying_training_days_by_week(dated_activities)
+    qualifying_days_by_week = _qualifying_training_days_by_week(lifetime_activities)
     best_training_days = max(qualifying_days_by_week.values(), default=0)
+    lifetime_summaries = [
+        summary for summary in all_summaries
+        if today >= LIFETIME_QUESTS_ACTIVATION_DATE
+        and LIFETIME_QUESTS_ACTIVATION_DATE <= summary.week_start.date() <= today
+    ]
     finalized = sorted(
-        [summary for summary in all_summaries if summary.finalized],
+        [summary for summary in lifetime_summaries if summary.finalized],
         key=lambda summary: summary.week_start,
     )
     best_goal_pct = max(
@@ -662,14 +706,14 @@ def quest_states(db, user, selected_week: date | None = None) -> list:
     goal_streak = _best_goal_streak(finalized)
 
     ride_km_by_week: dict[date, float] = {}
-    for activity in dated_activities:
+    for activity in lifetime_activities:
         activity_day = _local_activity_day(activity)
         if activity_day is None or str(activity.sport_type or "").upper() != "RIDE":
             continue
         week = _trainer_week_start(activity_day)
         ride_km_by_week[week] = ride_km_by_week.get(week, 0.0) + max(float(activity.distance or 0.0), 0.0) / 1000.0
     best_ride_km = max(ride_km_by_week.values(), default=0.0)
-    duration_progress = _record_duration_progress(activities)
+    duration_progress = _record_duration_progress(lifetime_activities)
 
     progress_by_slug = {
         "first_three_day_week": {
@@ -704,7 +748,7 @@ def quest_states(db, user, selected_week: date | None = None) -> list:
         "first_three_day_week": best_training_days >= 3,
         "goal_met": any(
             summary.finalized and float(summary.completion_ratio or 0.0) >= 1.0
-            for summary in all_summaries
+            for summary in lifetime_summaries
         ),
         "goal_streak_3": goal_streak >= 3,
         "first_50km_ride_week": any(distance >= 50.0 for distance in ride_km_by_week.values()),
