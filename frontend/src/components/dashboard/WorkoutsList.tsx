@@ -1,49 +1,57 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import ActivityCard from "@/components/ActivityCard";
-import { EmptyState, Label, SectionTitle } from "@/components/ui";
+import { EmptyState } from "@/components/ui";
 
-type WorkoutsListProps = { weekLoading: boolean; weekActivities: any[]; selectedWeekStart: string; };
+type WorkoutsListProps = {
+  weekLoading: boolean;
+  weekActivities: any[];
+  selectedWeekStart: string;
+};
 
 export default function WorkoutsList({ weekLoading, weekActivities, selectedWeekStart }: WorkoutsListProps) {
+  const [showAll, setShowAll] = useState(false);
+
+  useEffect(() => {
+    setShowAll(false);
+  }, [selectedWeekStart, weekActivities]);
+
+  const visibleActivities = showAll ? weekActivities : weekActivities.slice(0, 5);
+
   return (
-    <>
-    
-        <div className="border-b-2 border-black">
-          <div className="grid md:grid-cols-[200px_1fr]">
-            <div className="hidden md:flex flex-col justify-between p-5 border-r-2 border-black bg-[#ff4b26] text-white">
-              <div>
-                <p className="font-display uppercase text-xl md:text-2xl tracking-tight leading-none">Workouts</p>
-                <div className="h-0.5 bg-black mt-3 mb-4"></div>
-                <Label className="block text-white/80">Hover / long press for details</Label>
-              </div>
-              <span className="font-display text-4xl mt-auto">↓</span>
-            </div>
-            <div className="p-4 md:p-6">
-              <div className="md:hidden mb-4">
-                <SectionTitle tone="orange">Workouts</SectionTitle>
-              </div>
-              <p className="text-[10px] font-bold tracking-widest uppercase text-[#666] mb-3">
-                {selectedWeekStart ? `Неделя с ${selectedWeekStart}` : "Выбранная неделя"}
-              </p>
-              {weekLoading ? <p className="text-sm text-[#666]">Загружаем тренировки недели…</p> : weekActivities.length === 0 ? (
-                <EmptyState className="text-sm text-[#666]">
-                  За выбранную неделю тренировок нет. Синхронизируй данные в{" "}
-                  <Link href="/profile" className="text-[#5866f2] font-bold underline">профиле</Link>.
-                </EmptyState>
-              ) : (
-                <div className="space-y-0">
-                  {weekActivities.map((act: any, idx: number) => (
-                    <div key={act.id ?? idx} className={idx > 0 ? "border-t-2 border-black" : ""}>
-                      <ActivityCard act={act} />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+    <section className="bg-white">
+      {weekLoading ? (
+        <p className="p-4 text-sm text-[#666]">Загружаем тренировки недели…</p>
+      ) : weekActivities.length === 0 ? (
+        <div className="p-4 md:p-6">
+          <EmptyState>За выбранную неделю тренировок нет. Синхронизируй данные во вкладке Источники.</EmptyState>
+          <Link href="/training?tab=sources" className="mt-3 inline-block text-sm font-bold text-[#5866f2] underline">Открыть источники данных →</Link>
         </div>
-    </>
+      ) : (
+        <>
+          <div className="space-y-0">
+            {visibleActivities.map((activity: any, index: number) => (
+              <div key={activity.id ?? index} className={index > 0 ? "border-t-2 border-black" : ""}>
+                <ActivityCard act={activity} />
+              </div>
+            ))}
+          </div>
+          {weekActivities.length > 5 && (
+            <div className="border-t-2 border-black px-4 py-3">
+              <button type="button" onClick={() => setShowAll((value) => !value)} className="text-[10px] font-bold uppercase tracking-widest text-[#5866f2] underline">
+                {showAll ? "Показать меньше" : `Показать всё (${weekActivities.length})`}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+      <p className="border-t border-black/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-[#666]">
+        {selectedWeekStart ? `Неделя с ${selectedWeekStart}` : "Выбранная неделя"}
+      </p>
+    </section>
   );
 }
