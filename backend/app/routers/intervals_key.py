@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import User, Activity, Wellness, WeeklySummary, XPEvent, LeagueMembership
+from ..models import User
 from ..dependencies import get_current_user
 from ..auth import encrypt_secret, decrypt_secret
 from ..config import get_settings
