@@ -35,7 +35,7 @@ export default function IntervalsDisconnectAction({ hasKey }: { hasKey: boolean 
       <div className="border-b border-[#ff4b26]/30 px-4 py-3">
         <h3 className="font-display text-lg uppercase text-[#ff4b26]">Отвязать Intervals.icu</h3>
         <p className="mt-1 text-sm text-[#666]">
-          Отвязка удаляет ключ и данные, импортированные из Intervals.icu. Это действие не удаляет аккаунт.
+          Отвязка удаляет ключ подключения, все тренировки и wellness пользователя, XP-события и недельные сводки. Сейчас серверный endpoint также удаляет тренировки, загруженные из FIT/GPX/TCX. Аккаунт останется.
         </p>
       </div>
       <div className="p-4">
