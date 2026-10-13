@@ -362,15 +362,8 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
             except Exception:
                 continue
 
-    # события: один запрос, апсерт из памяти (без N+1)
-    from ..services import quests as Q
-    summaries_all = (
-        db.query(WeeklySummary)
-        .filter(WeeklySummary.user_id == user.id)
-        .order_by(WeeklySummary.week_start.asc())
-        .all()
-    )
-    Q.grant_quests(db, user, acts, summaries_all)
+    # XP events are loaded for weekly accounting. Achievement progress is derived
+    # from activities, wellness, and freshly recomputed summaries below.
     all_events = db.query(XPEvent).filter(XPEvent.user_id == user.id).all()
     events_by_key = {e.event_key: e for e in all_events}
     quest_by_week: dict = {}
@@ -554,8 +547,42 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         if ws < this_week:
             _close_league_week(db, ws, allow_week_notifications=allow_week_notifications)
 
+    # Award achievements only after this pass has rebuilt the user's WeeklySummary
+    # rows, so weekly-goal achievements use the latest values on first sync/re-upload.
     db.flush()
-    events_sum = round_xp(sum(e.amount for e in events_by_key.values()))
+    from ..services import quests as Q
+    fresh_summaries = (
+        db.query(WeeklySummary)
+        .filter(WeeklySummary.user_id == user.id)
+        .order_by(WeeklySummary.week_start.asc())
+        .all()
+    )
+    Q.grant_quests(db, user, acts, fresh_summaries)
+    db.flush()
+
+    # Reconcile weekly quest totals including any awards granted in this same pass.
+    current_events = db.query(XPEvent).filter(XPEvent.user_id == user.id).all()
+    quest_amount_by_week: dict[datetime, float] = defaultdict(float)
+    for event in current_events:
+        if event.event_type in ("quest", "achievement") and event.week_start:
+            quest_amount_by_week[event.week_start] += float(event.amount or 0.0)
+    for week_start in all_weeks:
+        week_dt = datetime.combine(week_start, datetime.min.time())
+        summary = (
+            db.query(WeeklySummary)
+            .filter(WeeklySummary.user_id == user.id, WeeklySummary.week_start == week_dt)
+            .first()
+        )
+        if summary is None:
+            continue
+        old_quest_xp = float(summary.quest_xp or 0.0)
+        new_quest_xp = round_xp(quest_amount_by_week.get(week_dt, 0.0))
+        if abs(new_quest_xp - old_quest_xp) >= 0.01:
+            summary.quest_xp = new_quest_xp
+            summary.total_xp = round_xp(float(summary.total_xp or 0.0) - old_quest_xp + new_quest_xp)
+
+    db.flush()
+    events_sum = round_xp(sum(event.amount or 0.0 for event in current_events))
     acts_sum = round_xp(sum(a.xp_earned or 0 for a in acts))
     user.total_xp = round_xp(float(user.legacy_xp_offset or 0) + acts_sum + events_sum)
     user.level = level_from_xp(user.total_xp)
