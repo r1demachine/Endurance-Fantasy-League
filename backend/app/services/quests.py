@@ -472,11 +472,7 @@ def grant_quests(db, user, acts, summaries) -> int:
     )
     activities_by_week, wellness_by_week = _group_weekly_data(all_activities, wellness_rows)
 
-    try:
-        local_zone = ZoneInfo(getattr(user, "timezone_name", None) or "UTC")
-    except (ZoneInfoNotFoundError, TypeError, ValueError):
-        local_zone = ZoneInfo("UTC")
-    today = datetime.now(timezone.utc).astimezone(local_zone).date()
+    today = _user_local_today(user)
 
     # Lifetime progress starts on the activation date. Weekly/repeatable awards
     # still use the complete source history for their own calendar weeks.
