@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { logout, authApi, isAuthenticated } from "@/lib/auth";
 
 import { getCachedUser, subscribeUser, refreshUser, clearUserCache } from "@/lib/apiCache";
-import type { ReactNode } from "react";
 import { Star, Sticker, DreamBubble } from "@/components/DreamBits";
 import ConnectSources from "@/components/ConnectSources";
 import SocialHub from "@/components/SocialHub";
@@ -16,32 +15,8 @@ import ActivityUpload from "@/components/ActivityUpload";
 import HeartRateSettings from "@/components/HeartRateSettings";
 import { ConfirmDialog } from "@/components/Modal";
 import { getApiErrorMessage } from "@/components/dialog-utils";
+import { Label, SectionTitle } from "@/components/ui";
 
-
-type Tone = "default" | "yellow" | "orange" | "indigo" | "red";
-
-function SectionTitle({ children, tone = "default" }: { children: ReactNode; tone?: Tone }) {
-  const tones: Record<Tone, string> = {
-    default: "bg-[#f4f4f0] text-[#111]",
-    yellow: "bg-[#ffd500] text-[#111]",
-    orange: "bg-[#ff4b26] text-white",
-    indigo: "bg-[#5866f2] text-white",
-    red: "bg-[#ff4b26] text-white",
-  };
-  return (
-    <div className={`px-4 py-3 border-b-2 border-black font-display uppercase text-xl md:text-2xl tracking-tight ${tones[tone]}`}>
-      {children}
-    </div>
-  );
-}
-
-function Label({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return (
-    <p className={`text-[9px] md:text-[10px] font-bold tracking-widest uppercase ${className}`}>
-      {children}
-    </p>
-  );
-}
 
 export default function Profile() {
   const [userData, setUserData] = useState<any>(null);
