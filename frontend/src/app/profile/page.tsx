@@ -235,7 +235,7 @@ function ProfileContent() {
               ))}
             </div>
           </div>
-          <div className="">
+          <div>
             {statsLoading ? (
               <div className="p-4 sm:p-6"><Skeleton label="Загружаем статистику" rows={3} /></div>
             ) : statsError ? (
