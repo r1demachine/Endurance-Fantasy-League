@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { createPortal } from "react-dom";
+const subscribeToPortalRoot = () => () => {};
+const getPortalRootSnapshot = () => typeof document === "undefined" ? null : document.body;
+const getServerPortalRootSnapshot = () => null;
+
 import {
   buildConfirmPayload,
   formatPauseDate,
@@ -38,7 +42,11 @@ export function Modal({
   portalToBody = variant === "settings",
 }: ModalProps) {
   const isSettings = variant === "settings";
-  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
+  const portalRoot = useSyncExternalStore(
+    subscribeToPortalRoot,
+    getPortalRootSnapshot,
+    getServerPortalRootSnapshot,
+  );
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousActiveRef = useRef<HTMLElement | null>(null);
@@ -51,10 +59,6 @@ export function Modal({
     closeOnEscapeRef.current = closeOnEscape;
     preventCloseRef.current = preventClose;
   }, [onClose, closeOnEscape, preventClose]);
-
-  useEffect(() => {
-    if (portalToBody) setPortalRoot(document.body);
-  }, [portalToBody]);
 
   useEffect(() => {
     if (portalToBody && !portalRoot) return;
