@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent, TouchEvent } from "react";
 import { useRouter } from "next/navigation";
-import { authApi, isAuthenticated } from "@/lib/auth";
+import { authApi } from "@/lib/auth";
 import { getCachedUser, refreshUser, subscribeUser } from "@/lib/apiCache";
 import { getApiErrorMessage } from "@/components/dialog-utils";
 import { EmptyState, ErrorState, Label, SectionTitle, Skeleton, Tabs } from "@/components/ui";
@@ -44,6 +44,7 @@ export default function TrainingPage() {
   const [weekActivities, setWeekActivities] = useState<any[]>([]);
   const [weekLoading, setWeekLoading] = useState(true);
   const [weekError, setWeekError] = useState("");
+  const [weekReloadToken, setWeekReloadToken] = useState(0);
   const [seasonWeeks, setSeasonWeeks] = useState<any[]>([]);
   const [seasonWeeksLoading, setSeasonWeeksLoading] = useState(true);
   const [seasonWeeksError, setSeasonWeeksError] = useState("");
@@ -98,7 +99,7 @@ export default function TrainingPage() {
       if (!controller.signal.aborted) setWeekLoading(false);
     });
     return () => controller.abort();
-  }, [selectedWeekStart]);
+  }, [selectedWeekStart, weekReloadToken]);
 
   const loadSeasonWeeks = useCallback(async () => {
     setSeasonWeeksLoading(true);
@@ -219,7 +220,7 @@ export default function TrainingPage() {
               </div>
             </div>
             {weekError ? (
-              <div className="p-4 md:p-6"><ErrorState message={weekError} onRetry={() => setSelectedWeekStart((value) => value)} /></div>
+              <div className="p-4 md:p-6"><ErrorState message={weekError} onRetry={() => setWeekReloadToken((value) => value + 1)} /></div>
             ) : (
               <WorkoutsList weekLoading={weekLoading} weekActivities={weekActivities} selectedWeekStart={selectedWeekStart || weekData?.week_start || ""} />
             )}
