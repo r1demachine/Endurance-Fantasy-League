@@ -1,6 +1,6 @@
 import EmptyState from "@/components/ui/EmptyState";
 
-function EventsFeed({ events }: { events: any[] }) {
+export default function EventsFeed({ events }: { events: any[] }) {
   const typeIcons: Record<string, string> = {
     consistency: "📅", quality_hard: "⚡", quality_long: "🏃",
     weekly_goal: "🎯", recovery: "😴", quest: "🏆", achievement: "⭐",
