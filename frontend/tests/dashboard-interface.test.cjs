@@ -17,12 +17,12 @@ test("dashboard blocks appear in order and duel fetching is removed", () => {
     dashboard.indexOf("<SectionTitle>Level</SectionTitle>"),
     dashboard.indexOf("<YearWeeksChart"),
     dashboard.indexOf("<WeekBlock"),
-    dashboard.indexOf("<EventsFeed"),
     dashboard.indexOf("<QuestsBoard"),
     dashboard.indexOf("<DashboardWorkoutsSection"),
   ];
   assert.ok(positions.every((position) => position >= 0));
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
+  assert.doesNotMatch(dashboard, /EventsFeed|XP-событий недели/);
   assert.doesNotMatch(dashboard, /\/api\/duels|DuelSummary|Ближайшая дуэль/);
 });
 
@@ -42,7 +42,9 @@ test("workout list is beneath achievements on dashboard and the Training navigat
   assert.doesNotMatch(header, /href: "\/training"|label: "Тренировки"/);
   assert.match(workoutsSection, /<WorkoutsList/);
   assert.match(workoutsSection, /Выбрать неделю для списка тренировок/);
-  assert.match(workoutsList, /\/profile\?settings=sources/);
+  assert.match(workoutsList, /onClick=\{onOpenSources\}/);
+  assert.match(workoutsSection, /onOpenSources=\{onOpenSources\}/);
+  assert.doesNotMatch(workoutsList, /\/profile\?settings=sources/);
   assert.doesNotMatch(workoutsList, /\/training/);
   assert.throws(() => fs.accessSync(path.join(__dirname, "..", "src/app/training/page.tsx")));
 });
