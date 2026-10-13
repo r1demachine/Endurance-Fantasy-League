@@ -27,11 +27,13 @@ export default function ConnectSources({
   hasKey,
   athleteId,
   onMessage,
+  onDataUpdated,
   allowDisconnectAction = true,
 }: {
   hasKey: boolean;
   athleteId: string | null;
   onMessage: (m: ConnectMessage) => void;
+  onDataUpdated?: () => void | Promise<void>;
   allowDisconnectAction?: boolean;
 }) {
   const [expanded, setExpanded] = useState<Source["id"] | null>(null);
@@ -135,6 +137,7 @@ export default function ConnectSources({
       });
       onMessage({ type: "success", text: `Синхронизация завершена: новых ${res.data.synced_count}, обновлено ${res.data.updated_count ?? 0}, +${Math.round(res.data.new_xp)} XP` });
       await refreshUser(true);
+      await onDataUpdated?.();
     } catch (error: unknown) {
       onMessage({ type: "error", text: getApiErrorMessage(error, "Не удалось синхронизировать данные.") });
     } finally {
