@@ -24,7 +24,29 @@ export default function XpTooltip({
   const [helpOpen, setHelpOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tooltipId = useId();
+
+  const clearCloseTimer = () => {
+    if (closeTimer.current !== null) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+
+  const scheduleClose = () => {
+    clearCloseTimer();
+    if (pinned || anchorRef.current?.contains(document.activeElement)) return;
+    closeTimer.current = setTimeout(() => {
+      const tooltip = document.getElementById(tooltipId);
+      if (
+        !anchorRef.current?.matches(":hover") &&
+        !tooltip?.matches(":hover") &&
+        !anchorRef.current?.contains(document.activeElement)
+      ) setHelpOpen(false);
+      closeTimer.current = null;
+    }, 120);
+  };
 
   useEffect(() => {
     if (!content) return;
@@ -32,11 +54,13 @@ export default function XpTooltip({
       const target = event.target as Node;
       const tooltip = document.getElementById(tooltipId);
       if (anchorRef.current?.contains(target) || tooltip?.contains(target)) return;
+      clearCloseTimer();
       setHelpOpen(false);
       setPinned(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        clearCloseTimer();
         setHelpOpen(false);
         setPinned(false);
       }
@@ -44,6 +68,7 @@ export default function XpTooltip({
     document.addEventListener("pointerdown", closeOnOutsidePointer);
     document.addEventListener("keydown", closeOnEscape);
     return () => {
+      clearCloseTimer();
       document.removeEventListener("pointerdown", closeOnOutsidePointer);
       document.removeEventListener("keydown", closeOnEscape);
     };
@@ -59,10 +84,16 @@ export default function XpTooltip({
           aria-expanded={helpOpen}
           aria-controls={tooltipId}
           aria-describedby={helpOpen ? tooltipId : undefined}
-          onMouseEnter={() => setHelpOpen(true)}
-          onMouseLeave={() => { if (!pinned) setHelpOpen(false); }}
-          onFocus={() => setHelpOpen(true)}
-          onBlur={() => { if (!pinned) setHelpOpen(false); }}
+          onMouseEnter={() => {
+            clearCloseTimer();
+            setHelpOpen(true);
+          }}
+          onMouseLeave={scheduleClose}
+          onFocus={() => {
+            clearCloseTimer();
+            setHelpOpen(true);
+          }}
+          onBlur={scheduleClose}
           onClick={() => {
             setPinned((value) => {
               const next = !value;
@@ -74,7 +105,14 @@ export default function XpTooltip({
         >
           ?
         </button>
-        <FloatingTooltip id={tooltipId} open={helpOpen} anchorRef={anchorRef}>
+        <FloatingTooltip
+          id={tooltipId}
+          open={helpOpen}
+          anchorRef={anchorRef}
+          interactive
+          onMouseEnter={clearCloseTimer}
+          onMouseLeave={scheduleClose}
+        >
           {content}
         </FloatingTooltip>
       </span>
