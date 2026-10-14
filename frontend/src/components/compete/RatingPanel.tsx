@@ -86,7 +86,7 @@ export default function RatingPanel() {
         <div className="flex items-center gap-2">
           <h2 id="rating-heading" className="font-display text-2xl uppercase">Рейтинг</h2>
           <HelpTip label="Как устроен общий рейтинг">
-            Global и друзья показывают общий XP без недельных дивизионов. В таблице отображаются первые 10 участников и твоё место, если оно ниже десятого.
+            Общий и друзья показывают общий XP без недельных дивизионов. В таблице отображаются первые 10 участников и твоё место, если оно ниже десятого.
           </HelpTip>
         </div>
       </div>
