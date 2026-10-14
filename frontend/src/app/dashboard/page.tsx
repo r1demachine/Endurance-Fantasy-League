@@ -300,7 +300,7 @@ export default function Dashboard() {
         )}
 
         <motion.header variants={sectionItemVariants} custom={transitionDirection} className="relative grid border-b-2 border-black md:grid-cols-[1fr_auto]">
-          <Sticker className="right-4 top-2 rotate-[-4deg] bg-[#f6b8d0] text-black md:right-10">don't stop fighting</Sticker>
+          <Sticker className="right-4 top-2 rotate-[-4deg] bg-[#f6b8d0] text-black md:right-10">не останавливайся на достигнутом</Sticker>
           <div className="flex flex-col gap-3 p-5 md:border-r-2 md:border-black md:p-8">
             <Label className="text-[#666]">ТВОЙ ПРОГРЕСС · SEASON 001</Label>
             <h1 className="font-display text-4xl uppercase leading-[0.9] md:text-6xl lg:text-7xl">
@@ -316,7 +316,7 @@ export default function Dashboard() {
 
         <motion.section variants={sectionItemVariants} custom={transitionDirection} className="grid border-b-2 border-black md:grid-cols-3">
           <div className="md:border-r-2 md:border-black">
-            <SectionTitle>Level</SectionTitle>
+            <SectionTitle>Уровень</SectionTitle>
             <div className="p-5 md:p-6">
               <p className="font-display text-5xl md:text-7xl">{data.user.level}</p>
               <div className="mt-4 h-3 w-full border border-black/20 bg-black/10">
@@ -326,7 +326,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="border-t-2 border-black md:border-r-2 md:border-t-0">
-            <SectionTitle tone="yellow">Streak</SectionTitle>
+            <SectionTitle tone="yellow">Стрик</SectionTitle>
             <div className="p-5 md:p-6">
               <p className="font-display text-5xl text-[#ff4b26] md:text-7xl">{stats.day_streak}</p>
               <Label className="mt-2 text-[#666]">Дней подряд</Label>
@@ -334,7 +334,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="border-t-2 border-black md:border-t-0">
-            <SectionTitle>Week goal</SectionTitle>
+            <SectionTitle>Цель на Неделю</SectionTitle>
             <div className="p-5 md:p-6">
               <p className="font-display text-5xl md:text-7xl">{stats.week_hours}<span className="text-xl text-[#666] md:text-2xl"> / {stats.week_goal_hours}h</span></p>
               <div className="mt-4 h-3 w-full border border-black/20 bg-black/10">
