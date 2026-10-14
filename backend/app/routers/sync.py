@@ -26,6 +26,14 @@ settings = get_settings()
 WEEKLY_XP_EVENT_TYPES = ("quest", "achievement", "activity_bonus", "sleep_bonus")
 
 
+def _is_retired_activity_duration_bonus(event) -> bool:
+    """Hide legacy per-workout +12 XP awards; only the daily +20 XP bonus remains."""
+    return (
+        getattr(event, "event_type", None) == "activity_bonus"
+        and str(getattr(event, "event_key", "") or "").startswith("activity_bonus:45m:")
+    )
+
+
 def xp_category(event) -> str:
     """Return the weekly-summary bucket for an XPEvent; unknown events stay visible as quest XP."""
     event_type = getattr(event, "event_type", None)
@@ -427,27 +435,9 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
             db.add(ev)
             events_by_key[key] = ev
 
-    # Repeatable per-item bonuses live in the weekly "quests and bonuses" bucket.
+    # Retire legacy per-workout +12 XP events during recalculation.
+    # The only repeatable workout award still generated is the daily +20 XP bonus.
     generated_activity_bonus_keys: set[str] = set()
-    for activity in acts:
-        stamp = activity.start_date_local or activity.start_date
-        if stamp is None:
-            continue
-        activity_day = stamp.date() if isinstance(stamp, datetime) else stamp
-        key = f"activity_bonus:45m:{activity.id}"
-        if (
-            not bool(activity.is_manual)
-            and int(activity.moving_time or 0) >= X6.WORKOUT_BONUS_MIN_DURATION_SECONDS
-        ):
-            upsert_event(
-                key, "activity_bonus", X6.WORKOUT_BONUS_XP,
-                X6.week_start(activity_day), activity_day,
-                f"Тренировка ≥45 минут +{int(X6.WORKOUT_BONUS_XP)} XP",
-                source_type="activity", source_id=activity.id,
-            )
-            generated_activity_bonus_keys.add(key)
-    # One +20 XP daily bonus: the highest-TSS eligible non-manual workout wins.
-    # A 45-minute minimum matches the existing per-workout bonus eligibility.
     for activity_day, day_acts in by_day.items():
         eligible = [
             activity for activity in day_acts
@@ -1844,6 +1834,7 @@ def get_activity_xp_breakdown(
     activity_events = [
         event for event in week_events
         if event.event_type in {"quest", "achievement", "activity_bonus"}
+        and not _is_retired_activity_duration_bonus(event)
         and event.source_id is not None
         and str(event.source_id) == str(activity.id)
     ]
@@ -2025,6 +2016,7 @@ def get_weekly_summary(
         .order_by(XPEvent.date.asc(), XPEvent.id.asc())
         .all()
     )
+    event_rows = [event for event in event_rows if not _is_retired_activity_duration_bonus(event)]
     daily_bonus_dates = {
         event.date.date()
         for event in event_rows
