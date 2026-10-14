@@ -14,6 +14,9 @@ const workoutsSection = read("src/components/dashboard/DashboardWorkoutsSection.
 const workoutsList = read("src/components/dashboard/WorkoutsList.tsx");
 const activityUpload = read("src/components/ActivityUpload.tsx");
 const settingsModal = read("src/components/ProfileSettingsModal.tsx");
+const helpTip = read("src/components/ui/HelpTip.tsx");
+const weeklyLeague = read("src/components/compete/WeeklyLeaguePanel.tsx");
+const ratingPanel = read("src/components/compete/RatingPanel.tsx");
 
 test("dashboard removes weekly XP events and puts workouts after the complete achievements list", () => {
   const positions = [
@@ -79,6 +82,26 @@ test("manual uploads and sync refresh current activities and achievements", () =
   assert.match(dashboard, /<ActivityUpload onUploaded=\{refreshDashboardAfterDataChange\} \/>/);
   assert.match(dashboard, /setQuests\(\[\]\)/);
   assert.match(dashboard, /setQuestsError\(getApiErrorMessage/);
+});
+
+test("long dashboard explanations are tucked behind accessible HelpTip controls", () => {
+  assert.match(helpTip, /aria-label=\{label\}/);
+  assert.match(helpTip, /aria-expanded=\{open\}/);
+  assert.match(helpTip, /aria-describedby=\{open \? tooltipId : undefined\}/);
+  assert.match(helpTip, /onMouseEnter/);
+  assert.match(helpTip, /onPointerDown/);
+  assert.match(helpTip, /closeOnOutsidePointer/);
+  assert.match(helpTip, /closeOnEscape/);
+  assert.match(weekBlock, /<HelpTip label="Пояснение к разбивке XP">/);
+  assert.doesNotMatch(weekBlock, /<p className="mt-2 text-\[10px\] leading-relaxed text-\[#666\]">/);
+  assert.match(weekBlock, /<HelpTip label="Что такое League Score">/);
+  assert.match(questsBoard, /<HelpTip label="О прогрессе недельных достижений">/);
+  assert.doesNotMatch(questsBoard, /<p className="mt-1 text-xs text-\[#666\]">Прогресс считается/);
+  assert.match(questsBoard, /<HelpTip label="Как работают дневные бонусы">/);
+  assert.match(weeklyLeague, /<HelpTip label="Как работает Weekly League">/);
+  assert.doesNotMatch(weeklyLeague, /Недельный League Score с группировкой по дивизионам\. Пока участников/);
+  assert.match(ratingPanel, /<HelpTip label="Как устроен общий рейтинг">/);
+  assert.match(workoutsSection, /<HelpTip label="Как выбрать неделю тренировок">/);
 });
 
 test("all visible week selectors use the shared Russian week formatter", () => {

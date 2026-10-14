@@ -2,6 +2,7 @@
 
 import WorkoutsList from "@/components/dashboard/WorkoutsList";
 import { formatWeekRange } from "@/lib/format";
+import { HelpTip } from "@/components/ui";
 
 type WeekOption = { week_start: string; label: string };
 
@@ -37,8 +38,12 @@ export default function DashboardWorkoutsSection({
       <header className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-black bg-[#f4f4f0] p-4 md:p-6">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Тренировки</p>
-          <h2 id="dashboard-workouts-heading" className="font-display text-2xl uppercase">Список тренировок</h2>
-          <p className="mt-1 text-xs text-[#666]">Список обновляется при выборе недели в графике или недельной сводке.</p>
+          <div className="flex items-center gap-2">
+            <h2 id="dashboard-workouts-heading" className="font-display text-2xl uppercase">Список тренировок</h2>
+            <HelpTip label="Как выбрать неделю тренировок">
+              Список синхронизирован с выбранной неделей в графике и недельной сводке. Выбери другую неделю в любом из этих блоков или используй переключатель рядом.
+            </HelpTip>
+          </div>
         </div>
         <div className="flex min-w-0 items-center gap-2">
           <button

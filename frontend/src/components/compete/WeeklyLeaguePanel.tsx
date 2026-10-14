@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { authApi } from "@/lib/auth";
 import { getApiErrorMessage } from "@/components/dialog-utils";
-import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
+import { EmptyState, ErrorState, HelpTip, Skeleton } from "@/components/ui";
 
 type Entry = {
   id?: number;
@@ -60,13 +60,15 @@ export default function WeeklyLeaguePanel() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-white/60">Weekly leaderboard</p>
-            <h2 id="weekly-league-heading" className="font-display text-2xl uppercase">Weekly League</h2>
+            <div className="flex items-center gap-2">
+              <h2 id="weekly-league-heading" className="font-display text-2xl uppercase">Weekly League</h2>
+              <HelpTip label="Как работает Weekly League">
+                Недельный League Score используется для группировки участников по дивизионам. Пока участников меньше минимального состава, лига формируется.
+              </HelpTip>
+            </div>
           </div>
           {board?.week && <span className="text-xs font-bold text-white/75">{board.week}</span>}
         </div>
-        <p className="mt-2 max-w-3xl text-xs leading-relaxed text-white/80">
-          Недельный League Score с группировкой по дивизионам. Пока участников меньше минимального состава, лига формируется.
-        </p>
       </header>
       <div className="p-4 md:p-6">
         {loading ? (
@@ -74,7 +76,7 @@ export default function WeeklyLeaguePanel() {
         ) : error ? (
           <ErrorState message={error} onRetry={() => void loadWeekly()} />
         ) : entries.length === 0 ? (
-          <EmptyState>Лига формируется: недельных результатов пока недостаточно для таблицы.</EmptyState>
+          <EmptyState>Пока нет результатов недели.</EmptyState>
         ) : (
           <>
             {!board?.formed && (
