@@ -258,13 +258,13 @@ b, strong, .font-bold, .font-extrabold, .font-black {
 }
 
 /* Small labels often use fixed-pixel Tailwind sizes rather than the theme scale. */
-.text-\\[8px\\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(8px + 1pt); }
-.text-\\[9px\\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(9px + 1pt); }
-.text-\\[10px\\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(10px + 1pt); }
-.text-\\[11px\\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(11px + 1pt); }
-.text-\\[12px\\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(12px + 1pt); }
-.text-\\[13px\\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(13px + 1pt); }
-.text-\\[14px\\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(14px + 1pt); }
-.text-\\[15px\\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(15px + 1pt); }
-.text-\\[16px\\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(16px + 1pt); }
+.text-\[8px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(8px + 1pt); }
+.text-\[9px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(9px + 1pt); }
+.text-\[10px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(10px + 1pt); }
+.text-\[11px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(11px + 1pt); }
+.text-\[12px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(12px + 1pt); }
+.text-\[13px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(13px + 1pt); }
+.text-\[14px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(14px + 1pt); }
+.text-\[15px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(15px + 1pt); }
+.text-\[16px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(16px + 1pt); }
 
