@@ -195,6 +195,7 @@ test("the obsolete per-workout +12 XP bonus is no longer generated or displayed"
   assert.ok(!syncRouter.includes("Тренировка ≥45 минут +"));
   assert.ok(!xpV6.includes("\nWORKOUT_BONUS_XP ="));
   assert.ok(!xpV6.includes("\nWORKOUT_BONUS_MIN_DURATION_SECONDS ="));
+  assert.ok(xpV6.includes("DAILY_WORKOUT_BONUS_XP = 20.0"));
   assert.ok(syncRouter.includes("_is_retired_activity_duration_bonus"));
   assert.ok(activityCard.includes("activityEvents = (activityAwards?.events ?? []).filter"));
 });
