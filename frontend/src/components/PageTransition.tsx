@@ -82,7 +82,7 @@ export default function PageTransition({ children }: { children: ReactNode }) {
         animate="animate"
         exit="exit"
         onAnimationComplete={clearAnimationStyles}
-        className="w-full min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] relative overflow-hidden"
+        className="relative z-10 w-full min-h-screen overflow-hidden"
       >
         {children}
       </motion.div>
