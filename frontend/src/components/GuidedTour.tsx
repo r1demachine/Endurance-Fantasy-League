@@ -243,10 +243,14 @@ export default function GuidedTour() {
       if (!focusable?.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      const currentIndex = Array.from(focusable).indexOf(document.activeElement as HTMLButtonElement);
+      if (currentIndex < 0) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && currentIndex === 0) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (!event.shiftKey && currentIndex === focusable.length - 1) {
         event.preventDefault();
         first.focus();
       }
