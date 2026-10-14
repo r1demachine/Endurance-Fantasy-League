@@ -688,7 +688,15 @@ class InterfaceDataApiTests(unittest.TestCase):
                     XPEvent.user_id == self.user.id,
                     XPEvent.event_type == "activity_bonus",
                 ).count(),
-                19,
+                8,
+            )
+            self.assertEqual(
+                self.db.query(XPEvent).filter(
+                    XPEvent.user_id == self.user.id,
+                    XPEvent.event_type == "activity_bonus",
+                    XPEvent.event_key.startswith("activity_bonus:45m:"),
+                ).count(),
+                0,
             )
             self.assertEqual(
                 self.db.query(XPEvent).filter(
