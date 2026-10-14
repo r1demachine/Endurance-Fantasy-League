@@ -137,7 +137,7 @@ export default function PublicProfilePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <p className="font-display uppercase text-2xl text-white animate-pulse">Loading athlete...</p>
       </div>
     );
@@ -145,7 +145,7 @@ export default function PublicProfilePage() {
 
   if (forbidden) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-4">
         <div className="bg-[#f4f4f0] border-2 border-black p-8 text-center max-w-md">
           <p className="font-display uppercase text-3xl mb-2">Private profile</p>
           <Label className="text-[#666] mb-4 block">Этот профиль скрыт настройками владельца.</Label>
@@ -159,7 +159,7 @@ export default function PublicProfilePage() {
 
   if (notFound || !profile) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-4">
         <div className="bg-[#f4f4f0] border-2 border-black p-8 text-center max-w-md">
           <p className="font-display uppercase text-3xl mb-2">404</p>
           <Label className="text-[#666] mb-4 block">Athlete @{username} not found</Label>
@@ -191,7 +191,7 @@ export default function PublicProfilePage() {
     }));
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] px-2 sm:px-4 md:px-6 pb-6 text-[#111] relative overflow-hidden">
+    <main className="min-h-screen px-2 sm:px-4 md:px-6 pb-6 text-[#111] relative overflow-hidden">
       <Star className="absolute w-6 h-6 text-white/80 top-[6%] left-[3%] animate-pulse" />
       <Star className="absolute w-5 h-5 text-[#ffd500] bottom-[10%] right-[6%] animate-pulse" />
 
