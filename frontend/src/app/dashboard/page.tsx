@@ -134,7 +134,7 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2]">
+      <div className="flex min-h-screen items-center justify-center ">
         <p className="animate-pulse font-display text-2xl uppercase text-white">Dreaming...</p>
       </div>
     );
@@ -260,7 +260,7 @@ export default function Dashboard() {
   };
 
   return (
-    <main className="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] px-2 pb-24 text-[#111] sm:px-4 md:px-6 md:pb-6">
+    <main className="relative flex min-h-screen flex-col overflow-hidden px-2 pb-24 text-[#111] sm:px-4 md:px-6 md:pb-6">
       <Star className="absolute left-[3%] top-[6%] h-6 w-6 animate-pulse text-white/80" />
       <Star className="absolute right-[6%] top-[16%] h-4 w-4 animate-pulse text-white/70" />
       <Star className="absolute bottom-[10%] left-[8%] h-5 w-5 animate-pulse text-[#ffd500]" />
