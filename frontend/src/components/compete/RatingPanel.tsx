@@ -22,7 +22,7 @@ type LeaderboardPayload = {
 };
 
 const scopeTabs: { value: Scope; label: string }[] = [
-  { value: "global", label: "Global" },
+  { value: "global", label: "Общий" },
   { value: "friends", label: "Друзья" },
 ];
 
