@@ -20,7 +20,8 @@ html {
 html,
 body {
   /* Убираем любой gradient, оставляем только плоский цвет подложки */
-  background-color: #171a38; 
+  background-color: #171a38;
+  font-size: calc(1rem + 1pt); 
   color: white;
   /* Запрещаем горизонтальный скролл, чтобы фон не растягивался */
   overflow-x: hidden; 
@@ -223,3 +224,48 @@ b, strong, .font-bold, .font-extrabold, .font-black {
     scroll-behavior: auto !important;
   }
 }
+
+/* Increase ordinary UI text by one point; display headings keep their original scale. */
+:root {
+  --text-xs: calc(0.75rem + 1pt);
+  --text-sm: calc(0.875rem + 1pt);
+  --text-base: calc(1rem + 1pt);
+  --text-lg: calc(1.125rem + 1pt);
+  --text-xl: calc(1.25rem + 1pt);
+  --text-2xl: calc(1.5rem + 1pt);
+  --text-3xl: calc(1.875rem + 1pt);
+  --text-4xl: calc(2.25rem + 1pt);
+  --text-5xl: calc(3rem + 1pt);
+  --text-6xl: calc(3.75rem + 1pt);
+  --text-7xl: calc(4.5rem + 1pt);
+  --text-8xl: calc(6rem + 1pt);
+  --text-9xl: calc(8rem + 1pt);
+}
+
+:where(h1, h2, h3, h4, h5, h6, .font-display) {
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+  --text-5xl: 3rem;
+  --text-6xl: 3.75rem;
+  --text-7xl: 4.5rem;
+  --text-8xl: 6rem;
+  --text-9xl: 8rem;
+}
+
+/* Small labels often use fixed-pixel Tailwind sizes rather than the theme scale. */
+.text-\[8px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(8px + 1pt); }
+.text-\[9px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(9px + 1pt); }
+.text-\[10px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(10px + 1pt); }
+.text-\[11px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(11px + 1pt); }
+.text-\[12px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(12px + 1pt); }
+.text-\[13px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(13px + 1pt); }
+.text-\[14px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(14px + 1pt); }
+.text-\[15px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(15px + 1pt); }
+.text-\[16px\]:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.font-display):not(h1 *):not(h2 *):not(h3 *):not(h4 *):not(h5 *):not(h6 *):not(.font-display *) { font-size: calc(16px + 1pt); }
+

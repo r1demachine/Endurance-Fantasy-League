@@ -7,3 +7,4 @@ export { default as EmptyState } from "./EmptyState";
 export { default as ErrorState } from "./ErrorState";
 export { default as Skeleton } from "./Skeleton";
 export { default as HelpTip } from "./HelpTip";
+export { default as FloatingTooltip } from "./FloatingTooltip";

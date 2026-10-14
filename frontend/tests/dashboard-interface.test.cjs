@@ -10,6 +10,9 @@ const layout = read("src/app/layout.tsx");
 const globalCss = read("src/app/globals.css");
 const compete = read("src/app/compete/page.tsx");
 const pageTransition = read("src/components/PageTransition.tsx");
+const floatingTooltip = read("src/components/ui/FloatingTooltip.tsx");
+const syncRouter = read("../../backend/app/routers/sync.py");
+const xpV6 = read("../../backend/app/services/xp_v6.py");
 const header = read("src/components/Header.tsx");
 const yearChart = read("src/components/dashboard/YearWeeksChart.tsx");
 const questsBoard = read("src/components/dashboard/QuestsBoard.tsx");
@@ -170,4 +173,35 @@ test("global gradient stays fixed while dashboard and profile sections stagger t
       routeFile
     );
   }
+});
+
+
+test("XP explanations use viewport portals and achievement descriptions stay hidden until hover", () => {
+  assert.match(floatingTooltip, /createPortal\\(/);
+  assert.match(floatingTooltip, /z-\\[9999\\]/);
+  assert.match(helpTip, /<FloatingTooltip/);
+  assert.match(xpTooltip, /<FloatingTooltip/);
+  assert.match(questsBoard, /group-hover:opacity-100 group-focus:opacity-100/);
+  assert.match(questsBoard, /QUEST_EXPLANATIONS/);
+  assert.doesNotMatch(questsBoard, /className="mt-1 text-\\[9px\\] font-bold uppercase tracking-widest text-\\[#666\\]">\\{quest\\.desc\\}/);
+  assert.match(activityCard, /label="Итого"/);
+  assert.match(activityCard, /Потолок — 300 TSS в день/);
+  assert.doesNotMatch(activityCard, /XpTooltip label="Достижения за эту тренировку"/);
+});
+
+test("the obsolete per-workout +12 XP bonus is no longer generated or displayed", () => {
+  assert.doesNotMatch(syncRouter, /key = `activity_bonus:45m:/);
+  assert.doesNotMatch(syncRouter, /Тренировка ≥45 минут \+/);
+  assert.doesNotMatch(xpV6, /WORKOUT_BONUS_XP/);
+  assert.match(syncRouter, /_is_retired_activity_duration_bonus/);
+  assert.match(activityCard, /activityEvents = \\(activityAwards\?\\.events \\?\\? \\[\\]\\)\\.filter/);
+});
+
+test("global typography grows one point but restores heading and display scales", () => {
+  const css = read("src/app/globals.css");
+  assert.match(css, /font-size: calc\\(1rem \\+ 1pt\\)/);
+  assert.match(css, /--text-sm: calc\\(0\\.875rem \\+ 1pt\\)/);
+  assert.match(css, /:where\\(h1, h2, h3, h4, h5, h6, \\.font-display\\)/);
+  assert.match(css, /font-size: calc\\(10px \\+ 1pt\\)/);
+  assert.match(css, /prefers-reduced-motion: reduce/);
 });
