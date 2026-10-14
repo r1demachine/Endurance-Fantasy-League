@@ -54,7 +54,7 @@ export default function FloatingTooltip({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [open, align, anchorRef, children]);
+  }, [open, align, anchorRef]);
 
   if (!open || typeof document === "undefined") return null;
 
