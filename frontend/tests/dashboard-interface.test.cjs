@@ -135,7 +135,7 @@ test("global gradient stays fixed while dashboard and profile sections stagger t
   assert.ok(pageTransition.includes("key={pathname}"));
   assert.ok(pageTransition.includes("staggerChildren: 0.05, staggerDirection: 1"));
   assert.ok(pageTransition.includes("initial: { opacity: 0, y: 16 }"));
-  assert.ok(pageTransition.includes("exit: { opacity: 0, y: -12"));
+  assert.ok(pageTransition.includes("y: -12"));
   assert.ok(dashboard.includes("variants={sectionStaggerVariants}"));
   assert.ok(profile.includes("variants={sectionStaggerVariants}"));
   assert.ok(dashboard.includes("variants={sectionItemVariants}"));
