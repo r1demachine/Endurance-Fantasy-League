@@ -16,9 +16,14 @@ test("activity XP breakdown loads lazily, caches success, and supports retry", (
   assert.match(activity, /if \(breakdown \|\| loading\) return/);
   assert.match(activity, /if \(next && !breakdown && !loading\) void loadBreakdown\(\)/);
   assert.match(activity, /<ErrorState message=\{error\} onRetry=\{\(\) => void loadBreakdown\(\)\}/);
-  for (const label of ["За нагрузку этой тренировки", "Регулярность (за день)", "Quality (за неделю)", "Квесты дня", "Итого"]) {
+  for (const label of ["За нагрузку этой тренировки", "Достижения за эту тренировку", "Общие бонусы дня", "Общие бонусы недели", "Итого"]) {
     assert.ok(activity.includes(label), `missing breakdown row: ${label}`);
   }
+  for (const obsoleteLabel of ["Регулярность (за день)", "Quality (за неделю)", "Квесты дня"]) {
+    assert.ok(!activity.includes(obsoleteLabel), `obsolete breakdown label: ${obsoleteLabel}`);
+  }
+  assert.ok(activity.includes("activityAwards?.total_xp"));
+  assert.ok(activity.includes("for_this_activity_xp"));
   assert.match(activity, /Потолок 300 TSS в день/);
   assert.match(activity, /распределяемых между тренировками пропорционально их TSS/);
 });
