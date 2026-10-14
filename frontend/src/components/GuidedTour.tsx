@@ -279,7 +279,7 @@ export default function GuidedTour() {
 
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let transitionFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+    let transitionFallbackTimer: number | null = null;
     let animationFrame = 0;
     let target: HTMLElement | null = null;
 
