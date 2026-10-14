@@ -7,6 +7,8 @@ const read = (relative) => fs.readFileSync(path.join(__dirname, "..", relative),
 const dashboard = read("src/app/dashboard/page.tsx");
 const profile = read("src/app/profile/page.tsx");
 const layout = read("src/app/layout.tsx");
+const globalCss = read("src/app/globals.css");
+const compete = read("src/app/compete/page.tsx");
 const pageTransition = read("src/components/PageTransition.tsx");
 const header = read("src/components/Header.tsx");
 const yearChart = read("src/components/dashboard/YearWeeksChart.tsx");
@@ -17,6 +19,7 @@ const workoutsSection = read("src/components/dashboard/DashboardWorkoutsSection.
 const workoutsList = read("src/components/dashboard/WorkoutsList.tsx");
 const activityUpload = read("src/components/ActivityUpload.tsx");
 const settingsModal = read("src/components/ProfileSettingsModal.tsx");
+const modalComponent = read("src/components/Modal.tsx");
 const helpTip = read("src/components/ui/HelpTip.tsx");
 const weeklyLeague = read("src/components/compete/WeeklyLeaguePanel.tsx");
 const ratingPanel = read("src/components/compete/RatingPanel.tsx");
@@ -134,12 +137,24 @@ test("global gradient stays fixed while dashboard and profile sections stagger t
   assert.equal(pageTransition.includes("filter:"), false);
   assert.ok(pageTransition.includes("key={pathname}"));
   assert.ok(pageTransition.includes("staggerChildren: 0.05, staggerDirection: 1"));
-  assert.ok(pageTransition.includes("initial: { opacity: 0, y: 16 }"));
-  assert.ok(pageTransition.includes("y: -12"));
+  assert.ok(pageTransition.includes('x: direction > 0 ? "100%" : "-100%"'));
+  assert.ok(pageTransition.includes('x: direction > 0 ? "-100%" : "100%"'));
+  assert.ok(pageTransition.includes('"/dashboard": 1'));
+  assert.ok(pageTransition.includes('"/compete": 2'));
+  assert.ok(pageTransition.includes('"/profile": 3'));
   assert.ok(dashboard.includes("variants={sectionStaggerVariants}"));
   assert.ok(profile.includes("variants={sectionStaggerVariants}"));
   assert.ok(dashboard.includes("variants={sectionItemVariants}"));
   assert.ok(profile.includes("variants={sectionItemVariants}"));
+  assert.ok(compete.includes("variants={sectionStaggerVariants}"));
+  assert.ok(compete.includes("custom={transitionDirection}"));
+  assert.equal((activityUpload.match(/timeout: UPLOAD_REQUEST_TIMEOUT_MS/g) || []).length, 2);
+  assert.ok(globalCss.includes("scroll-behavior: smooth"));
+  assert.ok(globalCss.includes("@media (prefers-reduced-motion: reduce)"));
+  assert.ok(globalCss.includes("overflow-x: hidden"));
+  assert.ok(modalComponent.includes("overflow-y-auto scroll-smooth"));
+  assert.ok(settingsModal.includes("overflow-y-auto scroll-smooth"));
+  assert.equal(globalCss.includes("scroll-snap-"), false);
 
   for (const routeFile of [
     "src/app/page.tsx",

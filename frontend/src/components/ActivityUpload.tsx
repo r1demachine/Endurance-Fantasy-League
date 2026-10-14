@@ -25,6 +25,7 @@ type PreviewResponse = { preview_token: string; preview: ParsedActivity };
 
 const ALLOWED_EXTENSIONS = [".fit", ".gpx", ".tcx"];
 const MAX_BYTES = 5 * 1024 * 1024;
+const UPLOAD_REQUEST_TIMEOUT_MS = 6 * 60 * 1000;
 
 function formatDuration(seconds: number) {
   const total = Math.max(0, Math.round(seconds || 0));
@@ -106,7 +107,7 @@ export default function ActivityUpload({ onUploaded }: ActivityUploadProps = {})
     try {
       const body = new FormData();
       body.append("file", file);
-      const response = await authApi.post<PreviewResponse>("/api/upload/activity", body);
+      const response = await authApi.post<PreviewResponse>("/api/upload/activity", body, { timeout: UPLOAD_REQUEST_TIMEOUT_MS });
       setPreview(response.data);
     } catch (caught) {
       setError(getErrorMessage(caught));
@@ -123,7 +124,7 @@ export default function ActivityUpload({ onUploaded }: ActivityUploadProps = {})
     try {
       const response = await authApi.post("/api/upload/activity/confirm", {
         preview_token: preview.preview_token,
-      });
+      }, { timeout: UPLOAD_REQUEST_TIMEOUT_MS });
       setSuccess(String(response.data.message) + " Начислено XP: " + String(Math.round(response.data.new_xp ?? 0)) + ".");
       setFile(null);
       setPreview(null);

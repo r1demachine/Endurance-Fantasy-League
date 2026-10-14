@@ -12,7 +12,7 @@ import { formatWeekRange } from "@/lib/format";
 import { clearUserCache, getCachedUser, refreshUser, subscribeUser } from "@/lib/apiCache";
 import ProfileSettingsModal, { type SettingsTab } from "@/components/ProfileSettingsModal";
 import SocialHub from "@/components/SocialHub";
-import { sectionItemVariants, sectionStaggerVariants } from "@/components/PageTransition";
+import { sectionItemVariants, sectionStaggerVariants, useTransitionDirection } from "@/components/PageTransition";
 
 type ProfileData = {
   user?: {
@@ -60,6 +60,7 @@ function ProfileContent() {
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState("");
   const router = useRouter();
+  const transitionDirection = useTransitionDirection();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
@@ -152,7 +153,7 @@ function ProfileContent() {
       <div aria-hidden="true" className="pointer-events-none absolute bottom-[18%] right-[15%] h-4 w-4 animate-pulse rounded-full bg-white/70" />
 
       <motion.div variants={sectionStaggerVariants} className="breathe-table relative mx-auto flex w-full max-w-[1400px] flex-1 flex-col border-2 border-t-0 border-black bg-[#f4f4f0]">
-        <motion.header variants={sectionItemVariants} className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-black bg-[#171a38] px-4 py-5 text-white sm:px-6 md:px-8">
+        <motion.header variants={sectionItemVariants} custom={transitionDirection} className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-black bg-[#171a38] px-4 py-5 text-white sm:px-6 md:px-8">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/65">Endurance Fantasy League</p>
             <h1 className="mt-1 font-display text-3xl uppercase leading-none sm:text-4xl">Профиль<span className="text-[#ff4b26]">.</span></h1>
@@ -169,7 +170,7 @@ function ProfileContent() {
           </button>
         </motion.header>
 
-        <motion.section variants={sectionItemVariants} className="grid gap-0 border-b-2 border-black md:grid-cols-[minmax(0,1fr)_250px]">
+        <motion.section variants={sectionItemVariants} custom={transitionDirection} className="grid gap-0 border-b-2 border-black md:grid-cols-[minmax(0,1fr)_250px]">
           <div className="flex min-w-0 items-center gap-4 p-5 sm:p-7 md:p-8">
             <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden border-2 border-black bg-[#ffd500] font-display text-4xl uppercase text-[#171a38] sm:h-24 sm:w-24 sm:text-5xl">
               {user?.avatar_url ? (
@@ -208,7 +209,7 @@ function ProfileContent() {
         </motion.section>
 
         {userData?.week?.is_deload && (
-          <motion.section variants={sectionItemVariants} className={`border-b-2 border-black px-4 py-4 sm:px-6 ${userData.week.deload_source === "manual" ? "bg-[#f3e8ff]" : "bg-[#e0f2fe]"}`}>
+          <motion.section variants={sectionItemVariants} custom={transitionDirection} className={`border-b-2 border-black px-4 py-4 sm:px-6 ${userData.week.deload_source === "manual" ? "bg-[#f3e8ff]" : "bg-[#e0f2fe]"}`}>
             <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Текущая неделя · Deload</p>
             <p className="mt-1 font-display text-xl uppercase">
               Разгрузочная неделя {userData.week.deload_source === "manual" ? "· установлена вручную" : "· назначена автоматически"}
@@ -220,7 +221,7 @@ function ProfileContent() {
           </motion.section>
         )}
 
-        <motion.section variants={sectionItemVariants} className="border-b-2 border-black">
+        <motion.section variants={sectionItemVariants} custom={transitionDirection} className="border-b-2 border-black">
           <div className="flex flex-wrap items-end justify-between gap-3 border-b-2 border-black px-4 py-3 sm:px-6">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Athlete Stats</p>
@@ -261,7 +262,7 @@ function ProfileContent() {
           </div>
         </motion.section>
 
-        <motion.section variants={sectionItemVariants}>
+        <motion.section variants={sectionItemVariants} custom={transitionDirection}>
           <div className="border-b-2 border-black px-4 py-3 sm:px-6">
             <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Milestones</p>
             <h3 className="font-display text-xl uppercase sm:text-2xl">Достижения</h3>
@@ -286,7 +287,7 @@ function ProfileContent() {
           )}
         </motion.section>
 
-        <motion.section variants={sectionItemVariants} className="border-t-2 border-black bg-white">
+        <motion.section variants={sectionItemVariants} custom={transitionDirection} className="border-t-2 border-black bg-white">
           <div className="border-b-2 border-black px-4 py-3 sm:px-6">
             <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Community</p>
             <h3 className="font-display text-xl uppercase sm:text-2xl">Друзья и клубы</h3>

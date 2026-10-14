@@ -13,6 +13,10 @@
 
 
 
+html {
+  scroll-behavior: smooth;
+}
+
 html,
 body {
   /* Убираем любой gradient, оставляем только плоский цвет подложки */
@@ -211,4 +215,11 @@ b, strong, .font-bold, .font-extrabold, .font-black {
 [data-theme="dark"] .hover\:bg-\[\#ff4b26\]:hover {
   background-color: #ff4b26 !important;
   color: #ffffff !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html,
+  .scroll-smooth {
+    scroll-behavior: auto !important;
+  }
 }

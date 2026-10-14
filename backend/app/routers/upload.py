@@ -36,7 +36,7 @@ from ..rate_limit import get_client_address, limiter
 router = APIRouter(prefix="/api", tags=["Activity uploads"])
 
 MAX_FILE_BYTES = 5 * 1024 * 1024
-PARSE_TIMEOUT_SECONDS = 12
+PARSE_TIMEOUT_SECONDS = 300
 PREVIEW_TTL_SECONDS = 15 * 60
 UPLOAD_SOURCE = "UPLOAD_SITE"
 ALLOWED_EXTENSIONS = {".fit", ".gpx", ".tcx"}

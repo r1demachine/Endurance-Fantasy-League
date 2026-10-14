@@ -109,7 +109,7 @@ async def download_telegram_file(
     """Download into memory only, enforcing max_bytes while streaming each chunk."""
     if not bot_configured():
         raise RuntimeError("bot not configured")
-    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=15.0)) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=15.0, read=60.0, write=15.0, pool=15.0)) as client:
         meta = None
         for attempt in range(3):
             meta = await client.get(_api_url("getFile"), params={"file_id": file_id})
