@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { authApi, isAuthenticated } from "@/lib/auth";
 import { getApiErrorMessage } from "@/components/dialog-utils";
-import { EmptyState, ErrorState, Label, Skeleton, Tabs } from "@/components/ui";
+import { EmptyState, ErrorState, HelpTip, Label, Skeleton, Tabs } from "@/components/ui";
 
 type Scope = "global" | "friends";
 type LeaderboardEntry = {
@@ -83,8 +83,12 @@ export default function RatingPanel() {
   return (
     <section className="border-2 border-black bg-white" aria-labelledby="rating-heading">
       <div className="border-b-2 border-black bg-[#f4f4f0] p-4 md:p-6">
-        <h2 id="rating-heading" className="font-display text-2xl uppercase">Рейтинг</h2>
-        <p className="mt-1 text-sm text-[#666]">Global и друзья — общий XP без недельных дивизионов. Показаны первые 10 участников и твоё место.</p>
+        <div className="flex items-center gap-2">
+          <h2 id="rating-heading" className="font-display text-2xl uppercase">Рейтинг</h2>
+          <HelpTip label="Как устроен общий рейтинг">
+            Global и друзья показывают общий XP без недельных дивизионов. В таблице отображаются первые 10 участников и твоё место, если оно ниже десятого.
+          </HelpTip>
+        </div>
       </div>
       <Tabs
         ariaLabel="Общий рейтинг"

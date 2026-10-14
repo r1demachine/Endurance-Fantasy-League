@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Card from "@/components/ui/Card";
-import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
+import { EmptyState, ErrorState, HelpTip, Skeleton } from "@/components/ui";
 import { formatWeekRange } from "@/lib/format";
 
 type QuestStep = { slot: number; label: string; filled: boolean; date?: string | null };
@@ -120,7 +120,12 @@ export default function QuestsBoard({ quests, loading, error, dailyBonusDays, on
       <h3 id="achievements-heading" className="mb-4 font-display text-xl uppercase md:text-2xl">Достижения</h3>
       <div className="mb-4 border-2 border-black/10 p-3">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Дневные бонусы за выбранную неделю</p>
+          <div className="flex items-center gap-2">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Дневные бонусы за выбранную неделю</p>
+            <HelpTip label="Как работают дневные бонусы">
+              Один бонус +20 XP в день получает одна не ручная тренировка длительностью от 45 минут. Если тренировок несколько, выбирается тренировка с максимальным TSS; при равенстве — более ранняя.
+            </HelpTip>
+          </div>
           <p className="shrink-0 font-display text-lg">{dailyBonusCount} / 7</p>
         </div>
         <div
@@ -149,9 +154,13 @@ export default function QuestsBoard({ quests, loading, error, dailyBonusDays, on
           {weeklyQuests.length > 0 && (
             <section aria-labelledby="weekly-achievements-heading" className="mb-5">
               <div className="mb-3 border-b-2 border-black pb-2">
-                <h4 id="weekly-achievements-heading" className="font-display text-lg uppercase md:text-xl">Недельные достижения</h4>
+                <div className="flex items-center gap-2">
+                  <h4 id="weekly-achievements-heading" className="font-display text-lg uppercase md:text-xl">Недельные достижения</h4>
+                  <HelpTip label="О прогрессе недельных достижений">
+                    Прогресс считается по выбранной неделе и сбрасывается каждый понедельник. Начисленные награды за прошлые недели остаются в истории XP.
+                  </HelpTip>
+                </div>
                 {weekStart && <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-[#666]">{formatWeekRange(weekStart)}</p>}
-                <p className="mt-1 text-xs text-[#666]">Прогресс считается по выбранной неделе и сбрасывается каждый понедельник. Начисленные награды за прошлые недели остаются в истории XP.</p>
               </div>
               {renderCards(weeklyQuests)}
             </section>
@@ -160,8 +169,12 @@ export default function QuestsBoard({ quests, loading, error, dailyBonusDays, on
           {lifetimeQuests.length > 0 && (
             <section aria-labelledby="lifetime-achievements-heading">
               <div className="mb-3 border-b-2 border-black pb-2">
-                <h4 id="lifetime-achievements-heading" className="font-display text-lg uppercase md:text-xl">Разовые достижения</h4>
-                <p className="mt-1 text-xs text-[#666]">Достижения за всю доступную историю тренировок и восстановления.</p>
+                <div className="flex items-center gap-2">
+                  <h4 id="lifetime-achievements-heading" className="font-display text-lg uppercase md:text-xl">Разовые достижения</h4>
+                  <HelpTip label="О разовых достижениях">
+                    Разовые достижения рассчитываются по всей доступной истории тренировок и восстановления.
+                  </HelpTip>
+                </div>
               </div>
               {renderCards(visibleLifetimeQuests)}
               {lifetimeQuests.length > 4 && (

@@ -1,4 +1,5 @@
 import { formatWeekRange } from "@/lib/format";
+import { HelpTip } from "@/components/ui";
 
 export default function WeekBlock({
   weekData, weekOptions, selectedWeekStart, onWeekChange, onPreviousWeek, onNextWeek,
@@ -94,7 +95,7 @@ export default function WeekBlock({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Разгрузочная неделя активна</p>
-                <p className="mt-1 text-sm">{weekData.deload_source === "manual" ? "Установлена вручную. Goal XP ограничен значением 85%." : "Назначена автоматически по нагрузке прошлых недель."}</p>
+                <p className="mt-1 text-sm">{weekData.deload_source === "manual" ? "Вручную · Goal XP ограничен 85%." : "Автоматически по нагрузке прошлых недель."}</p>
               </div>
               {weekData.deload_source === "manual" && (
                 <button type="button" disabled={!weekData.can_set_deload || deloadBusy} onClick={() => onDeloadAction(false)} className="border-2 border-black bg-white px-3 py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-[#ff4b26] hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
@@ -113,7 +114,12 @@ export default function WeekBlock({
           {weekData.deload_suggestion && !weekData.is_deload && (
             <div className="mt-3 border-l-4 border-[#5866f2] bg-white p-3">
               <p className="text-sm font-bold">Похоже, это разгрузочная неделя. Поставить Deload?</p>
-              <p className="mt-1 text-xs text-[#666]">Предложение необязательное. Если ничего не делать, в конце недели система проверит условия автоматического Deload.</p>
+              <div className="mt-1 flex items-center gap-2 text-xs text-[#666]">
+                <span>Предложение разгрузочной недели</span>
+                <HelpTip label="Подробнее о предложении Deload">
+                  Предложение необязательное. Если ничего не делать, в конце недели система проверит условия автоматического Deload.
+                </HelpTip>
+              </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button type="button" disabled={!weekData.can_set_deload || deloadBusy} onClick={() => onDeloadAction(true)} className="border-2 border-black bg-[#5866f2] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-white hover:bg-black disabled:opacity-40">Поставить</button>
                 <button type="button" disabled={deloadBusy} onClick={() => onDeloadAction(false)} className="border-2 border-black bg-white px-3 py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-[#e9e9e2] disabled:opacity-40">Не сейчас</button>
@@ -125,10 +131,12 @@ export default function WeekBlock({
       )}
 
       {weekData.state === "no_data" && weekData.target_load > 0 && (
-        <p className="text-[10px] text-[#666] mb-4">
-          История ещё не накоплена — цель равна стартовой норме (3 тренировки × 45 мин).
-          Синхронизируй тренировки, и цель станет персональной.
-        </p>
+        <div className="mb-4 flex items-center gap-2 text-[10px] text-[#666]">
+          <span>Стартовая норма: 3 тренировки × 45 мин</span>
+          <HelpTip label="Как формируется стартовая норма">
+            История ещё не накоплена. Синхронизируй тренировки, и система сможет рассчитать персональную цель нагрузки.
+          </HelpTip>
+        </div>
       )}
 
       <div className="mb-4">
@@ -142,7 +150,12 @@ export default function WeekBlock({
       </div>
 
       <div className="flex items-center justify-between gap-3 border-y-2 border-black/10 py-3 mb-4">
-        <span className="text-[10px] font-bold tracking-widest uppercase text-[#666]">Итого XP за неделю</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold tracking-widest uppercase text-[#666]">Итого XP за неделю</span>
+          <HelpTip label="Пояснение к разбивке XP">
+            «Нагрузка» — XP за нагрузку тренировок. «Цель» — награда за выполнение недельной цели, максимум до 120%. «Регулярность» — награда за 5 тренировочных дней и дневные бонусы +20 XP (до 7 дней). «Качество» — за высокую интенсивность и длинные тренировки. «Восстановление» — награда за 5 хороших ночей и бонусы сна. «Квесты и бонусы» — остальные достижения, станок и +12 XP за каждую не ручную тренировку от 45 минут.
+          </HelpTip>
+        </div>
         <span className="font-display text-2xl text-[#ff4b26]">+{Math.round(Number(weekData.total_xp) || 0)}</span>
       </div>
 
@@ -164,15 +177,14 @@ export default function WeekBlock({
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[10px] leading-relaxed text-[#666]">
-        «Нагрузка» — XP за нагрузку тренировок. «Цель» — награда за выполнение недельной цели, максимум до 120%. «Регулярность» — награда за 5 тренировочных дней и дневные бонусы +20 XP (до 7 дней), «Качество» — за высокую интенсивность и длинные тренировки. «Восстановление» — награда за 5 хороших ночей и бонусы сна. «Квесты и бонусы» — остальные достижения, станок и +12 XP за каждую не ручную тренировку от 45 минут.
-      </p>
-
       {isReady && (
         <div className="mt-4 pt-4 border-t border-black/10 flex items-center justify-between">
-          <span className="text-[10px] font-bold tracking-widest uppercase text-[#666]">
-            League Score
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold tracking-widest uppercase text-[#666]">League Score</span>
+            <HelpTip label="Что такое League Score">
+              Недельный League Score используется для группировки участников по дивизионам. Пока участников меньше минимального состава, лига формируется.
+            </HelpTip>
+          </div>
           <span className="font-display text-xl text-[#171a38]">
             {weekData.league_score}
           </span>
