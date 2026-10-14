@@ -142,7 +142,7 @@ export function Modal({
             {closeLabel}
           </button>
         </div>
-        <div className={isSettings ? "flex min-h-0 flex-1 overflow-hidden p-0" : "overflow-y-auto p-4"}>{children}</div>
+        <div className={isSettings ? "flex min-h-0 flex-1 overflow-hidden p-0" : "overflow-y-auto scroll-smooth p-4"}>{children}</div>
       </motion.div>
     </motion.div>
   );
