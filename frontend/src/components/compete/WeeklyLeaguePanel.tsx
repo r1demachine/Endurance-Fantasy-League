@@ -84,7 +84,7 @@ export default function WeeklyLeaguePanel() {
           <div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-white/60">Таблица лидеров недели</p>
             <div className="flex items-center gap-2">
-              <h2 id="weekly-league-heading" className="font-display text-2xl uppercase">Weekly League</h2>
+              <h2 id="weekly-league-heading" className="font-display text-2xl uppercase">Лига недели</h2>
               <HelpTip label="Как работает Weekly League">
                 Недельный League Score используется для группировки участников по дивизионам. Пока участников меньше минимального состава, лига формируется.
               </HelpTip>
