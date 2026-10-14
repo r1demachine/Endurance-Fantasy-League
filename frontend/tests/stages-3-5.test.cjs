@@ -6,6 +6,7 @@ const path = require("node:path");
 const read = (relative) => fs.readFileSync(path.join(__dirname, "..", relative), "utf8");
 const activity = read("src/components/ActivityCard.tsx");
 const tooltip = read("src/components/XpTooltip.tsx");
+const floatingTooltip = read("src/components/ui/FloatingTooltip.tsx");
 const rating = read("src/components/compete/RatingPanel.tsx");
 const weekly = read("src/components/compete/WeeklyLeaguePanel.tsx");
 const compete = read("src/app/compete/page.tsx");
@@ -22,16 +23,17 @@ test("activity XP breakdown loads lazily, caches success, and supports retry", (
   for (const obsoleteLabel of ["Регулярность (за день)", "Quality (за неделю)", "Квесты дня"]) {
     assert.ok(!activity.includes(obsoleteLabel), `obsolete breakdown label: ${obsoleteLabel}`);
   }
-  assert.ok(activity.includes("activityAwards?.total_xp"));
+  assert.ok(activity.includes("activityAwardsTotal"));
   assert.ok(activity.includes("for_this_activity_xp"));
   assert.doesNotMatch(activity, /Общие бонусы дня|Общие бонусы недели|related\?\.general/);
-  assert.match(activity, /Потолок 300 TSS в день/);
-  assert.match(activity, /распределяемых между тренировками пропорционально их TSS/);
+  assert.match(activity, /Потолок — 300 TSS в день/);
+  assert.match(activity, /распределяется между тренировками пропорционально их TSS/);
 });
 
 test("XP tooltip supports accessible explanatory text as well as chart mode", () => {
-  assert.match(tooltip, /content\?: string/);
-  assert.match(tooltip, /role="tooltip"/);
+  assert.match(tooltip, /content\?: ReactNode/);
+  assert.match(tooltip, /<FloatingTooltip/);
+  assert.match(floatingTooltip, /role="tooltip"/);
   assert.match(activity, /<XpTooltip label=/);
 });
 

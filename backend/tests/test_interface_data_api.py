@@ -273,12 +273,12 @@ class InterfaceDataApiTests(unittest.TestCase):
         self.assertEqual(manual_payload["effort"]["tss_before_manual_coefficient"], 300)
         self.assertEqual(manual_payload["related"]["activity"]["events"], [])
         self.assertEqual(manual_payload["totals"]["for_this_activity_xp"], shares[0])
-        self.assertEqual(hard_payload["related"]["activity"]["total_xp"], 57)
+        self.assertEqual(hard_payload["related"]["activity"]["total_xp"], 45)
         hard_awards = {item["title"]: item["amount"] for item in hard_payload["related"]["activity"]["events"]}
-        self.assertEqual(hard_awards["Тренировка ≥45 минут +12 XP"], 12)
+        self.assertNotIn("Тренировка ≥45 минут +12 XP", hard_awards)
         self.assertEqual(hard_awards["Дневной бонус +20 XP"], 20)
         self.assertEqual(hard_awards["🏆 Длинная тренировка"], 25)
-        self.assertEqual(hard_payload["totals"]["for_this_activity_xp"], shares[1] + 57)
+        self.assertEqual(hard_payload["totals"]["for_this_activity_xp"], shares[1] + 45)
         self.assertNotIn("general", hard_payload["related"])
         week_payload = sync_router.get_weekly_summary(
             week_start=date(2026, 10, 12), current=self.user, db=self.db,
@@ -286,7 +286,7 @@ class InterfaceDataApiTests(unittest.TestCase):
         self.assertEqual(week_payload["week"]["daily_bonus_days"], 1)
         hard_week_activity = next(item for item in week_payload["activities"] if item["id"] == hard.id)
         self.assertEqual(hard_week_activity["effort_xp"], shares[1])
-        self.assertEqual(hard_week_activity["xp"], shares[1] + 57)
+        self.assertEqual(hard_week_activity["xp"], shares[1] + 45)
         self.assertTrue(manual_payload["totals"]["weekly_summary_components_match"])
         self.assertEqual(manual_payload["totals"]["weekly_summary_components_xp"], total)
         self.assertEqual(manual_payload["totals"]["weekly_summary_total_xp"], total)
@@ -623,17 +623,12 @@ class InterfaceDataApiTests(unittest.TestCase):
             ]
             sleep_bonus_events = [event for event in event_rows if event.event_type == "sleep_bonus"]
 
-            expected_duration_ids = {str(value) for value in activity_ids} | {str(item.id) for item in sunday_activities}
             expected_daily_ids = {str(value) for value in activity_ids} | {str(sunday_winner.id)}
-            self.assertEqual(len(duration_bonus_events), 9)
+            self.assertEqual(len(duration_bonus_events), 0)
             self.assertEqual(len(daily_bonus_events), 6)
-            self.assertEqual(len(workout_bonus_events), 15)
+            self.assertEqual(len(workout_bonus_events), 6)
             self.assertEqual(len(sleep_bonus_events), 5)
-            self.assertEqual({event.source_id for event in duration_bonus_events}, expected_duration_ids)
             self.assertEqual({event.source_id for event in daily_bonus_events}, expected_daily_ids)
-            self.assertNotIn(str(manual.id), {event.source_id for event in duration_bonus_events})
-            self.assertNotIn(str(short.id), {event.source_id for event in duration_bonus_events})
-            self.assertTrue(all(event.amount == X6.WORKOUT_BONUS_XP for event in duration_bonus_events))
             self.assertTrue(all(event.amount == X6.DAILY_WORKOUT_BONUS_XP for event in daily_bonus_events))
             self.assertTrue(all(event.amount == X6.GOOD_SLEEP_BONUS_XP for event in sleep_bonus_events))
             self.assertEqual(
@@ -648,8 +643,9 @@ class InterfaceDataApiTests(unittest.TestCase):
                 week_start=week_start, current=self.user, db=self.db,
             )
             week = payload["week"]
-            for field in ("effort_xp", "goal_xp", "consistency_xp", "quality_xp", "recovery_xp", "quest_xp"):
+            for field in ("effort_xp", "goal_xp", "consistency_xp", "quality_xp", "recovery_xp"):
                 self.assertGreater(week[field], 0, field)
+            self.assertEqual(week["quest_xp"], 0)
             components = sum(
                 week[field] for field in (
                     "effort_xp", "goal_xp", "consistency_xp",
@@ -658,7 +654,6 @@ class InterfaceDataApiTests(unittest.TestCase):
             )
             self.assertAlmostEqual(week["total_xp"], components, places=1)
             self.assertEqual(week["quest_xp"], round(summary.quest_xp, 1))
-            self.assertGreaterEqual(week["quest_xp"], 5 * X6.WORKOUT_BONUS_XP)
             self.assertEqual(week["daily_bonus_days"], 6)
             self.assertEqual(week["goal_xp"], 120.0)
             self.assertGreaterEqual(week["consistency_xp"], 6 * X6.DAILY_WORKOUT_BONUS_XP)
@@ -693,7 +688,15 @@ class InterfaceDataApiTests(unittest.TestCase):
                     XPEvent.user_id == self.user.id,
                     XPEvent.event_type == "activity_bonus",
                 ).count(),
-                19,
+                8,
+            )
+            self.assertEqual(
+                self.db.query(XPEvent).filter(
+                    XPEvent.user_id == self.user.id,
+                    XPEvent.event_type == "activity_bonus",
+                    XPEvent.event_key.startswith("activity_bonus:45m:"),
+                ).count(),
+                0,
             )
             self.assertEqual(
                 self.db.query(XPEvent).filter(

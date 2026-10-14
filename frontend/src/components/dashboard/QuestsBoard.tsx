@@ -35,6 +35,45 @@ type Props = {
   onRetry: () => void;
 };
 
+const QUEST_EXPLANATIONS: Record<string, string> = {
+  qualifying_days_5:
+    "Нужно провести тренировки в пяти разных календарных днях выбранной недели. День засчитывается по суммарной квалифицирующей нагрузке (не менее 20 TSS по правилам системы), а несколько тренировок в один день не увеличивают счётчик. Прогресс начинается заново с новой недели.",
+  good_sleep_5:
+    "Засчитывается каждая ночь, для которой синхронизированы данные сна и выполнено хотя бы одно условие: длительность не менее 6 часов или sleep score не ниже 60. Одна ночь учитывается максимум один раз. Если источник не передаёт сон, ночь не засчитывается.",
+  long_workout_2h:
+    "Нужна хотя бы одна не ручная тренировка продолжительностью от двух часов в выбранной календарной неделе. Учитывается длительность самой тренировки, а не сумма нескольких коротких занятий. Награда доступна один раз за неделю.",
+  long_workout_3h:
+    "Дополнительная награда за одну не ручную тренировку длительностью не менее трёх часов в выбранной неделе. Такая тренировка также подходит под достижение «Длинная тренировка» от двух часов; это отдельная дополнительная награда.",
+  high_intensity:
+    "Нужна не ручная тренировка с реальной IF не ниже 0,75 либо с подтверждёнными пятью и более минутами в пульсовой зоне Z4 или выше. Оценочная IF или одна лишь длительность не заменяют эти условия. Награда начисляется максимум один раз за неделю.",
+  trainer_week:
+    "Нужна тренировка на станке продолжительностью от 30 минут. Достижение активно в сезон станка — с 1 октября по 30 апреля. Для зачёта в данных тренировки должен присутствовать признак indoor/trainer; ручная запись без такого признака не считается.",
+  first_three_day_week:
+    "Разовое достижение открывается, когда хотя бы в одной календарной неделе есть три разных дня с квалифицирующей нагрузкой. Несколько тренировок в один день считаются одним тренировочным днём. После выполнения награда не сбрасывается.",
+  goal_met:
+    "Разовая награда за полностью выполненную персональную недельную цель. Сравнивается фактическое выполнение с индивидуальной целью недели; неделя должна быть финализирована системой.",
+  goal_streak_3:
+    "Нужно выполнить персональную цель на трёх финализированных неделях подряд без пропуска недели. Прогресс основывается на сохранённых итогах недель, а не на количестве тренировок за один отдельный день.",
+  first_50km_ride_week:
+    "Нужно набрать не менее 50 км на велотренировках за одну календарную неделю. Суммируются дистанции всех подходящих велотренировок этой недели; расстояния разных недель не складываются.",
+  record_duration:
+    "Достижение проверяет историю длительности тренировок: после как минимум трёх предыдущих записей нужно превысить прежний максимум более чем на 10%. Ручные тренировки не участвуют в сравнении. После выполнения награда остаётся в истории.",
+  sleep_connected:
+    "Разовая награда за наличие данных о сне минимум за три разные ночи. Данные могут содержать продолжительность сна или sleep score и должны поступить через подключённый источник восстановления.",
+  power_record_20m:
+    "Пока недоступно: для честной оценки двадцатиминутного рекорда нужны реальные данные мощности в ваттах. Система не подменяет их расчётной интенсивностью или пульсом.",
+  ftp_growth_8w:
+    "Пока недоступно: для сравнения FTP за восемь недель нужны подтверждённые значения FTP и массы тела для расчёта Вт/кг. Пока эти данные не поступают, достижение не имитируется по TSS или длительности.",
+};
+
+function questExplanation(quest: Quest): string {
+  const detail = QUEST_EXPLANATIONS[quest.slug] || quest.desc;
+  if (quest.status === "unavailable" && quest.progress_reason) {
+    return `${detail} ${quest.progress_reason}`;
+  }
+  return detail;
+}
+
 export default function QuestsBoard({ quests, loading, error, dailyBonusDays, onRetry }: Props) {
   const [showAll, setShowAll] = useState(true);
   const dailyBonusCount = Math.min(7, Math.max(0, Number(dailyBonusDays) || 0));
@@ -55,7 +94,10 @@ export default function QuestsBoard({ quests, loading, error, dailyBonusDays, on
         return (
           <Card
             key={quest.slug}
-            className={`border-2 p-3 ${
+            tabIndex={0}
+            role="group"
+            aria-label={quest.title}
+            className={`group relative border-2 p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5866f2] ${
               quest.status === "earned"
                 ? "border-[#16a34a] bg-[#16a34a]/10"
                 : unavailable
@@ -70,13 +112,10 @@ export default function QuestsBoard({ quests, loading, error, dailyBonusDays, on
               </p>
               <span className="shrink-0 font-display text-[#16a34a]">+{quest.reward}</span>
             </div>
-            <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-[#666]">{quest.desc}</p>
+            <span className="sr-only">{quest.desc} {questExplanation(quest)}</span>
 
             {unavailable ? (
-              <p className="mt-3 flex items-start gap-2 text-xs text-[#666]">
-                <span aria-hidden="true">🔒</span>
-                <span>{quest.progress_reason || "Необходимые данные пока недоступны."}</span>
-              </p>
+              <p className="sr-only">{quest.progress_reason || "Необходимые данные пока недоступны."}</p>
             ) : progress?.steps && progress.steps.length > 0 ? (
               <div className="mt-3">
                 <div className="flex gap-2" role="img" aria-label={`${quest.title}: ${current} из ${target} ${progress.unit}`}>
@@ -109,6 +148,12 @@ export default function QuestsBoard({ quests, loading, error, dailyBonusDays, on
             {quest.status === "earned" && quest.earned_at && (
               <p className="mt-2 text-[10px] font-bold text-[#16a34a]">Получено {quest.earned_at}</p>
             )}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 z-40 flex items-start overflow-y-auto bg-white/95 p-3 text-[#171a38] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus:opacity-100"
+            >
+              <p className="text-sm leading-relaxed">{questExplanation(quest)}</p>
+            </div>
           </Card>
         );
       })}

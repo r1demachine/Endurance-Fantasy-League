@@ -10,6 +10,9 @@ const layout = read("src/app/layout.tsx");
 const globalCss = read("src/app/globals.css");
 const compete = read("src/app/compete/page.tsx");
 const pageTransition = read("src/components/PageTransition.tsx");
+const floatingTooltip = read("src/components/ui/FloatingTooltip.tsx");
+const syncRouter = read("../backend/app/routers/sync.py");
+const xpV6 = read("../backend/app/services/xp_v6.py");
 const header = read("src/components/Header.tsx");
 const yearChart = read("src/components/dashboard/YearWeeksChart.tsx");
 const questsBoard = read("src/components/dashboard/QuestsBoard.tsx");
@@ -21,6 +24,7 @@ const activityUpload = read("src/components/ActivityUpload.tsx");
 const settingsModal = read("src/components/ProfileSettingsModal.tsx");
 const modalComponent = read("src/components/Modal.tsx");
 const helpTip = read("src/components/ui/HelpTip.tsx");
+const xpTooltip = read("src/components/XpTooltip.tsx");
 const weeklyLeague = read("src/components/compete/WeeklyLeaguePanel.tsx");
 const ratingPanel = read("src/components/compete/RatingPanel.tsx");
 
@@ -120,7 +124,7 @@ test("all visible week selectors use the shared Russian week formatter", () => {
 
 test("activity XP card separates attached achievements from general bonuses", () => {
   assert.match(activityCard, /Достижения за эту тренировку/);
-  assert.match(activityCard, /activityAwards\?\.total_xp/);
+  assert.match(activityCard, /activityAwardsTotal/);
   assert.match(activityCard, /for_this_activity_xp/);
   assert.doesNotMatch(activityCard, /Общие бонусы дня|Общие бонусы недели|Регулярность \(за день\)|Quality \(за неделю\)|Квесты дня/);
   assert.match(questsBoard, /dailyBonusDays/);
@@ -170,4 +174,37 @@ test("global gradient stays fixed while dashboard and profile sections stagger t
       routeFile
     );
   }
+});
+
+
+test("XP explanations use viewport portals and achievement descriptions stay hidden until hover", () => {
+  assert.ok(floatingTooltip.includes("createPortal("));
+  assert.ok(floatingTooltip.includes("z-[9999]"));
+  assert.ok(helpTip.includes("<FloatingTooltip"));
+  assert.ok(xpTooltip.includes("<FloatingTooltip"));
+  assert.ok(questsBoard.includes("group-hover:opacity-100 group-focus:opacity-100"));
+  assert.ok(questsBoard.includes("QUEST_EXPLANATIONS"));
+  assert.ok(!questsBoard.includes('className="mt-1 text-[9px] font-bold uppercase tracking-widest text-[#666]">{quest.desc}'));
+  assert.ok(activityCard.includes('label="Итого"'));
+  assert.ok(activityCard.includes("Потолок — 300 TSS в день"));
+  assert.ok(!activityCard.includes('XpTooltip label="Достижения за эту тренировку"'));
+});
+
+test("the obsolete per-workout +12 XP bonus is no longer generated or displayed", () => {
+  assert.ok(!syncRouter.includes('key = `activity_bonus:45m:'));
+  assert.ok(!syncRouter.includes("Тренировка ≥45 минут +"));
+  assert.ok(!xpV6.includes("\nWORKOUT_BONUS_XP ="));
+  assert.ok(!xpV6.includes("\nWORKOUT_BONUS_MIN_DURATION_SECONDS ="));
+  assert.ok(xpV6.includes("DAILY_WORKOUT_BONUS_XP = 20.0"));
+  assert.ok(syncRouter.includes("_is_retired_activity_duration_bonus"));
+  assert.ok(activityCard.includes("activityEvents = (activityAwards?.events ?? []).filter"));
+});
+
+test("global typography grows one point but restores heading and display scales", () => {
+  const css = read("src/app/globals.css");
+  assert.ok(css.includes("font-size: calc(1rem + 1pt)"));
+  assert.ok(css.includes("--text-sm: calc(0.875rem + 1pt)"));
+  assert.ok(css.includes(":where(h1, h2, h3, h4, h5, h6)"));
+  assert.ok(css.includes("font-size: calc(10px + 1pt)"));
+  assert.ok(css.includes("prefers-reduced-motion: reduce"));
 });

@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import FloatingTooltip from "@/components/ui/FloatingTooltip";
+
 /* Общий тултип XP-графика: до 4 карточек тренировок за день.
    Используется в дашборде и в публичном профиле. */
 
@@ -16,13 +19,102 @@ export default function XpTooltip({
   chartData?: any[];
   showSleep?: boolean;
   label?: string;
-  content?: string;
+  content?: ReactNode;
 }) {
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tooltipId = useId();
+
+  const clearCloseTimer = () => {
+    if (closeTimer.current !== null) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+
+  const scheduleClose = () => {
+    clearCloseTimer();
+    if (pinned || anchorRef.current?.contains(document.activeElement)) return;
+    closeTimer.current = setTimeout(() => {
+      const tooltip = document.getElementById(tooltipId);
+      if (
+        !anchorRef.current?.matches(":hover") &&
+        !tooltip?.matches(":hover") &&
+        !anchorRef.current?.contains(document.activeElement)
+      ) setHelpOpen(false);
+      closeTimer.current = null;
+    }, 120);
+  };
+
+  useEffect(() => {
+    if (!content) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node;
+      const tooltip = document.getElementById(tooltipId);
+      if (anchorRef.current?.contains(target) || tooltip?.contains(target)) return;
+      clearCloseTimer();
+      setHelpOpen(false);
+      setPinned(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        clearCloseTimer();
+        setHelpOpen(false);
+        setPinned(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      clearCloseTimer();
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [content, tooltipId]);
+
   if (content) {
     return (
-      <span className="group relative inline-flex">
-        <button type="button" aria-label={`Пояснение: ${label || "XP"}`} className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#777] text-[10px] font-bold text-[#666] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#5866f2]">?</button>
-        <span role="tooltip" className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 hidden w-64 rounded border-2 border-black bg-white p-3 text-xs font-normal normal-case leading-relaxed text-[#333] shadow-[3px_3px_0_#000] group-hover:block group-focus-within:block">{content}</span>
+      <span className="inline-flex">
+        <button
+          ref={anchorRef}
+          type="button"
+          aria-label={`Пояснение: ${label || "XP"}`}
+          aria-expanded={helpOpen}
+          aria-controls={tooltipId}
+          aria-describedby={helpOpen ? tooltipId : undefined}
+          onMouseEnter={() => {
+            clearCloseTimer();
+            setHelpOpen(true);
+          }}
+          onMouseLeave={scheduleClose}
+          onFocus={() => {
+            clearCloseTimer();
+            setHelpOpen(true);
+          }}
+          onBlur={scheduleClose}
+          onClick={() => {
+            setPinned((value) => {
+              const next = !value;
+              setHelpOpen(next);
+              return next;
+            });
+          }}
+          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-[#777] text-xs font-bold text-[#666] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#5866f2]"
+        >
+          ?
+        </button>
+        <FloatingTooltip
+          id={tooltipId}
+          open={helpOpen}
+          anchorRef={anchorRef}
+          interactive
+          onMouseEnter={clearCloseTimer}
+          onMouseLeave={scheduleClose}
+        >
+          {content}
+        </FloatingTooltip>
       </span>
     );
   }
