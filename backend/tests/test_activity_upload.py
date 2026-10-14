@@ -21,11 +21,31 @@ from app.routers.upload import (
     _encode_preview,
     _finalise_file_metrics,
     _parse_activity_file,
+    _is_indoor_fit_activity,
     _decode_xml_utf8,
 )
 
 
 class ActivityFileParsingTests(unittest.TestCase):
+    def test_virtual_fit_subsports_are_marked_indoor(self):
+        for sub_sport in ("virtual_activity", "indoor_cycling", "virtual_ride", "spin", "SubSport.VirtualActivity"):
+            with self.subTest(sub_sport=sub_sport):
+                self.assertTrue(_is_indoor_fit_activity({"sub_sport": sub_sport}, []))
+
+    def test_fit_device_metadata_detects_virtual_platforms(self):
+        for descriptor in ("Zwift", "MyWhoosh", "Rouvy", "TrainingPeaks Virtual", "Wahoo SYSTM"):
+            with self.subTest(descriptor=descriptor):
+                self.assertTrue(_is_indoor_fit_activity(
+                    {"sub_sport": "generic"},
+                    [{"product_name": descriptor}],
+                ))
+
+    def test_regular_garmin_device_is_not_marked_indoor(self):
+        self.assertFalse(_is_indoor_fit_activity(
+            {"sub_sport": "road"},
+            [{"manufacturer": "Garmin", "product_name": "Edge 840"}],
+        ))
+
     def test_wall_clock_parse_timeout_is_five_minutes(self):
         self.assertEqual(PARSE_TIMEOUT_SECONDS, 300)
 
