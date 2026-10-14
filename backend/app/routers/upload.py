@@ -468,14 +468,10 @@ def _is_indoor_fit_activity(session: dict, metadata_records: list[dict]) -> bool
         "virtualride", "indoorcycling",
     )
     for record in metadata_records:
-        for value in record.values():
+        for key, value in record.items():
             descriptor = _fit_marker_text(value).replace("_", "")
             if any(marker in descriptor for marker in app_markers):
                 return True
-            if _fit_marker_text(value) in {"true", "yes", "on", "1"}:
-                # Only treat affirmative values as flags when the field is itself an explicit flag.
-                continue
-        for key, value in record.items():
             if str(key).lower() in {"trainer", "is_trainer", "indoor", "is_indoor", "virtual", "is_virtual"}:
                 if _fit_flag_is_true(value):
                     return True
@@ -523,7 +519,7 @@ def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
         if not distance:
             distance = max((_number(s.get("distance")) or 0.0 for s in samples), default=0.0)
         metadata_records = []
-        for message_name in ("file_id", "device_info"):
+        for message_name in ("file_id", "device_info", "file_creator"):
             for message in fit.get_messages(message_name):
                 metadata_records.append({field.name: field.value for field in message})
 
