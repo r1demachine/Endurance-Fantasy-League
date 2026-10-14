@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import FloatingTooltip from "@/components/ui/FloatingTooltip";
 
 /* Общий тултип XP-графика: до 4 карточек тренировок за день.
@@ -19,7 +19,7 @@ export default function XpTooltip({
   chartData?: any[];
   showSleep?: boolean;
   label?: string;
-  content?: string;
+  content?: ReactNode;
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -27,7 +27,7 @@ export default function XpTooltip({
   const tooltipId = useId();
 
   useEffect(() => {
-    if (!content || !helpOpen) return;
+    if (!content) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
       const target = event.target as Node;
       const tooltip = document.getElementById(tooltipId);
@@ -47,7 +47,7 @@ export default function XpTooltip({
       document.removeEventListener("pointerdown", closeOnOutsidePointer);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [content, helpOpen, tooltipId]);
+  }, [content, tooltipId]);
 
   if (content) {
     return (
