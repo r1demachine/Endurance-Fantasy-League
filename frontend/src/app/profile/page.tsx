@@ -144,7 +144,7 @@ function ProfileContent() {
     .slice(0, 3);
 
   return (
-    <main className="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] px-2 pb-24 text-[#111] sm:px-4 md:px-6 md:pb-6">
+    <main className="relative flex min-h-screen flex-col overflow-hidden px-2 pb-24 text-[#111] sm:px-4 md:px-6 md:pb-6">
       <div aria-hidden="true" className="pointer-events-none absolute left-[8%] top-[12%] h-3 w-3 animate-pulse rounded-full bg-[#ffd500]" />
       <div aria-hidden="true" className="pointer-events-none absolute right-[10%] top-[26%] h-2 w-2 rounded-full bg-white/80" />
       <div aria-hidden="true" className="pointer-events-none absolute bottom-[18%] right-[15%] h-4 w-4 animate-pulse rounded-full bg-white/70" />
@@ -308,7 +308,7 @@ function ProfileContent() {
 
 export default function Profile() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2]" />}>
+    <Suspense fallback={<div className="min-h-screen " />}>
       <ProfileContent />
     </Suspense>
   );
