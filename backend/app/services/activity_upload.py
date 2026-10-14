@@ -156,6 +156,7 @@ def create_activity_from_upload(
     if recent_uploads >= 5:
         return "rejected", None, "Лимит — 5 сохранённых загрузок в час. Попробуй позже."
 
+    is_indoor = bool(parsed.get("is_indoor", False))
     activity = Activity(
         user_id=user_id,
         intervals_activity_id=intervals_activity_id,
@@ -175,8 +176,9 @@ def create_activity_from_upload(
         is_manual=False,
         start_date=start_date,
         start_date_local=start_date_local,
-        indoor=False,
-        is_indoor=False,
+        # Keep the legacy flag in sync for older clients, while is_indoor is canonical.
+        indoor=is_indoor,
+        is_indoor=is_indoor,
     )
     db.add(activity)
     try:
