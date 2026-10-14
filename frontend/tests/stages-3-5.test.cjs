@@ -31,7 +31,7 @@ test("activity XP breakdown loads lazily, caches success, and supports retry", (
 
 test("XP tooltip supports accessible explanatory text as well as chart mode", () => {
   assert.match(tooltip, /content\?: ReactNode/);
-  assert.match(tooltip, /role="tooltip"/);
+  assert.match(tooltip, /<FloatingTooltip/);
   assert.match(activity, /<XpTooltip label=/);
 });
 

@@ -643,8 +643,9 @@ class InterfaceDataApiTests(unittest.TestCase):
                 week_start=week_start, current=self.user, db=self.db,
             )
             week = payload["week"]
-            for field in ("effort_xp", "goal_xp", "consistency_xp", "quality_xp", "recovery_xp", "quest_xp"):
+            for field in ("effort_xp", "goal_xp", "consistency_xp", "quality_xp", "recovery_xp"):
                 self.assertGreater(week[field], 0, field)
+            self.assertEqual(week["quest_xp"], 0)
             components = sum(
                 week[field] for field in (
                     "effort_xp", "goal_xp", "consistency_xp",
