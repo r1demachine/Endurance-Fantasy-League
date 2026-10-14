@@ -19,6 +19,7 @@ type ParsedActivity = {
   intensity: number;
   hard_secs: number;
   load_method: string;
+  is_indoor?: boolean;
   auto_zone_updates?: { lthr?: number; max_hr?: number };
 };
 type PreviewResponse = { preview_token: string; preview: ParsedActivity };
@@ -73,11 +74,15 @@ export default function ActivityUpload({ onUploaded }: ActivityUploadProps = {})
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [indoorOverride, setIndoorOverride] = useState<boolean | null>(null);
+  const [showIndoorCorrection, setShowIndoorCorrection] = useState(false);
 
   const selectFile = (nextFile: File | null) => {
     setError("");
     setSuccess("");
     setPreview(null);
+    setIndoorOverride(null);
+    setShowIndoorCorrection(false);
     if (!nextFile) return;
     const extension = nextFile.name.slice(nextFile.name.lastIndexOf(".")).toLowerCase();
     if (!ALLOWED_EXTENSIONS.includes(extension)) {
@@ -104,6 +109,8 @@ export default function ActivityUpload({ onUploaded }: ActivityUploadProps = {})
     setError("");
     setSuccess("");
     setPreview(null);
+    setIndoorOverride(null);
+    setShowIndoorCorrection(false);
     try {
       const body = new FormData();
       body.append("file", file);
@@ -124,6 +131,7 @@ export default function ActivityUpload({ onUploaded }: ActivityUploadProps = {})
     try {
       const response = await authApi.post("/api/upload/activity/confirm", {
         preview_token: preview.preview_token,
+        is_indoor_override: indoorOverride,
       }, { timeout: UPLOAD_REQUEST_TIMEOUT_MS });
       setSuccess(String(response.data.message) + " Начислено XP: " + String(Math.round(response.data.new_xp ?? 0)) + ".");
       setFile(null);
@@ -148,10 +156,13 @@ export default function ActivityUpload({ onUploaded }: ActivityUploadProps = {})
     setFile(null);
     setPreview(null);
     setError("");
+    setIndoorOverride(null);
+    setShowIndoorCorrection(false);
     if (inputRef.current) inputRef.current.value = "";
   };
 
   const metrics = preview?.preview;
+  const effectiveIsIndoor = indoorOverride ?? Boolean(metrics?.is_indoor);
   return (
     <section className="border-2 border-black bg-white">
       <div className="border-b-2 border-black bg-[#ffd500] px-4 py-3">
@@ -202,8 +213,40 @@ export default function ActivityUpload({ onUploaded }: ActivityUploadProps = {})
         {metrics && (
           <div className="border-2 border-[#5866f2]">
             <div className="border-b-2 border-[#5866f2] bg-[#5866f2]/10 px-4 py-3">
-              <p className="font-bold uppercase">{metrics.name}</p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-bold uppercase">{metrics.name}</p>
+                <span className={"inline-flex border px-2 py-1 text-[9px] font-bold uppercase tracking-wide " +
+                  (effectiveIsIndoor ? "border-[#5866f2] bg-[#5866f2]/10 text-[#3741b4]" : "border-black/20 bg-white text-[#555]")}>
+                  {effectiveIsIndoor ? "Виртуальная / станок" : "Обычная тренировка"}
+                </span>
+              </div>
               <p className="mt-1 text-xs text-[#555]">Проверь значения перед сохранением.</p>
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowIndoorCorrection((visible) => !visible)}
+                  className="text-[10px] font-bold uppercase underline decoration-dotted underline-offset-2 hover:text-[#5866f2]"
+                >
+                  {showIndoorCorrection ? "Скрыть исправление метки" : "Исправить метку"}
+                </button>
+                {showIndoorCorrection && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 border border-black/15 bg-white p-2">
+                    <span className="w-full text-xs text-[#555]">Если детектор ошибся, выбери правильный тип:</span>
+                    <button type="button" onClick={() => { setIndoorOverride(false); setShowIndoorCorrection(false); }}
+                      className="border border-black/30 px-2 py-1 text-[10px] font-bold uppercase hover:bg-black hover:text-white">
+                      Обычная
+                    </button>
+                    <button type="button" onClick={() => { setIndoorOverride(true); setShowIndoorCorrection(false); }}
+                      className="border border-black/30 px-2 py-1 text-[10px] font-bold uppercase hover:bg-[#ffd500]">
+                      Виртуальная / станок
+                    </button>
+                    <button type="button" onClick={() => { setIndoorOverride(null); setShowIndoorCorrection(false); }}
+                      className="border border-black/15 px-2 py-1 text-[10px] font-bold uppercase text-[#666] hover:bg-[#f4f4f0]">
+                      Автоопределение
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3">
               {[
