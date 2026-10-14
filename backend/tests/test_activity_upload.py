@@ -2,6 +2,8 @@
 import os
 import unittest
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 from cryptography.fernet import Fernet
 from pydantic import ValidationError
 
@@ -11,6 +13,8 @@ os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
 os.environ.setdefault("REDIS_URL", "")
 
 from app.services.xp_v6 import UPLOAD_TSS_FACTOR, resolve_training_load
+from app.models import Activity
+from app.services.activity_upload import create_activity_from_upload
 
 from app.routers.upload import (
     PARSE_TIMEOUT_SECONDS,
@@ -21,11 +25,31 @@ from app.routers.upload import (
     _encode_preview,
     _finalise_file_metrics,
     _parse_activity_file,
+    _is_indoor_fit_activity,
     _decode_xml_utf8,
 )
 
 
 class ActivityFileParsingTests(unittest.TestCase):
+    def test_virtual_fit_subsports_are_marked_indoor(self):
+        for sub_sport in ("virtual_activity", "indoor_cycling", "virtual_ride", "spin", "SubSport.VirtualActivity"):
+            with self.subTest(sub_sport=sub_sport):
+                self.assertTrue(_is_indoor_fit_activity({"sub_sport": sub_sport}, []))
+
+    def test_fit_device_metadata_detects_virtual_platforms(self):
+        for descriptor in ("Zwift", "MyWhoosh", "Rouvy", "TrainingPeaks Virtual", "Wahoo SYSTM"):
+            with self.subTest(descriptor=descriptor):
+                self.assertTrue(_is_indoor_fit_activity(
+                    {"sub_sport": "generic"},
+                    [{"product_name": descriptor}],
+                ))
+
+    def test_regular_garmin_device_is_not_marked_indoor(self):
+        self.assertFalse(_is_indoor_fit_activity(
+            {"sub_sport": "road"},
+            [{"manufacturer": "Garmin", "product_name": "Edge 840"}],
+        ))
+
     def test_wall_clock_parse_timeout_is_five_minutes(self):
         self.assertEqual(PARSE_TIMEOUT_SECONDS, 300)
 
@@ -302,6 +326,45 @@ class HeartRateSettingsTests(unittest.TestCase):
         altered = tampered_encoded + "." + signature
         with self.assertRaises(Exception):
             _decode_preview(altered)
+
+
+class IndoorActivityPersistenceTests(unittest.TestCase):
+    def test_virtual_flag_is_saved_to_canonical_and_legacy_columns(self):
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        start = (now - timedelta(hours=1)).isoformat()
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = None
+        db.query.return_value.filter.return_value.count.return_value = 0
+        user = SimpleNamespace(id=7, total_xp=0)
+
+        parsed = {
+            "name": "Virtual Ride",
+            "sport_type": "RIDE",
+            "start_date": start,
+            "start_date_local": start,
+            "moving_time": 1800,
+            "elapsed_time": 1810,
+            "distance": 12000,
+            "elevation_gain": 0,
+            "training_load": 40,
+            "intensity": 0.7,
+            "hard_secs": 0,
+            "is_indoor": True,
+        }
+        with (
+            patch("app.services.activity_upload.find_matching_activity", return_value=None),
+            patch("app.services.activity_upload._apply_auto_hr_updates"),
+            patch("app.routers.sync._recalculate_user_xp_v6"),
+            patch("app.routers.sync._recalculate_user_xp"),
+        ):
+            status, activity, reason = create_activity_from_upload(
+                db, user, parsed, "a" * 64, source="UPLOAD_SITE"
+            )
+
+        self.assertEqual(status, "created", reason)
+        self.assertIsInstance(activity, Activity)
+        self.assertTrue(activity.is_indoor)
+        self.assertTrue(activity.indoor)
 
 
 if __name__ == "__main__":

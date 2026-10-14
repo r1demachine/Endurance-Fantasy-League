@@ -5,6 +5,7 @@ const path = require("node:path");
 
 const read = (relative) => fs.readFileSync(path.join(__dirname, "..", relative), "utf8");
 const tour = read("src/components/GuidedTour.tsx");
+const pageTransition = read("src/components/PageTransition.tsx");
 const layout = read("src/app/layout.tsx");
 const home = read("src/app/page.tsx");
 const dashboard = read("src/app/dashboard/page.tsx");
@@ -65,4 +66,12 @@ test("guided tour uses a spotlight mask, blocks outside clicks, and keeps page s
   assert.match(tour, /hasSeenTour\(\)/);
   assert.match(tour, /efl_tour_seen_v1/);
   assert.match(tour, /router\.replace\("\/", \{ scroll: false \}\)/);
+});
+
+
+test("guided tour waits for the entering page animation before placing the spotlight", () => {
+  assert.match(tour, /efl:page-transition-complete/);
+  assert.match(tour, /lastTargetPathname/);
+  assert.match(tour, /transitionFallbackTimer/);
+  assert.match(pageTransition, /new CustomEvent\("efl:page-transition-complete"/);
 });

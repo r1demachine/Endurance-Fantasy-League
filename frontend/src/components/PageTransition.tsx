@@ -219,6 +219,8 @@ export default function PageTransition({ children }: { children: ReactNode }) {
     node.style.removeProperty("transform");
     node.style.removeProperty("filter");
     node.style.removeProperty("clip-path");
+    // Notify overlays only after this specific route's entering animation completes.
+    window.dispatchEvent(new CustomEvent("efl:page-transition-complete", { detail: { pathname } }));
   };
 
   return (
