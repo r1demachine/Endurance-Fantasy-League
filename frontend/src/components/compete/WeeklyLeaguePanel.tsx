@@ -25,6 +25,29 @@ type Payload = {
   week?: string;
 };
 
+const DIVISION_LABELS: Record<string, string> = {
+  Foundation: "Основа",
+  Builder: "Развитие",
+  Contender: "Претенденты",
+  Elite: "Элита",
+  Legend: "Легенда",
+  "Open · provisional": "Открытый · предварительный",
+  Open: "Открытый",
+};
+
+function divisionLabel(value: string | null | undefined): string {
+  if (!value) return "Открытый · предварительный";
+  return DIVISION_LABELS[value] || value;
+}
+
+function divisionSourceLabel(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "ctl" || normalized === "training_load") return "по CTL";
+  if (normalized === "load" || normalized === "weekly_load" || normalized === "tss") return "по недельному TSS";
+  if (normalized === "provisional") return "предварительный";
+  return value;
+}
+
 export default function WeeklyLeaguePanel() {
   const [board, setBoard] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,7 +82,7 @@ export default function WeeklyLeaguePanel() {
       <header className="border-b-2 border-black bg-[#171a38] px-4 py-4 text-white md:px-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-white/60">Weekly leaderboard</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-white/60">Таблица лидеров недели</p>
             <div className="flex items-center gap-2">
               <h2 id="weekly-league-heading" className="font-display text-2xl uppercase">Weekly League</h2>
               <HelpTip label="Как работает Weekly League">
@@ -81,7 +104,7 @@ export default function WeeklyLeaguePanel() {
           <>
             {!board?.formed && (
               <p className="mb-3 border-2 border-black bg-[#ffd500]/25 px-3 py-2 text-[10px] font-bold uppercase tracking-widest">
-                Лига формируется: {entries.length}/{board?.min_size ?? 5} атлетов
+                Лига формируется: {entries.length}/{board?.min_size ?? 5} участников
               </p>
             )}
             <div className="space-y-0">
@@ -89,8 +112,8 @@ export default function WeeklyLeaguePanel() {
                 <div key={entry.id ?? entry.username ?? index}>
                   {(index === 0 || entries[index - 1]?.division !== entry.division) && (
                     <div className="flex flex-wrap justify-between gap-2 bg-[#171a38] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-white">
-                      <span>{entry.division ?? "Open · provisional"}</span>
-                      {entry.division_source && <span className="text-white/60">{entry.division_source}</span>}
+                      <span>{divisionLabel(entry.division)}</span>
+                      {entry.division_source && <span className="text-white/60">{divisionSourceLabel(entry.division_source)}</span>}
                     </div>
                   )}
                   <div className={`flex items-center justify-between gap-3 border-b border-black/10 px-3 py-3 ${entry.is_you ? "bg-[#ffd500]/20" : "hover:bg-black/5"}`}>
