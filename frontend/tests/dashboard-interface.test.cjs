@@ -136,8 +136,8 @@ test("global gradient stays fixed while dashboard and profile sections stagger t
   assert.equal(pageTransition.includes("filter:"), false);
   assert.ok(pageTransition.includes("key={pathname}"));
   assert.ok(pageTransition.includes("staggerChildren: 0.05, staggerDirection: 1"));
-  assert.ok(pageTransition.includes("x: direction > 0 ? 48 : -48"));
-  assert.ok(pageTransition.includes("x: direction > 0 ? -48 : 48"));
+  assert.ok(pageTransition.includes('x: direction > 0 ? "100%" : "-100%"'));
+  assert.ok(pageTransition.includes('x: direction > 0 ? "-100%" : "100%"'));
   assert.ok(pageTransition.includes('"/dashboard": 1'));
   assert.ok(pageTransition.includes('"/compete": 2'));
   assert.ok(pageTransition.includes('"/profile": 3'));
