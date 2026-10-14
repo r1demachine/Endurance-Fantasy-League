@@ -60,7 +60,7 @@ export default function Home() {
   const season = useSeason();
   const { theme, toggle } = useTheme();
   const mechanics = [
-    { n: "01", title: "Подключи тренировки", tag: "Intervals.icu · Garmin · Wahoo", cell: "bg-[#ffd500]", icon: "🔌" },
+    { n: "01", title: "Подключи тренировки", tag: "Intervals.icu · агрегатор источников", cell: "bg-[#ffd500]", icon: "🔌" },
     { n: "02", title: "Прокачивай уровень", tag: "XP · достижения · серия тренировок", cell: "bg-[#ff4b26] text-white", icon: "⚡" },
     { n: "03", title: "Выполняй цель недели", tag: "TSS · нагрузка и восстановление", cell: "bg-[#5866f2] text-white", icon: "🏆" },
   ];
@@ -130,7 +130,7 @@ export default function Home() {
 
             <div className="flex flex-wrap gap-3">
               <Link href="/dashboard" className="inline-flex items-center gap-3 border-2 border-black px-5 py-3 text-[11px] font-bold tracking-widest uppercase hover:bg-black hover:text-white transition-colors">
-                Мой дашборд ↗
+                Мой прогресс ↗
               </Link>
               <Link href="/profile" className="inline-flex items-center gap-3 bg-[#5866f2] text-white px-5 py-3 text-[11px] font-bold tracking-widest uppercase border-2 border-black hover:bg-black transition-colors">
                 Подключить источник ⚡
