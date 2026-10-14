@@ -24,6 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ru">
       {/* ВАЖНО: body НЕ должен иметь bg-gradient, только базовый цвет или transparent */}
       <body className={`${inter.className} bg-[#171a38] text-white antialiased`}>
+        <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2]" />
         <ThemeInit />
         <Header />
         <DreamDust />

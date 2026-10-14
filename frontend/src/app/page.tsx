@@ -66,7 +66,7 @@ export default function Home() {
   ];
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] p-2 sm:p-4 md:p-6 text-[#111] relative overflow-hidden flex flex-col">
+    <main className="min-h-screen p-2 sm:p-4 md:p-6 text-[#111] relative overflow-hidden flex flex-col">
       {/* ✦ Звёзды на мечтательном фоне (Dream) */}
       <Star className="absolute w-6 h-6 text-white/80 top-[5%] left-[4%] animate-pulse" />
       <Star className="absolute w-4 h-4 text-white/70 top-[14%] right-[7%] animate-pulse" />

@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { motion } from "framer-motion";
 import { authApi, logout } from "@/lib/auth";
 import { getApiErrorMessage } from "@/components/dialog-utils";
 import { ErrorState, Skeleton } from "@/components/ui";
@@ -11,6 +12,7 @@ import { formatWeekRange } from "@/lib/format";
 import { clearUserCache, getCachedUser, refreshUser, subscribeUser } from "@/lib/apiCache";
 import ProfileSettingsModal, { type SettingsTab } from "@/components/ProfileSettingsModal";
 import SocialHub from "@/components/SocialHub";
+import { sectionItemVariants, sectionStaggerVariants } from "@/components/PageTransition";
 
 type ProfileData = {
   user?: {
@@ -144,13 +146,13 @@ function ProfileContent() {
     .slice(0, 3);
 
   return (
-    <main className="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2] px-2 pb-24 text-[#111] sm:px-4 md:px-6 md:pb-6">
+    <main className="relative flex min-h-screen flex-col overflow-hidden px-2 pb-24 text-[#111] sm:px-4 md:px-6 md:pb-6">
       <div aria-hidden="true" className="pointer-events-none absolute left-[8%] top-[12%] h-3 w-3 animate-pulse rounded-full bg-[#ffd500]" />
       <div aria-hidden="true" className="pointer-events-none absolute right-[10%] top-[26%] h-2 w-2 rounded-full bg-white/80" />
       <div aria-hidden="true" className="pointer-events-none absolute bottom-[18%] right-[15%] h-4 w-4 animate-pulse rounded-full bg-white/70" />
 
-      <div className="breathe-table relative mx-auto flex w-full max-w-[1400px] flex-1 flex-col border-2 border-t-0 border-black bg-[#f4f4f0]">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-black bg-[#171a38] px-4 py-5 text-white sm:px-6 md:px-8">
+      <motion.div variants={sectionStaggerVariants} className="breathe-table relative mx-auto flex w-full max-w-[1400px] flex-1 flex-col border-2 border-t-0 border-black bg-[#f4f4f0]">
+        <motion.header variants={sectionItemVariants} className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-black bg-[#171a38] px-4 py-5 text-white sm:px-6 md:px-8">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/65">Endurance Fantasy League</p>
             <h1 className="mt-1 font-display text-3xl uppercase leading-none sm:text-4xl">Профиль<span className="text-[#ff4b26]">.</span></h1>
@@ -165,9 +167,9 @@ function ProfileContent() {
             <span aria-hidden="true" className="text-xl leading-none">⚙️</span>
             <span className="hidden sm:inline">Настройки</span>
           </button>
-        </header>
+        </motion.header>
 
-        <section className="grid gap-0 border-b-2 border-black md:grid-cols-[minmax(0,1fr)_250px]">
+        <motion.section variants={sectionItemVariants} className="grid gap-0 border-b-2 border-black md:grid-cols-[minmax(0,1fr)_250px]">
           <div className="flex min-w-0 items-center gap-4 p-5 sm:p-7 md:p-8">
             <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden border-2 border-black bg-[#ffd500] font-display text-4xl uppercase text-[#171a38] sm:h-24 sm:w-24 sm:text-5xl">
               {user?.avatar_url ? (
@@ -203,10 +205,10 @@ function ProfileContent() {
               <span className="text-sm text-[#666]">Профиль загружается…</span>
             )}
           </div>
-        </section>
+        </motion.section>
 
         {userData?.week?.is_deload && (
-          <section className={`border-b-2 border-black px-4 py-4 sm:px-6 ${userData.week.deload_source === "manual" ? "bg-[#f3e8ff]" : "bg-[#e0f2fe]"}`}>
+          <motion.section variants={sectionItemVariants} className={`border-b-2 border-black px-4 py-4 sm:px-6 ${userData.week.deload_source === "manual" ? "bg-[#f3e8ff]" : "bg-[#e0f2fe]"}`}>
             <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Текущая неделя · Deload</p>
             <p className="mt-1 font-display text-xl uppercase">
               Разгрузочная неделя {userData.week.deload_source === "manual" ? "· установлена вручную" : "· назначена автоматически"}
@@ -215,10 +217,10 @@ function ProfileContent() {
               Нагрузка: {Math.round(Number(userData.week.actual_load) || 0)} / {Math.round(Number(userData.week.target_load) || 0)} TSS.
               {userData.week.deload_source === "manual" ? " Goal XP ограничен значением 85%." : ""}
             </p>
-          </section>
+          </motion.section>
         )}
 
-        <section className="border-b-2 border-black">
+        <motion.section variants={sectionItemVariants} className="border-b-2 border-black">
           <div className="flex flex-wrap items-end justify-between gap-3 border-b-2 border-black px-4 py-3 sm:px-6">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Athlete Stats</p>
@@ -257,9 +259,9 @@ function ProfileContent() {
               </div>
             ) : <div className="p-6 text-sm text-[#666]">Статистика пока недоступна.</div>}
           </div>
-        </section>
+        </motion.section>
 
-        <section>
+        <motion.section variants={sectionItemVariants}>
           <div className="border-b-2 border-black px-4 py-3 sm:px-6">
             <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Milestones</p>
             <h3 className="font-display text-xl uppercase sm:text-2xl">Достижения</h3>
@@ -282,16 +284,16 @@ function ProfileContent() {
               <p className="text-sm text-[#666]">Здесь появятся выполненные достижения и значимые спортивные вехи.</p>
             </div>
           )}
-        </section>
+        </motion.section>
 
-        <section className="border-t-2 border-black bg-white">
+        <motion.section variants={sectionItemVariants} className="border-t-2 border-black bg-white">
           <div className="border-b-2 border-black px-4 py-3 sm:px-6">
             <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Community</p>
             <h3 className="font-display text-xl uppercase sm:text-2xl">Друзья и клубы</h3>
           </div>
           <SocialHub />
-        </section>
-      </div>
+        </motion.section>
+      </motion.div>
 
       {settingsTab && (
         <ProfileSettingsModal
@@ -308,7 +310,7 @@ function ProfileContent() {
 
 export default function Profile() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2]" />}>
+    <Suspense fallback={<div className="min-h-screen " />}>
       <ProfileContent />
     </Suspense>
   );
