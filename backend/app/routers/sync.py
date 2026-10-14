@@ -30,6 +30,8 @@ def xp_category(event) -> str:
     """Return the weekly-summary bucket for an XPEvent; unknown events stay visible as quest XP."""
     event_type = getattr(event, "event_type", None)
     event_key = str(getattr(event, "event_key", "") or "")
+    if event_type == "activity_bonus" and event_key.startswith("bonus:daily_workout:"):
+        return "consistency"
     if event_type == "sleep_bonus":
         return "recovery"
     if event_type == "quest":
@@ -358,14 +360,6 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         new_sum = round_xp(sum(a.xp_earned or 0 for a in acts))
         user.legacy_xp_offset = round(max(0.0, old_total - new_sum), 2)
         user.xp_migrated_at = datetime.utcnow()
-    activation_ws = X6.week_start(user.xp_migrated_at.date())
-    cfg = get_settings().XP_V6_ACTIVATION_DATE
-    if cfg:
-        try:
-            activation_ws = max(activation_ws, X6.week_start(datetime.fromisoformat(cfg).date()))
-        except ValueError:
-            pass
-
     # 4) ВСЕ календарные недели, включая нулевые (справедливо после перерыва)
     this_week = X6.week_start(_user_local_today(user))
     source_days = list(day_info)
@@ -452,6 +446,32 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
                 source_type="activity", source_id=activity.id,
             )
             generated_activity_bonus_keys.add(key)
+    # One +20 XP daily bonus: the highest-TSS eligible non-manual workout wins.
+    # A 45-minute minimum matches the existing per-workout bonus eligibility.
+    for activity_day, day_acts in by_day.items():
+        eligible = [
+            activity for activity in day_acts
+            if not bool(activity.is_manual)
+            and int(activity.moving_time or 0) >= X6.DAILY_WORKOUT_BONUS_MIN_DURATION_SECONDS
+        ]
+        if not eligible:
+            continue
+        selected = min(
+            eligible,
+            key=lambda activity: (
+                -float(activity.tss or 0.0),
+                _activity_stamp(activity) or datetime.max,
+                int(activity.id or 0),
+            ),
+        )
+        key = f"bonus:daily_workout:{user.id}:{activity_day.isoformat()}"
+        upsert_event(
+            key, "activity_bonus", X6.DAILY_WORKOUT_BONUS_XP,
+            X6.week_start(activity_day), activity_day,
+            f"Дневной бонус +{int(X6.DAILY_WORKOUT_BONUS_XP)} XP",
+            source_type="activity", source_id=selected.id,
+        )
+        generated_activity_bonus_keys.add(key)
     for event in all_events:
         if event.event_type == "activity_bonus" and event.event_key not in generated_activity_bonus_keys:
             db.delete(event)
@@ -544,14 +564,13 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         recovery = round_xp(category_totals.get("recovery", 0.0))
         quest_xp = round_xp(category_totals.get("quest", 0.0))
 
-        goal_xp = 0.0
-        if ws >= activation_ws:
-            goal_xp = X6.weekly_goal_xp(eff_ratio)
-            upsert_event(
-                f"weekly_goal:{ws.isoformat()}", "weekly_goal", goal_xp, ws, ws,
-                f"Цель недели: {int(eff_ratio * 100)}%",
-                source_type="week", source_id=ws.isoformat(),
-            )
+        # Goal XP follows the load ratio for every week; paused weeks do not earn it.
+        goal_xp = 0.0 if paused else X6.weekly_goal_xp(eff_ratio)
+        upsert_event(
+            f"weekly_goal:{ws.isoformat()}", "weekly_goal", goal_xp, ws, ws,
+            f"Цель недели: {int(eff_ratio * 100)}%",
+            source_type="week", source_id=ws.isoformat(),
+        )
         effort_week = round_xp(sum(i["day_xp"] for d, i in day_info.items() if X6.week_start(d) == ws))
         total_week = round_xp(effort_week + consistency_xp + quality_xp + goal_xp + recovery + quest_xp)
 
@@ -1724,15 +1743,19 @@ def _log_deload_event(db: Session, user: User, week_start: _date, action: str, t
     ))
 
 
-def _week_activity_payload(act: Activity) -> dict:
+def _week_activity_payload(act: Activity, *, activity_award_xp: float = 0.0) -> dict:
     activity_date = act.start_date_local or act.start_date
+    effort_xp = round(float(act.xp_earned or 0.0), 2)
+    attached_awards_xp = round(float(activity_award_xp or 0.0), 2)
     return {
         "id": act.id,
         "name": act.name or "Без названия",
         "sport": act.sport_type or "WORKOUT",
         "distance_km": round((act.distance or 0) / 1000, 2),
         "moving_time_min": (act.moving_time or 0) // 60,
-        "xp": round(float(act.xp_earned or 0), 2),
+        "xp": round(effort_xp + attached_awards_xp, 2),
+        "effort_xp": effort_xp,
+        "activity_awards_xp": attached_awards_xp,
         "base_xp": act.base_xp or 0,
         "rate_per_hour": act.rate_per_hour or 0,
         "intensity_multiplier": act.intensity_multiplier or 1.0,
@@ -1832,37 +1855,6 @@ def get_activity_xp_breakdown(
     } for event in activity_events]
     activity_award_xp = round_xp(sum(item["amount"] for item in activity_awards))
 
-    # Non-activity events remain visible as general daily/weekly XP, never as this workout's XP.
-    general_day_events = [
-        event for event in week_events
-        if event.id not in activity_event_ids
-        and (event.source_id is None or event.event_type == "sleep_bonus")
-        and event.event_type not in {"quest", "achievement", "weekly_goal"}
-        and event.date is not None
-        and event.date.date() == activity_day
-        and float(event.amount or 0.0) != 0.0
-    ]
-    general_day = [{
-        "id": event.id,
-        "title": event.title or event.event_type,
-        "amount": round_xp(event.amount or 0.0),
-    } for event in general_day_events]
-    general_day_ids = {event.id for event in general_day_events}
-    general_week_events = [
-        event for event in week_events
-        if event.id not in activity_event_ids | general_day_ids
-        and (event.source_id is None or event.event_type in {"sleep_bonus", "weekly_goal"})
-        and float(event.amount or 0.0) != 0.0
-    ]
-    general_week = [{
-        "id": event.id,
-        "title": event.title or event.event_type,
-        "amount": round_xp(event.amount or 0.0),
-    } for event in general_week_events]
-    general_day_xp = round_xp(sum(item["amount"] for item in general_day))
-    general_week_xp = round_xp(sum(item["amount"] for item in general_week))
-    general_total_xp = round_xp(general_day_xp + general_week_xp)
-
     summary = (
         db.query(WeeklySummary)
         .filter(WeeklySummary.user_id == current.id, WeeklySummary.week_start == week_dt)
@@ -1906,18 +1898,9 @@ def get_activity_xp_breakdown(
                 "events": activity_awards,
                 "total_xp": activity_award_xp,
             },
-            "general": {
-                "day": general_day,
-                "day_xp": general_day_xp,
-                "week": general_week,
-                "week_xp": general_week_xp,
-                "total_xp": general_total_xp,
-            },
         },
         "totals": {
             "for_this_activity_xp": round_xp(stored_effort_xp + activity_award_xp),
-            "related_to_day_xp": general_day_xp,
-            "related_to_week_xp": general_week_xp,
             "weekly_summary_components_xp": component_sum,
             "weekly_summary_total_xp": weekly_summary["total_xp"],
             "weekly_summary_components_match": abs(component_sum - weekly_summary["total_xp"]) < 0.02,
@@ -2042,6 +2025,15 @@ def get_weekly_summary(
         .order_by(XPEvent.date.asc(), XPEvent.id.asc())
         .all()
     )
+    daily_bonus_dates = {
+        event.date.date()
+        for event in event_rows
+        if event.event_type == "activity_bonus"
+        and event.event_key.startswith("bonus:daily_workout:")
+        and event.date is not None
+        and float(event.amount or 0.0) > 0
+    }
+    week["daily_bonus_days"] = min(7, len(daily_bonus_dates))
     events = [{
         "id": event.id,
         "type": event.event_type,
@@ -2060,11 +2052,25 @@ def get_weekly_summary(
         .order_by(func.coalesce(Activity.start_date_local, Activity.start_date).desc(), Activity.id.desc())
         .all()
     )
+    activity_awards_by_id: dict[str, float] = defaultdict(float)
+    for event in event_rows:
+        if (
+            event.event_type in {"quest", "achievement", "activity_bonus"}
+            and event.source_id is not None
+        ):
+            activity_awards_by_id[str(event.source_id)] += float(event.amount or 0.0)
+    activity_payloads = [
+        _week_activity_payload(
+            activity,
+            activity_award_xp=activity_awards_by_id.get(str(activity.id), 0.0),
+        )
+        for activity in activities
+    ]
     return {
         "week": week,
         "week_options": week_options,
         "events": events,
-        "activities": [_week_activity_payload(act) for act in activities],
+        "activities": activity_payloads,
         "is_current_week": selected_start == current_start,
     }
 
