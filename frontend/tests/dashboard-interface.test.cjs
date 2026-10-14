@@ -19,6 +19,7 @@ const workoutsSection = read("src/components/dashboard/DashboardWorkoutsSection.
 const workoutsList = read("src/components/dashboard/WorkoutsList.tsx");
 const activityUpload = read("src/components/ActivityUpload.tsx");
 const settingsModal = read("src/components/ProfileSettingsModal.tsx");
+const modalComponent = read("src/components/Modal.tsx");
 const helpTip = read("src/components/ui/HelpTip.tsx");
 const weeklyLeague = read("src/components/compete/WeeklyLeaguePanel.tsx");
 const ratingPanel = read("src/components/compete/RatingPanel.tsx");
@@ -151,6 +152,8 @@ test("global gradient stays fixed while dashboard and profile sections stagger t
   assert.ok(globalCss.includes("scroll-behavior: smooth"));
   assert.ok(globalCss.includes("@media (prefers-reduced-motion: reduce)"));
   assert.ok(globalCss.includes("overflow-x: hidden"));
+  assert.ok(modalComponent.includes("overflow-y-auto scroll-smooth"));
+  assert.ok(settingsModal.includes("overflow-y-auto scroll-smooth"));
   assert.equal(globalCss.includes("scroll-snap-"), false);
 
   for (const routeFile of [
