@@ -6,6 +6,7 @@ const path = require("node:path");
 const read = (relative) => fs.readFileSync(path.join(__dirname, "..", relative), "utf8");
 const activity = read("src/components/ActivityCard.tsx");
 const tooltip = read("src/components/XpTooltip.tsx");
+const floatingTooltip = read("src/components/ui/FloatingTooltip.tsx");
 const rating = read("src/components/compete/RatingPanel.tsx");
 const weekly = read("src/components/compete/WeeklyLeaguePanel.tsx");
 const compete = read("src/app/compete/page.tsx");
@@ -32,6 +33,7 @@ test("activity XP breakdown loads lazily, caches success, and supports retry", (
 test("XP tooltip supports accessible explanatory text as well as chart mode", () => {
   assert.match(tooltip, /content\?: ReactNode/);
   assert.match(tooltip, /<FloatingTooltip/);
+  assert.match(floatingTooltip, /role="tooltip"/);
   assert.match(activity, /<XpTooltip label=/);
 });
 
