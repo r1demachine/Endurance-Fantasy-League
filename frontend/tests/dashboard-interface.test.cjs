@@ -193,7 +193,8 @@ test("XP explanations use viewport portals and achievement descriptions stay hid
 test("the obsolete per-workout +12 XP bonus is no longer generated or displayed", () => {
   assert.ok(!syncRouter.includes('key = `activity_bonus:45m:'));
   assert.ok(!syncRouter.includes("Тренировка ≥45 минут +"));
-  assert.ok(!/^\\s*WORKOUT_BONUS_XP\\s*=+/m.test(xpV6));
+  assert.ok(!xpV6.includes("\nWORKOUT_BONUS_XP ="));
+  assert.ok(!xpV6.includes("\nWORKOUT_BONUS_MIN_DURATION_SECONDS ="));
   assert.ok(syncRouter.includes("_is_retired_activity_duration_bonus"));
   assert.ok(activityCard.includes("activityEvents = (activityAwards?.events ?? []).filter"));
 });
