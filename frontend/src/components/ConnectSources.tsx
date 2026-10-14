@@ -177,6 +177,7 @@ export default function ConnectSources({
           {/* ── Строка источника ── */}
           <button
             type="button"
+            data-tour={s.id === "intervals" ? "profile-intervals-source" : undefined}
             onClick={() => toggleRow(s)}
             className="w-full grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-3 text-left hover:bg-black/5 transition-colors"
           >

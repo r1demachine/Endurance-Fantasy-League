@@ -5,6 +5,7 @@ import PageTransition from "@/components/PageTransition";
 import DataWarmup from "@/components/DataWarmup";
 import DreamDust from "@/components/DreamDust";
 import ThemeInit from "@/components/ThemeInit";
+import GuidedTour from "@/components/GuidedTour";
 import "./globals.css";
 
 const inter = Inter({
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <DreamDust />
         <DataWarmup />
         <PageTransition>{children}</PageTransition>
+        <GuidedTour />
       </body>
     </html>
   );

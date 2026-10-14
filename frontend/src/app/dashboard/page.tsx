@@ -315,7 +315,7 @@ export default function Dashboard() {
         {dashboardError && <motion.div variants={sectionItemVariants} custom={transitionDirection}><ErrorState message={dashboardError} onRetry={() => window.location.reload()} /></motion.div>}
 
         <motion.section variants={sectionItemVariants} custom={transitionDirection} className="grid border-b-2 border-black md:grid-cols-3">
-          <div className="md:border-r-2 md:border-black">
+          <div data-tour="dashboard-level" className="md:border-r-2 md:border-black">
             <SectionTitle>Уровень</SectionTitle>
             <div className="p-5 md:p-6">
               <p className="font-display text-5xl md:text-7xl">{data.user.level}</p>
@@ -325,7 +325,7 @@ export default function Dashboard() {
               <Label className="mt-3 text-[#666]">{isEmpty ? "100 XP до следующего" : `${Math.round(Number(data.user.xp_to_next_level) || 0)} XP до следующего уровня`}</Label>
             </div>
           </div>
-          <div className="border-t-2 border-black md:border-r-2 md:border-t-0">
+          <div data-tour="dashboard-streak" className="border-t-2 border-black md:border-r-2 md:border-t-0">
             <SectionTitle tone="yellow">Стрик</SectionTitle>
             <div className="p-5 md:p-6">
               <p className="font-display text-5xl text-[#ff4b26] md:text-7xl">{stats.day_streak}</p>
@@ -333,7 +333,7 @@ export default function Dashboard() {
               <div className="mt-4 border-t border-black/20 pt-3"><Label className="text-[#666]">{stats.week_streak} недель подряд</Label></div>
             </div>
           </div>
-          <div className="border-t-2 border-black md:border-t-0">
+          <div data-tour="dashboard-week-goal" className="border-t-2 border-black md:border-t-0">
             <SectionTitle>Цель на Неделю</SectionTitle>
             <div className="p-5 md:p-6">
               <p className="font-display text-5xl md:text-7xl">{stats.week_hours}<span className="text-xl text-[#666] md:text-2xl"> / {stats.week_goal_hours}h</span></p>
@@ -347,14 +347,14 @@ export default function Dashboard() {
 
         {isAuthed && !isEmpty && (
           <>
-            <motion.div variants={sectionItemVariants} custom={transitionDirection}>
+            <motion.div data-tour="dashboard-year-chart" variants={sectionItemVariants} custom={transitionDirection}>
             <YearWeeksChart
               selectedWeekStart={selectedWeekStart || weekData?.week_start || ""}
               onWeekChange={setSelectedWeekStart}
             />
             </motion.div>
 
-            <motion.div variants={sectionItemVariants} custom={transitionDirection}>
+            <motion.div data-tour="dashboard-week-summary" variants={sectionItemVariants} custom={transitionDirection}>
             {weekLoading ? (
               <section className="border-b-2 border-black bg-white p-5 md:p-6"><Skeleton label="Загружаем недельную сводку" rows={4} /></section>
             ) : (
@@ -375,7 +375,7 @@ export default function Dashboard() {
             )}
             </motion.div>
 
-            <motion.div variants={sectionItemVariants} custom={transitionDirection}>
+            <motion.div data-tour="dashboard-achievements" variants={sectionItemVariants} custom={transitionDirection}>
             <QuestsBoard
               quests={quests}
               loading={questsLoading}
@@ -384,7 +384,7 @@ export default function Dashboard() {
               onRetry={() => void loadQuests()}
             />
             </motion.div>
-            <motion.div variants={sectionItemVariants} custom={transitionDirection}>
+            <motion.div data-tour="dashboard-workouts" variants={sectionItemVariants} custom={transitionDirection}>
             <DashboardWorkoutsSection
               weekLoading={weekLoading}
               weekActivities={weekActivities}

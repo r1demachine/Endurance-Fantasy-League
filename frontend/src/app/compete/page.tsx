@@ -65,10 +65,10 @@ function CompeteContent() {
 
         {(visitedTabs.rating || activeTab === "rating") && (
           <motion.div hidden={activeTab !== "rating"} variants={sectionStaggerVariants} className="space-y-4 p-4 md:p-6">
-            <motion.div variants={sectionItemVariants} custom={transitionDirection}>
+            <motion.div data-tour="compete-weekly-league" variants={sectionItemVariants} custom={transitionDirection}>
               <WeeklyLeaguePanel />
             </motion.div>
-            <motion.div variants={sectionItemVariants} custom={transitionDirection}>
+            <motion.div data-tour="compete-overall-rating" variants={sectionItemVariants} custom={transitionDirection}>
               <RatingPanel />
             </motion.div>
           </motion.div>

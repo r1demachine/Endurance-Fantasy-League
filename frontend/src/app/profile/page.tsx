@@ -153,7 +153,7 @@ function ProfileContent() {
       <div aria-hidden="true" className="pointer-events-none absolute bottom-[18%] right-[15%] h-4 w-4 animate-pulse rounded-full bg-white/70" />
 
       <motion.div variants={sectionStaggerVariants} className="breathe-table relative mx-auto flex w-full max-w-[1400px] flex-1 flex-col border-2 border-t-0 border-black bg-[#f4f4f0]">
-        <motion.header variants={sectionItemVariants} custom={transitionDirection} className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-black bg-[#171a38] px-4 py-5 text-white sm:px-6 md:px-8">
+        <motion.header data-tour="profile-header" variants={sectionItemVariants} custom={transitionDirection} className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-black bg-[#171a38] px-4 py-5 text-white sm:px-6 md:px-8">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/65">Endurance Fantasy League</p>
             <h1 className="mt-1 font-display text-3xl uppercase leading-none sm:text-4xl">Профиль<span className="text-[#ff4b26]">.</span></h1>

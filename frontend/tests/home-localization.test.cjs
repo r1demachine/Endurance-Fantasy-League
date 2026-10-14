@@ -12,7 +12,7 @@ test("home page copy is Russian, fantasy-themed, and reflects current mechanics"
     "Endurance Fantasy League",
     "Тренируйся",
     "Прокачивай уровень",
-    "Выполняй цель недели",
+    "Выполни цель",
     "XP",
     "TSS",
     "Начать путь",
@@ -43,7 +43,7 @@ test("home page copy is Russian, fantasy-themed, and reflects current mechanics"
 
 test("weekly league localizes the leaderboard label and division names without renaming Weekly League", () => {
   assert.ok(weeklyLeague.includes("Таблица лидеров недели"));
-  assert.ok(weeklyLeague.includes(">Weekly League</h2>"));
+  assert.ok(weeklyLeague.includes(">Лига недели</h2>"));
   assert.ok(weeklyLeague.includes("function divisionLabel"));
   assert.ok(weeklyLeague.includes("Foundation: \"Основа\""));
   assert.ok(weeklyLeague.includes("Legend: \"Легенда\""));

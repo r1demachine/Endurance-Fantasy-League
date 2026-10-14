@@ -39,7 +39,7 @@ test("XP tooltip supports accessible explanatory text as well as chart mode", ()
 
 test("weekly league is its own container before the Global/Friends rating", () => {
   assert.match(compete, /<WeeklyLeaguePanel\s*\/>[\s\S]*?<RatingPanel\s*\/>/);
-  assert.match(rating, /label: "Global"/);
+  assert.match(rating, /label: "Общий"/);
   assert.match(rating, /label: "Друзья"/);
   assert.doesNotMatch(rating, /label: "Weekly"|scope === "weekly"|entry\.division|entry\.score/);
   assert.match(rating, /params: \{ scope: requestedScope, limit: 10 \}/);
