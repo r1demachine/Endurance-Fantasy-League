@@ -358,14 +358,6 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         new_sum = round_xp(sum(a.xp_earned or 0 for a in acts))
         user.legacy_xp_offset = round(max(0.0, old_total - new_sum), 2)
         user.xp_migrated_at = datetime.utcnow()
-    activation_ws = X6.week_start(user.xp_migrated_at.date())
-    cfg = get_settings().XP_V6_ACTIVATION_DATE
-    if cfg:
-        try:
-            activation_ws = max(activation_ws, X6.week_start(datetime.fromisoformat(cfg).date()))
-        except ValueError:
-            pass
-
     # 4) ВСЕ календарные недели, включая нулевые (справедливо после перерыва)
     this_week = X6.week_start(_user_local_today(user))
     source_days = list(day_info)
@@ -544,14 +536,13 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         recovery = round_xp(category_totals.get("recovery", 0.0))
         quest_xp = round_xp(category_totals.get("quest", 0.0))
 
-        goal_xp = 0.0
-        if ws >= activation_ws:
-            goal_xp = X6.weekly_goal_xp(eff_ratio)
-            upsert_event(
-                f"weekly_goal:{ws.isoformat()}", "weekly_goal", goal_xp, ws, ws,
-                f"Цель недели: {int(eff_ratio * 100)}%",
-                source_type="week", source_id=ws.isoformat(),
-            )
+        # Goal XP follows the load ratio for every week; paused weeks do not earn it.
+        goal_xp = 0.0 if paused else X6.weekly_goal_xp(eff_ratio)
+        upsert_event(
+            f"weekly_goal:{ws.isoformat()}", "weekly_goal", goal_xp, ws, ws,
+            f"Цель недели: {int(eff_ratio * 100)}%",
+            source_type="week", source_id=ws.isoformat(),
+        )
         effort_week = round_xp(sum(i["day_xp"] for d, i in day_info.items() if X6.week_start(d) == ws))
         total_week = round_xp(effort_week + consistency_xp + quality_xp + goal_xp + recovery + quest_xp)
 

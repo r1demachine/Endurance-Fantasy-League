@@ -491,7 +491,8 @@ class InterfaceDataApiTests(unittest.TestCase):
 
     def test_weekly_summary_recalculation_persists_repeatable_bonuses_idempotently(self):
         week_start = date(2026, 10, 12)
-        self.user.xp_migrated_at = datetime(2026, 10, 12)
+        # Historical weeks must still recalculate Goal XP after migration activation.
+        self.user.xp_migrated_at = datetime(2026, 10, 19)
         activity_ids = []
         for index, day in enumerate((
             date(2026, 10, 12), date(2026, 10, 13), date(2026, 10, 14),
@@ -577,6 +578,9 @@ class InterfaceDataApiTests(unittest.TestCase):
                 WeeklySummary.user_id == self.user.id,
                 WeeklySummary.week_start == datetime.combine(week_start, datetime.min.time()),
             ).one()
+            self.assertGreaterEqual(summary.completion_ratio, 1.15)
+            self.assertEqual(summary.goal_xp, X6.weekly_goal_xp(summary.completion_ratio))
+            self.assertEqual(summary.goal_xp, 120.0)
             event_rows = self.db.query(XPEvent).filter(
                 XPEvent.user_id == self.user.id,
                 XPEvent.week_start == datetime.combine(week_start, datetime.min.time()),
