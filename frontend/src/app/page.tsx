@@ -60,9 +60,9 @@ export default function Home() {
   const season = useSeason();
   const { theme, toggle } = useTheme();
   const mechanics = [
-    { n: "01", title: "Подключи тренировки", tag: "Intervals.icu · агрегатор источников", cell: "bg-[#ffd500]", icon: "🔌" },
+    { n: "01", title: "Подключи", tag: "Intervals.icu · агрегатор источников", cell: "bg-[#ffd500]", icon: "🔌" },
     { n: "02", title: "Прокачивай уровень", tag: "XP · достижения · серия тренировок", cell: "bg-[#ff4b26] text-white", icon: "⚡" },
-    { n: "03", title: "Выполняй цель недели", tag: "TSS · нагрузка и восстановление", cell: "bg-[#5866f2] text-white", icon: "🏆" },
+    { n: "03", title: "Выполни цель", tag: "TSS · нагрузка и восстановление", cell: "bg-[#5866f2] text-white", icon: "🏆" },
   ];
 
   return (
@@ -109,7 +109,7 @@ export default function Home() {
         <div className="relative grid md:grid-cols-2 border-b-2 border-black flex-1">
 
           {/* Сонные стикеры вылезают за строгую рамку (гибрид) */}
-          <Sticker className="-top-3 left-4 md:left-8 bg-[#f6b8d0] text-black rotate-[-4deg]">КАЧАЙ УРОВЕНЬ</Sticker>
+          <Sticker className="-top-3 left-4 md:left-8 bg-[#f6b8d0] text-black rotate-[-4deg]">поднимай уровень</Sticker>
           <Sticker className="bottom-6 right-4 md:right-8 bg-[#5866f2] text-white rotate-[3deg] z-30">Сон тоже в игре!</Sticker>
 
           {/* Левая колонка */}
@@ -120,7 +120,7 @@ export default function Home() {
               transition={{ duration: 0.6 }}
               className="font-display uppercase leading-[0.9] text-5xl sm:text-6xl lg:text-7xl"
             >
-              Тренируйся <span className="text-[#5866f2]">умнее</span><br />отдыхай<br />прокачивайся<span className="text-[#ff4b26]">.</span>
+              Тренируйся <span className="text-[#5866f2]">больше,</span><br />отдыхай<br />умнее<span className="text-[#ff4b26]">.</span>
             </motion.h1>
 
             <div className="flex items-center gap-3 text-[11px] font-bold tracking-widest uppercase">
