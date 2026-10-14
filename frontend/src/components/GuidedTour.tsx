@@ -155,10 +155,16 @@ export default function GuidedTour() {
   const targetRef = useRef<HTMLElement | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const autoRedirectStarted = useRef(false);
+  const autoTourHandled = useRef(false);
+  const autoStartPending = useRef(false);
   const step = TOUR_STEPS[stepIndex];
 
   const startTour = useCallback(() => {
-    markTourSeen();
+    if (isAuthenticated()) {
+      markTourSeen();
+      autoTourHandled.current = true;
+      autoStartPending.current = false;
+    }
     setStepIndex(0);
     setHighlight(null);
     setActive(true);
@@ -179,9 +185,27 @@ export default function GuidedTour() {
 
   // Start onboarding once per account. New users are taken to the home page first.
   useEffect(() => {
-    if (!mounted || active || !isAuthenticated() || hasSeenTour()) return;
+    if (!mounted || active || !isAuthenticated()) return;
+
+    if (hasSeenTour()) {
+      autoTourHandled.current = true;
+      autoStartPending.current = false;
+      return;
+    }
+
+    if (autoTourHandled.current) {
+      if (autoStartPending.current && pathname === "/") {
+        autoStartPending.current = false;
+        markTourSeen();
+        setStepIndex(0);
+        setHighlight(null);
+        setActive(true);
+      }
+      return;
+    }
 
     if (pathname === "/") {
+      autoTourHandled.current = true;
       markTourSeen();
       setStepIndex(0);
       setHighlight(null);
@@ -192,6 +216,8 @@ export default function GuidedTour() {
 
     if (pathname !== "/login" && !autoRedirectStarted.current) {
       autoRedirectStarted.current = true;
+      autoTourHandled.current = true;
+      autoStartPending.current = true;
       router.replace("/", { scroll: false });
     }
   }, [active, mounted, pathname, router]);
