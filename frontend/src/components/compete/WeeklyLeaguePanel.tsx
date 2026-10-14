@@ -42,7 +42,7 @@ function divisionLabel(value: string | null | undefined): string {
 
 function divisionSourceLabel(value: string): string {
   const normalized = value.trim().toLowerCase();
-  if (normalized === "ctl" || normalized === "training_load") return normalized === "ctl" ? "по CTL" : "по CTL";
+  if (normalized === "ctl" || normalized === "training_load") return "по CTL";
   if (normalized === "load" || normalized === "weekly_load" || normalized === "tss") return "по недельному TSS";
   if (normalized === "provisional") return "предварительный";
   return value;
