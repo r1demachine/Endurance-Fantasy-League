@@ -184,6 +184,22 @@ class InterfaceDataApiTests(unittest.TestCase):
         self.assertEqual(payload["activities"], [])
         self.assertEqual(payload["events"], [])
 
+    def test_xp_category_maps_weekly_achievement_slugs_and_defaults_unknown_events_to_quest(self):
+        cases = [
+            (SimpleNamespace(event_type="quest", event_key="quest:qualifying_days_5:2026-10-12"), "consistency"),
+            (SimpleNamespace(event_type="quest", event_key="quest:high_intensity:2026-10-12"), "quality"),
+            (SimpleNamespace(event_type="quest", event_key="quest:long_workout_2h:2026-10-12"), "quality"),
+            (SimpleNamespace(event_type="quest", event_key="quest:long_workout_3h:2026-10-12"), "quality"),
+            (SimpleNamespace(event_type="quest", event_key="quest:good_sleep_5:2026-10-12"), "recovery"),
+            (SimpleNamespace(event_type="sleep_bonus", event_key="sleep_bonus:good_night:2026-10-13"), "recovery"),
+            (SimpleNamespace(event_type="quest", event_key="quest:trainer_week:2026-10-12"), "quest"),
+            (SimpleNamespace(event_type="achievement", event_key="achievement:historic:1"), "quest"),
+            (SimpleNamespace(event_type="unknown", event_key="unmapped:thing"), "quest"),
+        ]
+        for event, expected in cases:
+            with self.subTest(event_type=event.event_type, event_key=event.event_key):
+                self.assertEqual(sync_router.xp_category(event), expected)
+
     def test_activity_xp_breakdown_caps_daily_tss_scopes_bonuses_and_matches_summary(self):
         manual = self.add_activity(
             "manual-xp", stamp=datetime(2026, 10, 13, 8, 0), tss=150,
@@ -198,30 +214,37 @@ class InterfaceDataApiTests(unittest.TestCase):
         shares = X6.allocate_daily_effort_xp([{"tss": 150}, {"tss": 200}], daily_xp)
         manual.xp_earned = shares[0]
         hard.xp_earned = shares[1]
-        total = X6.round_xp(daily_xp + 30 + 30 + 20 + 5 + 25)
+        # Weekly tiles are categorized slices of the actual weekly total.
+        total = X6.round_xp(daily_xp + 50 + 25 + 20 + 41 + 37)
         self.add_summary(
-            date(2026, 10, 12), effort=daily_xp, consistency=30, quality=30,
-            goal=20, recovery=5, quest=25, total=total, training_days=1,
+            date(2026, 10, 12), effort=daily_xp, consistency=50, quality=25,
+            goal=20, recovery=41, quest=37, total=total, training_days=1,
         )
         self.add_event(
-            "consistency:2026-10-13", "consistency", 30,
-            day=date(2026, 10, 13), scope="day", source_id="2026-10-13", title="Training day +30",
+            "quest:qualifying_days_5:2026-10-12", "quest", 50,
+            day=date(2026, 10, 13), title="🏆 5 дней с тренировками",
         )
         self.add_event(
-            "quality_hard:2026-10-12", "quality_hard", 15,
-            day=date(2026, 10, 13), source_id=hard.id, title="High intensity +15",
+            "quest:good_sleep_5:2026-10-12", "quest", 35,
+            day=date(2026, 10, 13), title="🏆 5 ночей хорошего сна",
         )
         self.add_event(
-            "quality_long:2026-10-12", "quality_long", 15,
-            day=date(2026, 10, 13), source_id=hard.id, title="Long workout +15",
+            "quest:long_workout_2h:2026-10-12", "quest", 25,
+            day=date(2026, 10, 13), source_id=hard.id, title="🏆 Длинная тренировка",
+        )
+        self.add_event(
+            f"activity_bonus:45m:{hard.id}", "activity_bonus", 12,
+            day=date(2026, 10, 13), scope="activity", source_id=hard.id,
+            title="Тренировка ≥45 минут +12 XP",
+        )
+        self.add_event(
+            "sleep_bonus:good_night:2026-10-13", "sleep_bonus", 6,
+            day=date(2026, 10, 13), scope="wellness", source_id="2026-10-13",
+            title="Хороший сон +6 XP",
         )
         self.add_event(
             "weekly_goal:2026-10-12", "weekly_goal", 20,
-            day=date(2026, 10, 12), source_id="2026-10-12",
-        )
-        self.add_event(
-            "recovery:2026-10-12", "recovery", 5,
-            day=date(2026, 10, 12), source_id="2026-10-12",
+            day=date(2026, 10, 12), source_id="2026-10-12", title="Цель недели: 100%",
         )
         self.add_event(
             "quest:first-three-day-week", "quest", 25,
@@ -242,15 +265,21 @@ class InterfaceDataApiTests(unittest.TestCase):
         self.assertEqual(manual_payload["effort"]["effective_day_tss"], 300)
         self.assertEqual(manual_payload["effort"]["manual_coefficient"], 0.5)
         self.assertEqual(manual_payload["effort"]["tss_before_manual_coefficient"], 300)
-        self.assertEqual(manual_payload["related"]["day"]["scope"], "day")
-        self.assertEqual(manual_payload["related"]["day"]["quest_xp"], 25)
-        self.assertEqual(len(manual_payload["related"]["day"]["quests"]), 1)
-        self.assertEqual(len(manual_payload["related"]["week"]["quality"]), 0)
-        self.assertEqual(len(hard_payload["related"]["week"]["quality"]), 2)
+        self.assertEqual(manual_payload["related"]["activity"]["events"], [])
+        self.assertEqual(manual_payload["totals"]["for_this_activity_xp"], shares[0])
+        self.assertEqual(hard_payload["related"]["activity"]["total_xp"], 37)
+        hard_awards = {item["title"]: item["amount"] for item in hard_payload["related"]["activity"]["events"]}
+        self.assertEqual(hard_awards["Тренировка ≥45 минут +12 XP"], 12)
+        self.assertEqual(hard_awards["🏆 Длинная тренировка"], 25)
+        self.assertEqual(hard_payload["totals"]["for_this_activity_xp"], shares[1] + 37)
+        self.assertGreater(hard_payload["related"]["general"]["day_xp"], 0)
+        general_week_titles = {item["title"] for item in hard_payload["related"]["general"]["week"]}
+        self.assertIn("🏆 5 дней с тренировками", general_week_titles)
+        self.assertIn("🏆 5 ночей хорошего сна", general_week_titles)
+        self.assertIn("Цель недели: 100%", general_week_titles)
         self.assertTrue(manual_payload["totals"]["weekly_summary_components_match"])
         self.assertEqual(manual_payload["totals"]["weekly_summary_components_xp"], total)
         self.assertEqual(manual_payload["totals"]["weekly_summary_total_xp"], total)
-        self.assertEqual(manual_payload["totals"]["for_this_activity_xp"], shares[0])
 
     def test_activity_xp_breakdown_is_private_to_owner(self):
         activity = self.add_activity("private-xp")
@@ -493,6 +522,11 @@ class InterfaceDataApiTests(unittest.TestCase):
         )
         for day, secs, score in good_sleep_days:
             self.add_sleep(day, secs=secs, score=score)
+        # Existing duplicate event types must be removed by recalculation.
+        self.add_event("consistency:2026-10-12", "consistency", 30, day=date(2026, 10, 12))
+        self.add_event("quality_hard:2026-10-12", "quality_hard", 15, day=date(2026, 10, 12))
+        self.add_event("quality_long:2026-10-12", "quality_long", 15, day=date(2026, 10, 12))
+        self.add_event("recovery:2026-10-12", "recovery", 5, day=date(2026, 10, 12))
         # Current week also has enough load for live goal XP and good sleep data.
         current_activity_1 = self.add_activity(
             "current-week-workout-1", stamp=datetime(2026, 10, 20, 9, 0),
@@ -504,6 +538,12 @@ class InterfaceDataApiTests(unittest.TestCase):
         )
         self.add_sleep(date(2026, 10, 20), secs=7 * 3600, score=90)
         self.db.commit()
+        legacy_events_before = self.db.query(XPEvent).filter(
+            XPEvent.user_id == self.user.id,
+            XPEvent.event_type.in_(("consistency", "quality_hard", "quality_long", "recovery")),
+        ).all()
+        legacy_xp_removed_in_fixture = sum(float(event.amount or 0.0) for event in legacy_events_before)
+        self.assertEqual(legacy_xp_removed_in_fixture, 65.0)
 
         class EmptyDuelQuery:
             def filter(self, *args):
@@ -551,6 +591,13 @@ class InterfaceDataApiTests(unittest.TestCase):
             self.assertNotIn(str(short.id), {event.source_id for event in workout_bonus_events})
             self.assertTrue(all(event.amount == X6.WORKOUT_BONUS_XP for event in workout_bonus_events))
             self.assertTrue(all(event.amount == X6.GOOD_SLEEP_BONUS_XP for event in sleep_bonus_events))
+            self.assertEqual(
+                self.db.query(XPEvent).filter(
+                    XPEvent.user_id == self.user.id,
+                    XPEvent.event_type.in_(("consistency", "quality_hard", "quality_long", "recovery")),
+                ).count(),
+                0,
+            )
 
             payload = sync_router.get_weekly_summary(
                 week_start=week_start, current=self.user, db=self.db,
@@ -566,7 +613,23 @@ class InterfaceDataApiTests(unittest.TestCase):
             )
             self.assertAlmostEqual(week["total_xp"], components, places=1)
             self.assertEqual(week["quest_xp"], round(summary.quest_xp, 1))
-            self.assertGreaterEqual(week["quest_xp"], 5 * X6.WORKOUT_BONUS_XP + 5 * X6.GOOD_SLEEP_BONUS_XP)
+            self.assertGreaterEqual(week["quest_xp"], 5 * X6.WORKOUT_BONUS_XP)
+            self.assertAlmostEqual(
+                week["total_xp"],
+                sum(week[field] for field in (
+                    "effort_xp", "goal_xp", "consistency_xp",
+                    "quality_xp", "recovery_xp", "quest_xp",
+                )),
+                places=1,
+            )
+            all_events_now = self.db.query(XPEvent).filter(XPEvent.user_id == self.user.id).all()
+            self.assertAlmostEqual(
+                self.user.total_xp,
+                float(self.user.legacy_xp_offset or 0.0)
+                + sum(float(activity.xp_earned or 0.0) for activity in self.db.query(Activity).filter(Activity.user_id == self.user.id).all())
+                + sum(float(event.amount or 0.0) for event in all_events_now),
+                places=1,
+            )
 
             before = sorted((event.event_key, event.amount) for event in event_rows)
             sync_router._recalculate_user_xp_v6(self.db, self.user)
