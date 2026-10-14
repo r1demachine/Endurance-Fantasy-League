@@ -74,6 +74,7 @@ test("manual uploads and sync refresh current activities and achievements", () =
   assert.match(dashboard, /await refreshDashboardAfterDataChange\(\)/);
   assert.match(weekBlock, /Квесты и бонусы/);
   assert.match(weekBlock, /«Нагрузка» — XP за нагрузку тренировок/);
+  assert.match(weekBlock, /дневные бонусы \+20 XP/);
   assert.match(weekBlock, /максимум до 120%/);
   assert.match(dashboard, /<ActivityUpload onUploaded=\{refreshDashboardAfterDataChange\} \/>/);
   assert.match(dashboard, /setQuests\(\[\]\)/);
@@ -91,9 +92,8 @@ test("all visible week selectors use the shared Russian week formatter", () => {
 test("activity XP card separates attached achievements from general bonuses", () => {
   assert.match(activityCard, /Достижения за эту тренировку/);
   assert.match(activityCard, /activityAwards\?\.total_xp/);
-  assert.match(activityCard, /Общие бонусы дня/);
-  assert.match(activityCard, /Общие бонусы недели/);
-  assert.match(activityCard, /Общие бонусы дня и недели показаны отдельно и не входят в итог XP этой тренировки/);
-  assert.doesNotMatch(activityCard, /Регулярность \(за день\)|Quality \(за неделю\)|Квесты дня/);
   assert.match(activityCard, /for_this_activity_xp/);
+  assert.doesNotMatch(activityCard, /Общие бонусы дня|Общие бонусы недели|Регулярность \(за день\)|Quality \(за неделю\)|Квесты дня/);
+  assert.match(questsBoard, /dailyBonusDays/);
+  assert.match(questsBoard, /Дневные бонусы за выбранную неделю/);
 });

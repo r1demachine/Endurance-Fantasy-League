@@ -31,11 +31,13 @@ type Props = {
   quests: Quest[];
   loading: boolean;
   error: string;
+  dailyBonusDays: number;
   onRetry: () => void;
 };
 
-export default function QuestsBoard({ quests, loading, error, onRetry }: Props) {
+export default function QuestsBoard({ quests, loading, error, dailyBonusDays, onRetry }: Props) {
   const [showAll, setShowAll] = useState(true);
+  const dailyBonusCount = Math.min(7, Math.max(0, Number(dailyBonusDays) || 0));
   const weeklyQuests = quests.filter((quest) => quest.kind === "weekly");
   const lifetimeQuests = quests.filter((quest) => quest.kind !== "weekly");
   const visibleLifetimeQuests = showAll ? lifetimeQuests : lifetimeQuests.slice(0, 4);
@@ -116,6 +118,23 @@ export default function QuestsBoard({ quests, loading, error, onRetry }: Props) 
   return (
     <section className="border-b-2 border-black bg-white p-4 md:p-6" aria-labelledby="achievements-heading">
       <h3 id="achievements-heading" className="mb-4 font-display text-xl uppercase md:text-2xl">Достижения</h3>
+      <div className="mb-4 border-2 border-black/10 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Дневные бонусы за выбранную неделю</p>
+          <p className="shrink-0 font-display text-lg">{dailyBonusCount} / 7</p>
+        </div>
+        <div
+          className="mt-2 h-2 overflow-hidden border border-black/20 bg-black/10"
+          role="progressbar"
+          aria-label="Дневные бонусы"
+          aria-valuemin={0}
+          aria-valuemax={7}
+          aria-valuenow={dailyBonusCount}
+        >
+          <div className="h-full bg-[#16a34a] transition-all" style={{ width: `${(dailyBonusCount / 7) * 100}%` }} />
+        </div>
+        <p className="mt-1 text-[10px] text-[#666]">Один бонус +20 XP в день для одной не ручной тренировки от 45 минут.</p>
+      </div>
       {loading && quests.length === 0 ? (
         <Skeleton label="Загружаем достижения" rows={3} />
       ) : error && quests.length === 0 ? (

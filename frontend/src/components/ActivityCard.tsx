@@ -9,7 +9,7 @@ import { ErrorState, Skeleton } from "@/components/ui";
 
 interface Act {
   id: number; name: string; sport: string; date: string; distance_km: number;
-  moving_time_min: number; xp: number; base_xp: number | null;
+  moving_time_min: number; xp: number; effort_xp?: number; activity_awards_xp?: number; base_xp: number | null;
   rate_per_hour: number; intensity_multiplier: number; intensity_category: string;
   intensity_reason: string; sleep_multiplier: number; sleep_hours: number | null;
   streak_multiplier: number; streak_reason: string; tss_estimated?: boolean; is_long?: boolean;
@@ -19,9 +19,8 @@ type Breakdown = {
   effort?: { tss?: number; day_tss?: number; effective_day_tss?: number; daily_tss_cap?: number; cap_applied?: boolean; day_total_effort_xp?: number; calculated_activity_xp?: number; xp?: number; manual_coefficient?: number };
   related?: {
     activity?: { events?: AwardItem[]; total_xp?: number };
-    general?: { day?: AwardItem[]; day_xp?: number; week?: AwardItem[]; week_xp?: number; total_xp?: number };
   };
-  totals?: { for_this_activity_xp?: number; related_to_day_xp?: number; related_to_week_xp?: number };
+  totals?: { for_this_activity_xp?: number };
 };
 const CAT_COLOR: Record<string, string> = {
   LOW: "text-[#16a34a]", MEDIUM: "text-[#5866f2]", HIGH: "text-[#ff4b26]", UNKNOWN: "text-[#999]",
@@ -72,7 +71,6 @@ export default function ActivityCard({ act }: { act: Act }) {
   const effort = breakdown?.effort;
   const activityAwards = breakdown?.related?.activity;
   const activityEvents = activityAwards?.events ?? [];
-  const general = breakdown?.related?.general;
 
   return (
     <div className="border-b-2 border-black last:border-b-0">
@@ -92,7 +90,7 @@ export default function ActivityCard({ act }: { act: Act }) {
             {loading && !breakdown && <Skeleton label="Загружаем разбор XP" rows={4} />}
             {error && <ErrorState message={error} onRetry={() => void loadBreakdown()} />}
             {breakdown && <>
-              <Row label="За нагрузку этой тренировки" value={xp(effort?.xp ?? act.xp)} tip="XP за нагрузку, отнесённые к этой тренировке. Если за день было несколько тренировок, дневная сумма распределяется между ними пропорционально нагрузке." sub={`TSS этой тренировки: ${Number(effort?.tss ?? 0).toFixed(1)} · расчётная доля: ${num(effort?.calculated_activity_xp)} XP`} accent="text-[#ff4b26]" />
+              <Row label="За нагрузку этой тренировки" value={xp(effort?.xp ?? act.effort_xp ?? 0)} tip="XP за нагрузку, отнесённые к этой тренировке. Если за день было несколько тренировок, дневная сумма распределяется между ними пропорционально нагрузке." sub={`TSS этой тренировки: ${Number(effort?.tss ?? 0).toFixed(1)} · расчётная доля: ${num(effort?.calculated_activity_xp)} XP`} accent="text-[#ff4b26]" />
               <div className="border-b border-black/10 py-2">
                 <div className="flex items-center gap-1.5">
                   <p className="text-[9px] font-bold uppercase tracking-widest text-[#666]">Достижения за эту тренировку</p>
@@ -103,23 +101,11 @@ export default function ActivityCard({ act }: { act: Act }) {
                   ? <ul className="mt-1 space-y-1 text-xs text-[#555]">{activityEvents.map((event) => <li key={event.id} className="flex justify-between gap-3"><span>{event.title}</span><span className="shrink-0 font-bold">{xp(event.amount)}</span></li>)}</ul>
                   : <p className="mt-1 text-xs text-[#666]">К этой тренировке не привязаны отдельные достижения.</p>}
               </div>
-              <Row label="Итого" value={xp(breakdown.totals?.for_this_activity_xp ?? act.xp)} tip="Сумма XP за нагрузку этой тренировки и достижений, привязанных к ней. Общие бонусы дня и недели показаны отдельно и в это значение не входят." accent="text-[#ff4b26]" />
-              <div className="border-b border-black/10 py-2">
-                <p className="text-[9px] font-bold uppercase tracking-widest text-[#666]">Общие бонусы дня · {xp(general?.day_xp)}</p>
-                {general?.day?.length
-                  ? <ul className="mt-1 space-y-1 text-xs text-[#555]">{general.day.map((event) => <li key={event.id} className="flex justify-between gap-3"><span>{event.title}</span><span className="shrink-0 font-bold">{xp(event.amount)}</span></li>)}</ul>
-                  : <p className="mt-1 text-xs text-[#666]">Общих бонусов за этот день нет.</p>}
-              </div>
-              <div className="border-b border-black/10 py-2">
-                <p className="text-[9px] font-bold uppercase tracking-widest text-[#666]">Общие бонусы недели · {xp(general?.week_xp)}</p>
-                {general?.week?.length
-                  ? <ul className="mt-1 space-y-1 text-xs text-[#555]">{general.week.map((event) => <li key={event.id} className="flex justify-between gap-3"><span>{event.title}</span><span className="shrink-0 font-bold">{xp(event.amount)}</span></li>)}</ul>
-                  : <p className="mt-1 text-xs text-[#666]">Общих бонусов за неделю нет.</p>}
-              </div>
+              <Row label="Итого" value={xp(breakdown.totals?.for_this_activity_xp ?? act.xp)} tip="Сумма XP за нагрузку этой тренировки и наград, привязанных к ней." accent="text-[#ff4b26]" />
               <div className="border-2 border-black/10 bg-white p-3 text-[11px] leading-relaxed text-[#555]">
                 <p><strong>Потолок 300 TSS в день.</strong> Фактическая дневная нагрузка: {Number(effort?.day_tss ?? 0).toFixed(1)} TSS; в расчёте учитывается не более {num(effort?.daily_tss_cap ?? 300)} TSS{effort?.cap_applied ? " — потолок достигнут" : ""}.</p>
                 <p className="mt-1">Нагрузка дня даёт {num(effort?.day_total_effort_xp)} XP, распределяемых между тренировками пропорционально их TSS. Поэтому XP за одну тренировку может отличаться от расчёта только по её нагрузке.</p>
-                <p className="mt-1">Общие бонусы дня и недели показаны отдельно и не входят в итог XP этой тренировки.</p>
+                <p className="mt-1">В итог входят только нагрузка и бонусы, привязанные к этой тренировке.</p>
               </div>
             </>}
           </div>
