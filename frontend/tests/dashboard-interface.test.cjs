@@ -7,6 +7,8 @@ const read = (relative) => fs.readFileSync(path.join(__dirname, "..", relative),
 const dashboard = read("src/app/dashboard/page.tsx");
 const profile = read("src/app/profile/page.tsx");
 const layout = read("src/app/layout.tsx");
+const globalCss = read("src/app/globals.css");
+const compete = read("src/app/compete/page.tsx");
 const pageTransition = read("src/components/PageTransition.tsx");
 const header = read("src/components/Header.tsx");
 const yearChart = read("src/components/dashboard/YearWeeksChart.tsx");
@@ -134,12 +136,22 @@ test("global gradient stays fixed while dashboard and profile sections stagger t
   assert.equal(pageTransition.includes("filter:"), false);
   assert.ok(pageTransition.includes("key={pathname}"));
   assert.ok(pageTransition.includes("staggerChildren: 0.05, staggerDirection: 1"));
-  assert.ok(pageTransition.includes("initial: { opacity: 0, y: 16 }"));
-  assert.ok(pageTransition.includes("y: -12"));
+  assert.ok(pageTransition.includes("x: direction > 0 ? 48 : -48"));
+  assert.ok(pageTransition.includes("x: direction > 0 ? -48 : 48"));
+  assert.ok(pageTransition.includes('"/dashboard": 1'));
+  assert.ok(pageTransition.includes('"/compete": 2'));
+  assert.ok(pageTransition.includes('"/profile": 3'));
   assert.ok(dashboard.includes("variants={sectionStaggerVariants}"));
   assert.ok(profile.includes("variants={sectionStaggerVariants}"));
   assert.ok(dashboard.includes("variants={sectionItemVariants}"));
   assert.ok(profile.includes("variants={sectionItemVariants}"));
+  assert.ok(compete.includes("variants={sectionStaggerVariants}"));
+  assert.ok(compete.includes("custom={transitionDirection}"));
+  assert.equal((activityUpload.match(/timeout: UPLOAD_REQUEST_TIMEOUT_MS/g) || []).length, 2);
+  assert.ok(globalCss.includes("scroll-behavior: smooth"));
+  assert.ok(globalCss.includes("@media (prefers-reduced-motion: reduce)"));
+  assert.ok(globalCss.includes("overflow-x: hidden"));
+  assert.equal(globalCss.includes("scroll-snap-"), false);
 
   for (const routeFile of [
     "src/app/page.tsx",
