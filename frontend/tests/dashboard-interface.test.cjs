@@ -126,16 +126,20 @@ test("activity XP card separates attached achievements from general bonuses", ()
 
 
 test("global gradient stays fixed while dashboard and profile sections stagger top to bottom", () => {
-  assert.match(layout, /fixed inset-0 z-0 bg-gradient-to-br from-\\[#171a38\\]/);
-  assert.doesNotMatch(pageTransition, /bg-gradient-to-br|x:\\s*["']-?100%|clipPath:|filter:/);
-  assert.match(pageTransition, /key=\\{pathname\\}/);
-  assert.match(pageTransition, /staggerChildren: 0\\.05, staggerDirection: 1/);
-  assert.match(pageTransition, /initial: \\{ opacity: 0, y: 16 \\}/);
-  assert.match(pageTransition, /exit: \\{ opacity: 0, y: -12/);
-  assert.match(dashboard, /variants=\\{sectionStaggerVariants\\}/);
-  assert.match(profile, /variants=\\{sectionStaggerVariants\\}/);
-  assert.match(dashboard, /variants=\\{sectionItemVariants\\}/);
-  assert.match(profile, /variants=\\{sectionItemVariants\\}/);
+  assert.ok(layout.includes("fixed inset-0 z-0 bg-gradient-to-br from-[#171a38]"));
+  assert.equal(pageTransition.includes("bg-gradient-to-br"), false);
+  assert.equal(pageTransition.includes('x: "100%"'), false);
+  assert.equal(pageTransition.includes('x: "-100%"'), false);
+  assert.equal(pageTransition.includes("clipPath:"), false);
+  assert.equal(pageTransition.includes("filter:"), false);
+  assert.ok(pageTransition.includes("key={pathname}"));
+  assert.ok(pageTransition.includes("staggerChildren: 0.05, staggerDirection: 1"));
+  assert.ok(pageTransition.includes("initial: { opacity: 0, y: 16 }"));
+  assert.ok(pageTransition.includes("exit: { opacity: 0, y: -12"));
+  assert.ok(dashboard.includes("variants={sectionStaggerVariants}"));
+  assert.ok(profile.includes("variants={sectionStaggerVariants}"));
+  assert.ok(dashboard.includes("variants={sectionItemVariants}"));
+  assert.ok(profile.includes("variants={sectionItemVariants}"));
 
   for (const routeFile of [
     "src/app/page.tsx",
@@ -145,6 +149,10 @@ test("global gradient stays fixed while dashboard and profile sections stagger t
     "src/app/compete/page.tsx",
     "src/app/u/[username]/page.tsx",
   ]) {
-    assert.doesNotMatch(read(routeFile), /bg-gradient-to-br from-\\[#171a38\\] via-\\[#2a2f6b\\] to-\\[#5866f2\\]/);
+    assert.equal(
+      read(routeFile).includes("bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2]"),
+      false,
+      routeFile
+    );
   }
 });
