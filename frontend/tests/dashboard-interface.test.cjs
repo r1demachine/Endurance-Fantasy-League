@@ -5,6 +5,9 @@ const path = require("node:path");
 
 const read = (relative) => fs.readFileSync(path.join(__dirname, "..", relative), "utf8");
 const dashboard = read("src/app/dashboard/page.tsx");
+const profile = read("src/app/profile/page.tsx");
+const layout = read("src/app/layout.tsx");
+const pageTransition = read("src/components/PageTransition.tsx");
 const header = read("src/components/Header.tsx");
 const yearChart = read("src/components/dashboard/YearWeeksChart.tsx");
 const questsBoard = read("src/components/dashboard/QuestsBoard.tsx");
@@ -119,4 +122,29 @@ test("activity XP card separates attached achievements from general bonuses", ()
   assert.doesNotMatch(activityCard, /Общие бонусы дня|Общие бонусы недели|Регулярность \(за день\)|Quality \(за неделю\)|Квесты дня/);
   assert.match(questsBoard, /dailyBonusDays/);
   assert.match(questsBoard, /Дневные бонусы за выбранную неделю/);
+});
+
+
+test("global gradient stays fixed while dashboard and profile sections stagger top to bottom", () => {
+  assert.match(layout, /fixed inset-0 z-0 bg-gradient-to-br from-\\[#171a38\\]/);
+  assert.doesNotMatch(pageTransition, /bg-gradient-to-br|x:\\s*["']-?100%|clipPath:|filter:/);
+  assert.match(pageTransition, /key=\\{pathname\\}/);
+  assert.match(pageTransition, /staggerChildren: 0\\.05, staggerDirection: 1/);
+  assert.match(pageTransition, /initial: \\{ opacity: 0, y: 16 \\}/);
+  assert.match(pageTransition, /exit: \\{ opacity: 0, y: -12/);
+  assert.match(dashboard, /variants=\\{sectionStaggerVariants\\}/);
+  assert.match(profile, /variants=\\{sectionStaggerVariants\\}/);
+  assert.match(dashboard, /variants=\\{sectionItemVariants\\}/);
+  assert.match(profile, /variants=\\{sectionItemVariants\\}/);
+
+  for (const routeFile of [
+    "src/app/page.tsx",
+    "src/app/login/page.tsx",
+    "src/app/dashboard/page.tsx",
+    "src/app/profile/page.tsx",
+    "src/app/compete/page.tsx",
+    "src/app/u/[username]/page.tsx",
+  ]) {
+    assert.doesNotMatch(read(routeFile), /bg-gradient-to-br from-\\[#171a38\\] via-\\[#2a2f6b\\] to-\\[#5866f2\\]/);
+  }
 });
