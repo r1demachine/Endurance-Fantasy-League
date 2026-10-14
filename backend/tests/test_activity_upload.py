@@ -13,6 +13,7 @@ os.environ.setdefault("REDIS_URL", "")
 from app.services.xp_v6 import UPLOAD_TSS_FACTOR, resolve_training_load
 
 from app.routers.upload import (
+    PARSE_TIMEOUT_SECONDS,
     HeartRateSettingsUpdate,
     InvalidActivityFile,
     UnsupportedActivityFile,
@@ -25,6 +26,9 @@ from app.routers.upload import (
 
 
 class ActivityFileParsingTests(unittest.TestCase):
+    def test_wall_clock_parse_timeout_is_five_minutes(self):
+        self.assertEqual(PARSE_TIMEOUT_SECONDS, 300)
+
     def test_tcx_extracts_duration_distance_hr_and_hard_time(self):
         tcx = b"""<?xml version="1.0"?>
         <TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2">
