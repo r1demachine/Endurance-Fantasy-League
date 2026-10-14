@@ -22,11 +22,11 @@ test("activity XP breakdown loads lazily, caches success, and supports retry", (
   for (const obsoleteLabel of ["Регулярность (за день)", "Quality (за неделю)", "Квесты дня"]) {
     assert.ok(!activity.includes(obsoleteLabel), `obsolete breakdown label: ${obsoleteLabel}`);
   }
-  assert.ok(activity.includes("activityAwards?.total_xp"));
+  assert.ok(activity.includes("activityAwardsTotal"));
   assert.ok(activity.includes("for_this_activity_xp"));
   assert.doesNotMatch(activity, /Общие бонусы дня|Общие бонусы недели|related\?\.general/);
-  assert.match(activity, /Потолок 300 TSS в день/);
-  assert.match(activity, /распределяемых между тренировками пропорционально их TSS/);
+  assert.match(activity, /Потолок — 300 TSS в день/);
+  assert.match(activity, /распределяется между тренировками пропорционально их TSS/);
 });
 
 test("XP tooltip supports accessible explanatory text as well as chart mode", () => {

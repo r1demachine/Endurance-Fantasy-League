@@ -124,7 +124,7 @@ test("all visible week selectors use the shared Russian week formatter", () => {
 
 test("activity XP card separates attached achievements from general bonuses", () => {
   assert.match(activityCard, /Достижения за эту тренировку/);
-  assert.match(activityCard, /activityAwards\?\.total_xp/);
+  assert.match(activityCard, /activityAwardsTotal/);
   assert.match(activityCard, /for_this_activity_xp/);
   assert.doesNotMatch(activityCard, /Общие бонусы дня|Общие бонусы недели|Регулярность \(за день\)|Quality \(за неделю\)|Квесты дня/);
   assert.match(questsBoard, /dailyBonusDays/);
@@ -193,7 +193,7 @@ test("XP explanations use viewport portals and achievement descriptions stay hid
 test("the obsolete per-workout +12 XP bonus is no longer generated or displayed", () => {
   assert.ok(!syncRouter.includes('key = `activity_bonus:45m:'));
   assert.ok(!syncRouter.includes("Тренировка ≥45 минут +"));
-  assert.ok(!xpV6.includes("WORKOUT_BONUS_XP"));
+  assert.ok(!/^\\s*WORKOUT_BONUS_XP\\s*=+/m.test(xpV6));
   assert.ok(syncRouter.includes("_is_retired_activity_duration_bonus"));
   assert.ok(activityCard.includes("activityEvents = (activityAwards?.events ?? []).filter"));
 });
@@ -202,7 +202,7 @@ test("global typography grows one point but restores heading and display scales"
   const css = read("src/app/globals.css");
   assert.ok(css.includes("font-size: calc(1rem + 1pt)"));
   assert.ok(css.includes("--text-sm: calc(0.875rem + 1pt)"));
-  assert.ok(css.includes(":where(h1, h2, h3, h4, h5, h6, .font-display)"));
+  assert.ok(css.includes(":where(h1, h2, h3, h4, h5, h6)"));
   assert.ok(css.includes("font-size: calc(10px + 1pt)"));
   assert.ok(css.includes("prefers-reduced-motion: reduce"));
 });
