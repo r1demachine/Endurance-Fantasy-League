@@ -1,11 +1,13 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Tabs, Skeleton } from "@/components/ui";
 import RatingPanel from "@/components/compete/RatingPanel";
 import WeeklyLeaguePanel from "@/components/compete/WeeklyLeaguePanel";
 import DuelsPanel from "@/components/compete/DuelsPanel";
+import { sectionItemVariants, sectionStaggerVariants, useTransitionDirection } from "@/components/PageTransition";
 
 type CompeteTab = "rating" | "duels" | "teams";
 const tabs: { value: CompeteTab; label: string }[] = [
@@ -20,6 +22,7 @@ function isCompeteTab(value: string | null): value is CompeteTab {
 
 function CompeteContent() {
   const router = useRouter();
+  const transitionDirection = useTransitionDirection();
   const searchParams = useSearchParams();
   const queryTab = searchParams.get("tab");
   const activeTab: CompeteTab = isCompeteTab(queryTab) ? queryTab : "rating";
@@ -61,21 +64,27 @@ function CompeteContent() {
         />
 
         {(visitedTabs.rating || activeTab === "rating") && (
-          <div hidden={activeTab !== "rating"} className="space-y-4 p-4 md:p-6">
-            <WeeklyLeaguePanel />
-            <RatingPanel />
-          </div>
+          <motion.div hidden={activeTab !== "rating"} variants={sectionStaggerVariants} className="space-y-4 p-4 md:p-6">
+            <motion.div variants={sectionItemVariants} custom={transitionDirection}>
+              <WeeklyLeaguePanel />
+            </motion.div>
+            <motion.div variants={sectionItemVariants} custom={transitionDirection}>
+              <RatingPanel />
+            </motion.div>
+          </motion.div>
         )}
         {(visitedTabs.duels || activeTab === "duels") && (
-          <div hidden={activeTab !== "duels"}><DuelsPanel /></div>
+          <motion.div hidden={activeTab !== "duels"} variants={sectionStaggerVariants} className="p-4 md:p-6">
+            <motion.div variants={sectionItemVariants} custom={transitionDirection}><DuelsPanel /></motion.div>
+          </motion.div>
         )}
         {(visitedTabs.teams || activeTab === "teams") && (
-          <div hidden={activeTab !== "teams"} className="p-4 md:p-6">
-            <section className="border-2 border-black bg-white p-6 md:p-8">
+          <motion.div hidden={activeTab !== "teams"} variants={sectionStaggerVariants} className="p-4 md:p-6">
+            <motion.section variants={sectionItemVariants} custom={transitionDirection} className="border-2 border-black bg-white p-6 md:p-8">
               <h2 className="font-display text-2xl uppercase md:text-3xl">Командные сражения</h2>
               <p className="mt-2 text-sm text-[#666]">Скоро. Командные сражения появятся в одном из следующих обновлений.</p>
-            </section>
-          </div>
+            </motion.section>
+          </motion.div>
         )}
       </div>
     </main>
