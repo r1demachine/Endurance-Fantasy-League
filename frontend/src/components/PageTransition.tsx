@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useRef, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion, type Variants } from "framer-motion";
 
@@ -88,6 +88,118 @@ export default function PageTransition({ children }: { children: ReactNode }) {
   const pageRef = useRef<HTMLDivElement>(null);
   const lastPath = useRef(pathname);
   const directionRef = useRef<TransitionDirection>(1);
+
+  // Smooth out mouse-wheel steps; touch, keyboard, zoom, and nested scroll panels
+  // keep their native browser behavior. Respect the OS reduced-motion preference.
+  useEffect(() => {
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (reducedMotion.matches) return;
+
+    const root = document.documentElement;
+    let animationFrame = 0;
+    let targetY = window.scrollY;
+    let animating = false;
+    let savedScrollBehavior = false;
+    let previousScrollBehavior = "";
+    let previousScrollBehaviorPriority = "";
+
+    const restoreScrollBehavior = () => {
+      if (!savedScrollBehavior) return;
+      if (previousScrollBehavior) {
+        root.style.setProperty(
+          "scroll-behavior",
+          previousScrollBehavior,
+          previousScrollBehaviorPriority
+        );
+      } else {
+        root.style.removeProperty("scroll-behavior");
+      }
+      savedScrollBehavior = false;
+    };
+
+    const animateScroll = () => {
+      const currentY = window.scrollY;
+      const distance = targetY - currentY;
+
+      if (Math.abs(distance) < 0.75) {
+        window.scrollTo(0, targetY);
+        animationFrame = 0;
+        animating = false;
+        restoreScrollBehavior();
+        return;
+      }
+
+      window.scrollTo(0, currentY + distance * 0.22);
+      animationFrame = window.requestAnimationFrame(animateScroll);
+    };
+
+    const canInnerPanelScroll = (path: EventTarget[], deltaY: number) => {
+      for (const item of path) {
+        if (!(item instanceof HTMLElement) || item === root || item === document.body) continue;
+        const overflowY = window.getComputedStyle(item).overflowY;
+        if (!/(auto|scroll|overlay)/.test(overflowY)) continue;
+        if (item.scrollHeight <= item.clientHeight + 1) continue;
+
+        const canScroll = deltaY > 0
+          ? item.scrollTop + item.clientHeight < item.scrollHeight - 1
+          : item.scrollTop > 1;
+        if (canScroll) return true;
+      }
+      return false;
+    };
+
+    const onWheel = (event: WheelEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        event.deltaY === 0 ||
+        Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      ) return;
+
+      const path = event.composedPath();
+      const usesNativeWheel = path.some((item) =>
+        item instanceof HTMLElement &&
+        item.matches("input, textarea, select, [contenteditable='true'], [contenteditable=''], [role='textbox'], [data-native-wheel-scroll]")
+      );
+      if (usesNativeWheel) return;
+
+      let deltaY = event.deltaY;
+      if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) deltaY *= 24;
+      if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) deltaY *= window.innerHeight;
+      if (canInnerPanelScroll(path, deltaY)) return;
+
+      const maxY = Math.max(0, root.scrollHeight - window.innerHeight);
+      if (maxY <= 0) return;
+      const startingY = animating ? targetY : window.scrollY;
+      const nextTarget = Math.max(0, Math.min(maxY, startingY + deltaY));
+      if (Math.abs(nextTarget - startingY) < 0.5) return;
+
+      event.preventDefault();
+
+      if (!animating) {
+        previousScrollBehavior = root.style.getPropertyValue("scroll-behavior");
+        previousScrollBehaviorPriority = root.style.getPropertyPriority("scroll-behavior");
+        savedScrollBehavior = true;
+        root.style.setProperty("scroll-behavior", "auto", "important");
+        targetY = window.scrollY;
+        animating = true;
+      }
+
+      targetY = nextTarget;
+      if (!animationFrame) animationFrame = window.requestAnimationFrame(animateScroll);
+    };
+
+    window.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      window.removeEventListener("wheel", onWheel);
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+      animating = false;
+      restoreScrollBehavior();
+    };
+  }, [pathname]);
 
   // The pathname key intentionally ignores query-only updates (settings, tabs,
   // and stat ranges), so they don't replay the page transition.

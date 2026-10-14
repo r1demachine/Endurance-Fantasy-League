@@ -155,6 +155,11 @@ test("global gradient stays fixed while dashboard and profile sections stagger t
   assert.equal((activityUpload.match(/timeout: UPLOAD_REQUEST_TIMEOUT_MS/g) || []).length, 2);
   assert.ok(globalCss.includes("scroll-behavior: smooth"));
   assert.ok(globalCss.includes("@media (prefers-reduced-motion: reduce)"));
+  assert.ok(pageTransition.includes('window.addEventListener("wheel", onWheel, { passive: false })'));
+  assert.ok(pageTransition.includes("requestAnimationFrame(animateScroll)"));
+  assert.ok(pageTransition.includes("canInnerPanelScroll"));
+  assert.ok(pageTransition.includes("event.preventDefault()"));
+  assert.ok(pageTransition.includes("prefers-reduced-motion: reduce"));
   assert.ok(globalCss.includes("overflow-x: hidden"));
   assert.ok(modalComponent.includes("overflow-y-auto scroll-smooth"));
   assert.ok(settingsModal.includes("overflow-y-auto scroll-smooth"));
@@ -182,8 +187,11 @@ test("XP explanations use viewport portals and achievement descriptions stay hid
   assert.ok(floatingTooltip.includes("z-[9999]"));
   assert.ok(helpTip.includes("<FloatingTooltip"));
   assert.ok(xpTooltip.includes("<FloatingTooltip"));
-  assert.ok(questsBoard.includes("group-hover:opacity-100 group-focus:opacity-100"));
+  assert.ok(questsBoard.includes("<FloatingTooltip"));
+  assert.ok(questsBoard.includes("anchorRef={anchorRef}"));
   assert.ok(questsBoard.includes("QUEST_EXPLANATIONS"));
+  assert.ok(questsBoard.includes("onMouseEnter"));
+  assert.equal(questsBoard.includes("group-hover:opacity-100"), false);
   assert.ok(!questsBoard.includes('className="mt-1 text-[9px] font-bold uppercase tracking-widest text-[#666]">{quest.desc}'));
   assert.ok(activityCard.includes('label="Итого"'));
   assert.ok(activityCard.includes("Потолок — 300 TSS в день"));
