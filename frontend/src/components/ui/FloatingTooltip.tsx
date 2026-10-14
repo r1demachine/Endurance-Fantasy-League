@@ -66,7 +66,7 @@ export default function FloatingTooltip({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       style={{ left: position.left, top: position.top, pointerEvents: interactive ? "auto" : "none" }}
-      className="fixed z-[9999] w-72 max-w-[calc(100vw-1.5rem)] border-2 border-black bg-white p-3 text-left text-sm font-normal leading-relaxed normal-case tracking-normal text-[#171a38] shadow-[3px_3px_0_#000]"
+      className="fixed z-[9999] max-h-[calc(100vh-1.5rem)] w-72 max-w-[calc(100vw-1.5rem)] overflow-y-auto border-2 border-black bg-white p-3 text-left text-sm font-normal leading-relaxed normal-case tracking-normal text-[#171a38] shadow-[3px_3px_0_#000]"
     >
       {children}
     </div>,
