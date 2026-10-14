@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { sectionItemVariants, sectionStaggerVariants } from "@/components/PageTransition";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { clearUserCache, getCachedUser, subscribeUser, refreshUser } from "@/lib/apiCache";
@@ -266,11 +267,10 @@ export default function Dashboard() {
       <Star className="absolute bottom-[10%] left-[8%] h-5 w-5 animate-pulse text-[#ffd500]" />
       <Star className="absolute bottom-[5%] right-[4%] h-7 w-7 animate-pulse text-white/80" />
 
-      <div className="breathe-table relative mx-auto flex w-full max-w-[1400px] flex-1 flex-col border-2 border-t-0 border-black bg-[#f4f4f0]">
+      <motion.div variants={sectionStaggerVariants} className="breathe-table relative mx-auto flex w-full max-w-[1400px] flex-1 flex-col border-2 border-t-0 border-black bg-[#f4f4f0]">
         {(!isAuthed || isEmpty) && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            variants={sectionItemVariants}
             className="relative space-y-4 border-b-2 border-black bg-white p-6 text-center md:p-10"
           >
             <Sticker className="left-6 top-3 rotate-[3deg] bg-[#ffd500] text-black">zzz…</Sticker>
@@ -298,7 +298,7 @@ export default function Dashboard() {
           </motion.div>
         )}
 
-        <header className="relative grid border-b-2 border-black md:grid-cols-[1fr_auto]">
+        <motion.header variants={sectionItemVariants} className="relative grid border-b-2 border-black md:grid-cols-[1fr_auto]">
           <Sticker className="right-4 top-2 rotate-[-4deg] bg-[#f6b8d0] text-black md:right-10">don't stop fighting</Sticker>
           <div className="flex flex-col gap-3 p-5 md:border-r-2 md:border-black md:p-8">
             <Label className="text-[#666]">ТВОЙ ПРОГРЕСС · SEASON 001</Label>
@@ -309,11 +309,11 @@ export default function Dashboard() {
           <Link href="/profile" className="flex items-center justify-between gap-4 bg-[#5866f2] px-5 py-4 text-[11px] font-bold uppercase tracking-widest text-white transition-colors hover:bg-black">
             <span>Профиль<br />атлета</span><span>→</span>
           </Link>
-        </header>
+        </motion.header>
 
-        {dashboardError && <ErrorState message={dashboardError} onRetry={() => window.location.reload()} />}
+        {dashboardError && <motion.div variants={sectionItemVariants}><ErrorState message={dashboardError} onRetry={() => window.location.reload()} /></motion.div>}
 
-        <section className="grid border-b-2 border-black md:grid-cols-3">
+        <motion.section variants={sectionItemVariants} className="grid border-b-2 border-black md:grid-cols-3">
           <div className="md:border-r-2 md:border-black">
             <SectionTitle>Level</SectionTitle>
             <div className="p-5 md:p-6">
@@ -342,15 +342,18 @@ export default function Dashboard() {
               <Label className="mt-3 text-[#666]">{Math.min(100, Math.round((Number(stats.week_hours) || 0) / goalHours * 100))}% цели</Label>
             </div>
           </div>
-        </section>
+        </motion.section>
 
         {isAuthed && !isEmpty && (
           <>
+            <motion.div variants={sectionItemVariants}>
             <YearWeeksChart
               selectedWeekStart={selectedWeekStart || weekData?.week_start || ""}
               onWeekChange={setSelectedWeekStart}
             />
+            </motion.div>
 
+            <motion.div variants={sectionItemVariants}>
             {weekLoading ? (
               <section className="border-b-2 border-black bg-white p-5 md:p-6"><Skeleton label="Загружаем недельную сводку" rows={4} /></section>
             ) : (
@@ -369,7 +372,9 @@ export default function Dashboard() {
                 deloadError={deloadError}
               />
             )}
+            </motion.div>
 
+            <motion.div variants={sectionItemVariants}>
             <QuestsBoard
               quests={quests}
               loading={questsLoading}
@@ -377,6 +382,8 @@ export default function Dashboard() {
               dailyBonusDays={Number(weekData?.daily_bonus_days) || 0}
               onRetry={() => void loadQuests()}
             />
+            </motion.div>
+            <motion.div variants={sectionItemVariants}>
             <DashboardWorkoutsSection
               weekLoading={weekLoading}
               weekActivities={weekActivities}
@@ -385,10 +392,11 @@ export default function Dashboard() {
               onWeekChange={setSelectedWeekStart}
               onOpenSources={openSourceSettings}
             />
+            </motion.div>
           </>
         )}
 
-        <section className="border-b-2 border-black bg-[#f4f4f0] p-4 md:p-6">
+        <motion.section variants={sectionItemVariants} className="border-b-2 border-black bg-[#f4f4f0] p-4 md:p-6">
           <h2 className="font-display text-xl uppercase">Быстрые действия</h2>
           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
             <button type="button" onClick={() => void handleSync()} disabled={syncing} className="border-2 border-black bg-[#5866f2] px-4 py-3 text-xs font-bold uppercase tracking-widest text-white transition-colors hover:bg-black disabled:opacity-50">
@@ -399,8 +407,8 @@ export default function Dashboard() {
           </div>
           {syncMessage && <p role="status" className="mt-3 border-2 border-[#16803c] bg-white px-3 py-2 text-sm font-bold text-[#16803c]">{syncMessage}</p>}
           {syncError && <ErrorState message={syncError} onRetry={() => void handleSync()} />}
-        </section>
-      </div>
+        </motion.section>
+      </motion.div>
 
       <AnimatePresence>
         {pauseDialogOpen && (
