@@ -20,7 +20,8 @@ html {
 html,
 body {
   /* Убираем любой gradient, оставляем только плоский цвет подложки */
-  background-color: #171a38; 
+  background-color: #171a38;
+  font-size: calc(1rem + 1pt); 
   color: white;
   /* Запрещаем горизонтальный скролл, чтобы фон не растягивался */
   overflow-x: hidden; 
