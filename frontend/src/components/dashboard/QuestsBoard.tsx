@@ -138,7 +138,7 @@ export default function QuestsBoard({ quests, loading, error, dailyBonusDays, on
         >
           <div className="h-full bg-[#16a34a] transition-all" style={{ width: `${(dailyBonusCount / 7) * 100}%` }} />
         </div>
-        <p className="mt-1 text-[10px] text-[#666]">Один бонус +20 XP в день для одной не ручной тренировки от 45 минут.</p>
+        
       </div>
       {loading && quests.length === 0 ? (
         <Skeleton label="Загружаем достижения" rows={3} />
