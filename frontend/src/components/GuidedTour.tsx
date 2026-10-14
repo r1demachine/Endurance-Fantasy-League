@@ -158,6 +158,7 @@ export default function GuidedTour() {
   const autoTourHandled = useRef(false);
   const autoStartPending = useRef(false);
   const step = TOUR_STEPS[stepIndex];
+  const hasHighlight = highlight !== null;
 
   const startTour = useCallback(() => {
     if (isAuthenticated()) {
@@ -223,7 +224,7 @@ export default function GuidedTour() {
   }, [active, mounted, pathname, router]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active || !hasHighlight) return;
 
     const focusTimer = window.setTimeout(() => {
       panelRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
@@ -256,7 +257,7 @@ export default function GuidedTour() {
       window.clearTimeout(focusTimer);
       document.removeEventListener("keydown", handleKeyboard);
     };
-  }, [active]);
+  }, [active, hasHighlight]);
 
   useEffect(() => {
     if (!active || !step) {
