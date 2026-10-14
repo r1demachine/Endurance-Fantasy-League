@@ -69,7 +69,7 @@ export const sectionStaggerVariants: Variants = {
 export const sectionItemVariants: Variants = {
   initial: (direction: TransitionDirection = 1) => ({
     opacity: 0,
-    x: direction > 0 ? 48 : -48,
+    x: direction > 0 ? "100%" : "-100%",
   }),
   animate: {
     opacity: 1,
@@ -78,7 +78,7 @@ export const sectionItemVariants: Variants = {
   },
   exit: (direction: TransitionDirection = 1) => ({
     opacity: 0,
-    x: direction > 0 ? -48 : 48,
+    x: direction > 0 ? "-100%" : "100%",
     transition: { duration: 0.18, ease: EASE },
   }),
 };
