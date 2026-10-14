@@ -146,9 +146,21 @@ export default function Home() {
               </p>
               <div className="flex items-center gap-3 shrink-0">
                 <span className="w-9 h-9 border-2 border-black flex items-center justify-center font-bold text-lg">+</span>
-                <span className="w-16 h-16 md:w-20 md:h-20 bg-[#ff4b26] border-2 border-black flex items-center justify-center">
-                  <GlobeIcon />
-                </span>
+                <div className="relative flex flex-col items-center">
+                  <button
+                    type="button"
+                    data-tour="home-globe"
+                    aria-label="Начать обучение по сайту"
+                    title="Обучение по сайту"
+                    onClick={() => window.dispatchEvent(new Event("efl:start-guided-tour"))}
+                    className="flex h-16 w-16 items-center justify-center border-2 border-black bg-[#ff4b26] transition-transform hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5866f2] md:h-20 md:w-20"
+                  >
+                    <GlobeIcon />
+                  </button>
+                  <span className="pointer-events-none absolute top-full mt-1 flex items-center gap-1 whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-[#171a38]">
+                    <span aria-hidden="true">↑</span> Обучение
+                  </span>
+                </div>
               </div>
             </div>
 
