@@ -150,7 +150,7 @@ export default function QuestsBoard({ quests, loading, error, dailyBonusDays, on
             )}
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 z-40 flex items-start bg-white/95 p-3 text-[#171a38] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus:opacity-100"
+              className="pointer-events-none absolute inset-0 z-40 flex items-start overflow-y-auto bg-white/95 p-3 text-[#171a38] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus:opacity-100"
             >
               <p className="text-sm leading-relaxed">{questExplanation(quest)}</p>
             </div>
