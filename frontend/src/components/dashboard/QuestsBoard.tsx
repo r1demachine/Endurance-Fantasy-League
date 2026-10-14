@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import Card from "@/components/ui/Card";
+import FloatingTooltip from "@/components/ui/FloatingTooltip";
 import { EmptyState, ErrorState, HelpTip, Skeleton } from "@/components/ui";
 import { formatWeekRange } from "@/lib/format";
 
@@ -74,6 +75,87 @@ function questExplanation(quest: Quest): string {
   return detail;
 }
 
+function QuestExplanationTooltip({ quest, children }: { quest: Quest; children: ReactNode }) {
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tooltipId = useId();
+
+  const clearCloseTimer = () => {
+    if (closeTimer.current !== null) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+
+  const scheduleClose = () => {
+    clearCloseTimer();
+    if (anchorRef.current?.contains(document.activeElement)) return;
+    closeTimer.current = setTimeout(() => {
+      const tooltip = document.getElementById(tooltipId);
+      if (
+        !anchorRef.current?.matches(":hover") &&
+        !tooltip?.matches(":hover") &&
+        !anchorRef.current?.contains(document.activeElement)
+      ) setOpen(false);
+      closeTimer.current = null;
+    }, 120);
+  };
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        clearCloseTimer();
+        setOpen(false);
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      clearCloseTimer();
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
+
+  return (
+    <div
+      ref={anchorRef}
+      tabIndex={0}
+      role="group"
+      aria-label={quest.title}
+      aria-describedby={open ? tooltipId : undefined}
+      className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5866f2]"
+      onMouseEnter={() => {
+        clearCloseTimer();
+        setOpen(true);
+      }}
+      onMouseLeave={scheduleClose}
+      onFocus={() => {
+        clearCloseTimer();
+        setOpen(true);
+      }}
+      onBlur={(event) => {
+        const relatedTarget = event.relatedTarget as Node | null;
+        const tooltip = document.getElementById(tooltipId);
+        if (!event.currentTarget.contains(relatedTarget) && !tooltip?.contains(relatedTarget)) {
+          scheduleClose();
+        }
+      }}
+    >
+      {children}
+      <FloatingTooltip
+        id={tooltipId}
+        open={open}
+        anchorRef={anchorRef}
+        interactive
+        onMouseEnter={clearCloseTimer}
+        onMouseLeave={scheduleClose}
+      >
+        {questExplanation(quest)}
+      </FloatingTooltip>
+    </div>
+  );
+}
+
 export default function QuestsBoard({ quests, loading, error, dailyBonusDays, onRetry }: Props) {
   const [showAll, setShowAll] = useState(true);
   const dailyBonusCount = Math.min(7, Math.max(0, Number(dailyBonusDays) || 0));
@@ -92,12 +174,9 @@ export default function QuestsBoard({ quests, loading, error, dailyBonusDays, on
         const unavailable = quest.status === "unavailable" || progress === null;
 
         return (
+          <QuestExplanationTooltip key={quest.slug} quest={quest}>
           <Card
-            key={quest.slug}
-            tabIndex={0}
-            role="group"
-            aria-label={quest.title}
-            className={`group relative border-2 p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5866f2] ${
+            className={`group relative border-2 p-3 ${
               quest.status === "earned"
                 ? "border-[#16a34a] bg-[#16a34a]/10"
                 : unavailable
@@ -148,13 +227,8 @@ export default function QuestsBoard({ quests, loading, error, dailyBonusDays, on
             {quest.status === "earned" && quest.earned_at && (
               <p className="mt-2 text-[10px] font-bold text-[#16a34a]">Получено {quest.earned_at}</p>
             )}
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 z-40 flex items-start overflow-y-auto bg-white/95 p-3 text-[#171a38] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus:opacity-100"
-            >
-              <p className="text-sm leading-relaxed">{questExplanation(quest)}</p>
-            </div>
           </Card>
+          </QuestExplanationTooltip>
         );
       })}
     </div>
