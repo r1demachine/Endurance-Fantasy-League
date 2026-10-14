@@ -16,7 +16,7 @@ test("home page copy is Russian, fantasy-themed, and reflects current mechanics"
     "XP",
     "TSS",
     "Начать путь",
-    "Мой дашборд",
+    "Мой прогресс",
     "Подключить источник",
     "Сменить атмосферу?",
     "Превращай прогресс в силу.",
