@@ -328,11 +328,6 @@ class HeartRateSettingsTests(unittest.TestCase):
             _decode_preview(altered)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
-
 class IndoorActivityPersistenceTests(unittest.TestCase):
     def test_virtual_flag_is_saved_to_canonical_and_legacy_columns(self):
         now = datetime.now(timezone.utc).replace(tzinfo=None)
