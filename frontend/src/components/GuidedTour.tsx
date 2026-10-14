@@ -223,6 +223,42 @@ export default function GuidedTour() {
   }, [active, mounted, pathname, router]);
 
   useEffect(() => {
+    if (!active) return;
+
+    const focusTimer = window.setTimeout(() => {
+      panelRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    }, 0);
+    const handleKeyboard = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        markTourSeen();
+        setActive(false);
+        setHighlight(null);
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = panelRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)");
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyboard);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("keydown", handleKeyboard);
+    };
+  }, [active]);
+
+  useEffect(() => {
     if (!active || !step) {
       setHighlight(null);
       targetRef.current = null;
@@ -407,7 +443,7 @@ export default function GuidedTour() {
         aria-modal="true"
         aria-labelledby="guided-tour-title"
         aria-describedby="guided-tour-description"
-        className="fixed z-[10002] w-[min(360px,calc(100vw-24px))] border-2 border-black bg-[#f4f4f0] p-4 text-[#171a38] shadow-[5px_5px_0_#000] sm:p-5"
+        className="fixed z-[10002] max-h-[calc(100vh-24px)] w-[min(360px,calc(100vw-24px))] overflow-y-auto border-2 border-black bg-[#f4f4f0] p-4 text-[#171a38] shadow-[5px_5px_0_#000] sm:p-5"
         style={{ left: panelPosition.left, top: panelPosition.top }}
       >
         <div className="flex items-start justify-between gap-3">
