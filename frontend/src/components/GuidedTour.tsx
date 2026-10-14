@@ -157,6 +157,7 @@ export default function GuidedTour() {
   const autoRedirectStarted = useRef(false);
   const autoTourHandled = useRef(false);
   const autoStartPending = useRef(false);
+  const lastTargetPathname = useRef<string | null>(null);
   const step = TOUR_STEPS[stepIndex];
   const hasHighlight = highlight !== null;
 
@@ -270,8 +271,15 @@ export default function GuidedTour() {
       return;
     }
 
+    const expectedPathname = step.href.split("?")[0];
+    if (pathname !== expectedPathname) {
+      setHighlight(null);
+      return;
+    }
+
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let transitionFallbackTimer: ReturnType<typeof setTimeout> | null = null;
     let animationFrame = 0;
     let target: HTMLElement | null = null;
 
@@ -348,11 +356,39 @@ export default function GuidedTour() {
       window.visualViewport?.addEventListener("scroll", schedulePosition);
     };
 
-    findTarget(0);
+    const previousTargetPathname = lastTargetPathname.current;
+    const waitForTransition = previousTargetPathname !== null && previousTargetPathname !== pathname;
+    lastTargetPathname.current = pathname;
+
+    let targetSearchStarted = false;
+    const startTargetSearch = () => {
+      if (cancelled || targetSearchStarted) return;
+      targetSearchStarted = true;
+      if (transitionFallbackTimer) window.clearTimeout(transitionFallbackTimer);
+      window.removeEventListener("efl:page-transition-complete", onPageTransitionComplete);
+      findTarget(0);
+    };
+    const onPageTransitionComplete = (event: Event) => {
+      const transitionPathname = (event as CustomEvent<{ pathname?: string }>).detail?.pathname;
+      // Ignore the outgoing page's exit animation; the new page must finish entering first.
+      if (transitionPathname && transitionPathname !== pathname) return;
+      startTargetSearch();
+    };
+
+    if (waitForTransition) {
+      window.addEventListener("efl:page-transition-complete", onPageTransitionComplete);
+      // Safety fallback in case a transition callback is skipped by reduced motion or an interrupted route change.
+      transitionFallbackTimer = window.setTimeout(startTargetSearch, 1800);
+    } else {
+      startTargetSearch();
+    }
+
     return () => {
       cancelled = true;
-      if (retryTimer) clearTimeout(retryTimer);
+      if (retryTimer) window.clearTimeout(retryTimer);
+      if (transitionFallbackTimer) window.clearTimeout(transitionFallbackTimer);
       if (animationFrame) window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("efl:page-transition-complete", onPageTransitionComplete);
       window.removeEventListener("scroll", schedulePosition, true);
       window.removeEventListener("resize", schedulePosition);
       window.visualViewport?.removeEventListener("resize", schedulePosition);
