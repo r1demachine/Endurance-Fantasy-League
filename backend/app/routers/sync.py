@@ -24,6 +24,36 @@ from ..services.deload import cooldown_passed, manual_deload_block_reason, sugge
 router = APIRouter(prefix="/api", tags=["Sync"])
 settings = get_settings()
 WEEKLY_XP_EVENT_TYPES = ("quest", "achievement", "activity_bonus", "sleep_bonus")
+
+
+def xp_category(event) -> str:
+    """Return the weekly-summary bucket for an XPEvent; unknown events stay visible as quest XP."""
+    event_type = getattr(event, "event_type", None)
+    event_key = str(getattr(event, "event_key", "") or "")
+    if event_type == "sleep_bonus":
+        return "recovery"
+    if event_type == "quest":
+        parts = event_key.split(":")
+        slug = parts[1] if len(parts) >= 3 and parts[0] == "quest" else ""
+        if slug == "qualifying_days_5":
+            return "consistency"
+        if slug in {"high_intensity", "long_workout_2h", "long_workout_3h"}:
+            return "quality"
+        if slug == "good_sleep_5":
+            return "recovery"
+    return "quest"
+
+
+def _weekly_event_category_totals(events) -> dict[datetime, dict[str, float]]:
+    """Sum repeatable/lifetime awards by week and their display category."""
+    totals: dict[datetime, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    for event in events:
+        if event.event_type not in WEEKLY_XP_EVENT_TYPES or event.week_start is None:
+            continue
+        totals[event.week_start][xp_category(event)] += float(event.amount or 0.0)
+    return {week: dict(categories) for week, categories in totals.items()}
+
+
 _optional_bearer = HTTPBearer(auto_error=False)
 
 def _user_local_today(user: User | None) -> _date:
@@ -362,24 +392,16 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         if info["qualifying"]:
             week_days[ws] += 1
 
-    scores_by_week: dict[_date, list] = defaultdict(list)
-    for wrow in wellness_rows:
-        if wrow.date and wrow.sleep_score:
-            try:
-                scores_by_week[X6.week_start(_date.fromisoformat(str(wrow.date)[:10]))].append(float(wrow.sleep_score))
-            except (TypeError, ValueError):
-                continue
-
     # XP events are loaded for weekly accounting. Achievement progress is derived
     # from activities, wellness, and freshly recomputed summaries below.
     all_events = db.query(XPEvent).filter(XPEvent.user_id == user.id).all()
     events_by_key = {e.event_key: e for e in all_events}
-    quest_by_week: dict = {}
-    for e in all_events:
-        if e.event_type in WEEKLY_XP_EVENT_TYPES:
-            quest_by_week[e.week_start] = quest_by_week.get(e.week_start, 0.0) + e.amount
-
-    generated_quality_consistency_keys: set[str] = set()
+    obsolete_event_types = {"consistency", "quality_hard", "quality_long", "recovery"}
+    for event in all_events:
+        if event.event_type in obsolete_event_types:
+            db.delete(event)
+            events_by_key.pop(event.event_key, None)
+    all_events = [event for event in all_events if event.event_type not in obsolete_event_types]
 
     def upsert_event(
         key, etype, amount, ws, dt, title, *,
@@ -391,8 +413,6 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
                 db.delete(ev)
                 events_by_key.pop(key, None)
             return
-        if etype in {"consistency", "quality_hard", "quality_long"}:
-            generated_quality_consistency_keys.add(key)
         if ev is not None:
             ev.amount = round_xp(amount)
             ev.title = title
@@ -462,12 +482,8 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
             db.delete(event)
             events_by_key.pop(event.event_key, None)
 
-    # Rebuild from the in-memory upsert set so this pass includes new bonuses
-    # and never includes events just removed because their source no longer qualifies.
-    quest_by_week = defaultdict(float)
-    for event in events_by_key.values():
-        if event.event_type in WEEKLY_XP_EVENT_TYPES and event.week_start:
-            quest_by_week[event.week_start] += float(event.amount or 0.0)
+    # First category pass: includes existing quest awards and repeatable bonuses.
+    category_xp_by_week = _weekly_event_category_totals(events_by_key.values())
 
     medians = X6.medians_by_sport(hist, set())
 
@@ -509,64 +525,33 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         days = week_days[ws]
         t_days = X6.target_training_days([week_days[p] for p in prior])
 
-        if ws >= activation_ws:
-            for d, info in day_info.items():
-                if X6.week_start(d) == ws and info["qualifying"]:
-                    upsert_event(
-                        f"consistency:{d.isoformat()}", "consistency",
-                        X6.CONSISTENCY_XP_PER_DAY, ws, d, "Training day +30",
-                        source_type="day", source_id=d.isoformat(),
-                    )
-
-        quality_xp = 0.0
-        if ws >= activation_ws:
-            day_dicts = {
-                d: [{
-                    "moving_time": a.moving_time, "intensity": a.intensity, "hard_secs": a.hard_secs or 0,
-                    "load_source": "manual" if bool(a.is_manual) else ("estimated" if a.tss_estimated else "real"),
-                    "sport_type": a.sport_type, "id": a.id,
-                    "start_date": a.start_date_local or a.start_date,
-                } for a in info["acts"]]
-                for d, info in day_info.items() if X6.week_start(d) == ws
-            }
-            quality_sources = X6.quality_event_activity_ids(day_dicts, medians)
-            for kind, amt in X6.quality_events_week(day_dicts, medians):
-                source_id = quality_sources.get(kind)
-                source_activity = next(
-                    (a for info in day_info.values() for a in info["acts"] if str(a.id) == str(source_id)),
-                    None,
-                )
-                source_stamp = (
-                    (source_activity.start_date_local or source_activity.start_date)
-                    if source_activity is not None else None
-                )
-                source_day = source_stamp.date() if source_stamp is not None else ws
-                upsert_event(
-                    f"{kind}:{ws.isoformat()}", kind, amt, ws, source_day,
-                    "High intensity +15" if kind == "quality_hard" else "Long workout +15",
-                    source_type="week", source_id=source_id,
-                )
-                quality_xp += amt
+        day_dicts = {
+            d: [{
+                "moving_time": a.moving_time, "intensity": a.intensity, "hard_secs": a.hard_secs or 0,
+                "load_source": "manual" if bool(a.is_manual) else ("estimated" if a.tss_estimated else "real"),
+                "sport_type": a.sport_type, "id": a.id,
+                "start_date": a.start_date_local or a.start_date,
+            } for a in info["acts"]]
+            for d, info in day_info.items() if X6.week_start(d) == ws
+        }
+        # League Score still uses the original quality-event calculation, independently of tile categories.
+        league_quality_xp = round_xp(sum(
+            amount for _kind, amount in X6.quality_events_week(day_dicts, medians)
+        ))
+        category_totals = category_xp_by_week.get(datetime.combine(ws, datetime.min.time()), {})
+        consistency_xp = round_xp(category_totals.get("consistency", 0.0))
+        quality_xp = round_xp(category_totals.get("quality", 0.0))
+        recovery = round_xp(category_totals.get("recovery", 0.0))
+        quest_xp = round_xp(category_totals.get("quest", 0.0))
 
         goal_xp = 0.0
-        recovery = 0.0
         if ws >= activation_ws:
-            # Keep the selected/current week live; upsert_event can revise an
-            # in-progress goal/recovery event as new training or wellness arrives.
             goal_xp = X6.weekly_goal_xp(eff_ratio)
             upsert_event(
                 f"weekly_goal:{ws.isoformat()}", "weekly_goal", goal_xp, ws, ws,
-                f"Weekly goal {int(eff_ratio * 100)}%",
+                f"Цель недели: {int(eff_ratio * 100)}%",
                 source_type="week", source_id=ws.isoformat(),
             )
-            recovery = X6.recovery_xp_week(scores_by_week.get(ws, []))
-            upsert_event(
-                f"recovery:{ws.isoformat()}", "recovery", recovery, ws, ws,
-                "Recovery (sleep score)", source_type="week", source_id=ws.isoformat(),
-            )
-
-        quest_xp = round_xp(quest_by_week.get(datetime.combine(ws, datetime.min.time()), 0.0))
-        consistency_xp = round_xp(min(days, X6.CONSISTENCY_DAYS_CAP) * X6.CONSISTENCY_XP_PER_DAY) if ws >= activation_ws else 0.0
         effort_week = round_xp(sum(i["day_xp"] for d, i in day_info.items() if X6.week_start(d) == ws))
         total_week = round_xp(effort_week + consistency_xp + quality_xp + goal_xp + recovery + quest_xp)
 
@@ -585,28 +570,13 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         summ.recovery_xp = recovery
         summ.quest_xp = quest_xp
         summ.total_xp = total_week
-        summ.league_score = None if paused else X6.league_score(eff_ratio, days, t_days, quality_xp)
+        summ.league_score = None if paused else X6.league_score(eff_ratio, days, t_days, league_quality_xp)
         summ.is_deload = bool(deload)
         summ.deload_source = deload_source
         summ.paused = bool(paused)
         summ.finalized = finalized
 
     user.last_deload_week_start = last_deload_week_start
-
-    # Remove regularity/quality events that no longer correspond to the current
-    # activity history (for example, an Intervals update makes a workout
-    # non-qualifying). Only v6-generated event types are reconciled here.
-    for event in all_events:
-        if event.event_type not in {"consistency", "quality_hard", "quality_long"}:
-            continue
-        event_week = X6.week_start(event.week_start.date()) if event.week_start else None
-        if (
-            event_week is not None
-            and event_week >= activation_ws
-            and event.event_key not in generated_quality_consistency_keys
-        ):
-            db.delete(event)
-            events_by_key.pop(event.event_key, None)
 
     # 6) lиги: финализация идемпотентна; повторно обрабатываем незавершённые недели.
     for ws in all_weeks:
@@ -626,12 +596,9 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
     Q.grant_quests(db, user, acts, fresh_summaries)
     db.flush()
 
-    # Reconcile weekly quest totals including any awards granted in this same pass.
+    # Second category pass includes awards granted in this same recalculation.
     current_events = db.query(XPEvent).filter(XPEvent.user_id == user.id).all()
-    quest_amount_by_week: dict[datetime, float] = defaultdict(float)
-    for event in current_events:
-        if event.event_type in WEEKLY_XP_EVENT_TYPES and event.week_start:
-            quest_amount_by_week[event.week_start] += float(event.amount or 0.0)
+    category_xp_by_week = _weekly_event_category_totals(current_events)
     for week_start in all_weeks:
         week_dt = datetime.combine(week_start, datetime.min.time())
         summary = (
@@ -641,11 +608,19 @@ def _recalculate_user_xp_v6(db: Session, user: User, *, allow_week_notifications
         )
         if summary is None:
             continue
-        old_quest_xp = float(summary.quest_xp or 0.0)
-        new_quest_xp = round_xp(quest_amount_by_week.get(week_dt, 0.0))
-        if abs(new_quest_xp - old_quest_xp) >= 0.01:
-            summary.quest_xp = new_quest_xp
-            summary.total_xp = round_xp(float(summary.total_xp or 0.0) - old_quest_xp + new_quest_xp)
+        categories = category_xp_by_week.get(week_dt, {})
+        summary.consistency_xp = round_xp(categories.get("consistency", 0.0))
+        summary.quality_xp = round_xp(categories.get("quality", 0.0))
+        summary.recovery_xp = round_xp(categories.get("recovery", 0.0))
+        summary.quest_xp = round_xp(categories.get("quest", 0.0))
+        summary.total_xp = round_xp(
+            float(summary.effort_xp or 0.0)
+            + float(summary.goal_xp or 0.0)
+            + float(summary.consistency_xp or 0.0)
+            + float(summary.quality_xp or 0.0)
+            + float(summary.recovery_xp or 0.0)
+            + float(summary.quest_xp or 0.0)
+        )
 
     db.flush()
     events_sum = round_xp(sum(event.amount or 0.0 for event in current_events))
@@ -1824,10 +1799,6 @@ def get_activity_xp_breakdown(
         [row for row, row_stamp in dated_activities if row_stamp.date() == activity_day],
         key=lambda row: (_activity_stamp(row), row.id),
     )
-    week_rows = sorted(
-        [row for row, row_stamp in dated_activities if _monday_for_day(row_stamp.date()) == week_start],
-        key=lambda row: (_activity_stamp(row), row.id),
-    )
     tss_by_id = {row.id: _activity_load(row, X6) for row, _row_stamp in dated_activities}
     daily_tss = sum(tss_by_id.get(row.id, 0.0) for row in day_rows)
     effective_daily_tss = min(daily_tss, X6.DAILY_TSS_CAP)
@@ -1841,75 +1812,56 @@ def get_activity_xp_breakdown(
     stored_effort_xp = round_xp(activity.xp_earned or 0.0)
     manual_factor = X6.MANUAL_LOAD_FACTOR if bool(activity.is_manual) else 1.0
 
-    history = [
-        {"id": row.id, "sport_type": row.sport_type, "moving_time": row.moving_time}
-        for row, _row_stamp in dated_activities
-    ]
-    medians = X6.medians_by_sport(history, set())
-    quality_by_day = defaultdict(list)
-    for row in week_rows:
-        row_stamp = _activity_stamp(row)
-        source = "manual" if bool(row.is_manual) else ("estimated" if row.tss_estimated else "real")
-        quality_by_day[row_stamp.date()].append({
-            "id": row.id,
-            "sport_type": row.sport_type,
-            "moving_time": row.moving_time,
-            "intensity": row.intensity,
-            "hard_secs": row.hard_secs or 0,
-            "load_source": source,
-            "start_date": row_stamp,
-        })
-    quality_source_ids = X6.quality_event_activity_ids(quality_by_day, medians)
-
     week_events = (
         db.query(XPEvent)
         .filter(XPEvent.user_id == current.id, XPEvent.week_start == week_dt)
         .order_by(XPEvent.date.asc(), XPEvent.id.asc())
         .all()
     )
-    consistency_events = [
+    activity_events = [
         event for event in week_events
-        if event.event_type == "consistency"
-        and (
-            event.event_key == f"consistency:{activity_day.isoformat()}"
-            or event.source_id == activity_day.isoformat()
-        )
+        if event.event_type in {"quest", "achievement", "activity_bonus"}
+        and event.source_id is not None
+        and str(event.source_id) == str(activity.id)
     ]
-    consistency_event = consistency_events[0] if consistency_events else None
-    consistency_xp = round_xp(consistency_event.amount or 0.0) if consistency_event else 0.0
-
-    day_quest_events = [
-        event for event in week_events
-        if event.event_type in {"quest", "achievement"}
-        and event.date is not None
-        and event.date.date() == activity_day
-    ]
-    quests = [{
+    activity_event_ids = {event.id for event in activity_events}
+    activity_awards = [{
         "id": event.id,
         "title": event.title or event.event_type,
         "amount": round_xp(event.amount or 0.0),
-        "scope": "day",
-        "date": activity_day.isoformat(),
-    } for event in day_quest_events]
-    day_quest_xp = round_xp(sum(item["amount"] for item in quests))
+    } for event in activity_events]
+    activity_award_xp = round_xp(sum(item["amount"] for item in activity_awards))
 
-    quality_events = []
-    for event_type in ("quality_hard", "quality_long"):
-        event = next((row for row in week_events if row.event_type == event_type), None)
-        if event is None:
-            continue
-        attributed_id = event.source_id
-        if not attributed_id:
-            attributed_id = quality_source_ids.get(event_type)
-        if str(attributed_id) != str(activity.id):
-            continue
-        quality_events.append({
-            "type": event.event_type,
-            "title": event.title or event.event_type,
-            "amount": round_xp(event.amount or 0.0),
-            "scope": "week",
-            "activity_id": activity.id,
-        })
+    # Non-activity events remain visible as general daily/weekly XP, never as this workout's XP.
+    general_day_events = [
+        event for event in week_events
+        if event.id not in activity_event_ids
+        and (event.source_id is None or event.event_type == "sleep_bonus")
+        and event.event_type not in {"quest", "achievement", "weekly_goal"}
+        and event.date is not None
+        and event.date.date() == activity_day
+        and float(event.amount or 0.0) != 0.0
+    ]
+    general_day = [{
+        "id": event.id,
+        "title": event.title or event.event_type,
+        "amount": round_xp(event.amount or 0.0),
+    } for event in general_day_events]
+    general_day_ids = {event.id for event in general_day_events}
+    general_week_events = [
+        event for event in week_events
+        if event.id not in activity_event_ids | general_day_ids
+        and (event.source_id is None or event.event_type in {"sleep_bonus", "weekly_goal"})
+        and float(event.amount or 0.0) != 0.0
+    ]
+    general_week = [{
+        "id": event.id,
+        "title": event.title or event.event_type,
+        "amount": round_xp(event.amount or 0.0),
+    } for event in general_week_events]
+    general_day_xp = round_xp(sum(item["amount"] for item in general_day))
+    general_week_xp = round_xp(sum(item["amount"] for item in general_week))
+    general_total_xp = round_xp(general_day_xp + general_week_xp)
 
     summary = (
         db.query(WeeklySummary)
@@ -1929,21 +1881,6 @@ def get_activity_xp_breakdown(
         weekly_summary[key]
         for key in ("effort_xp", "consistency_xp", "quality_xp", "goal_xp", "recovery_xp", "quest_xp")
     ))
-    week_bonus_events = []
-    for event_type, amount_key in (("weekly_goal", "goal_xp"), ("recovery", "recovery_xp")):
-        event = next((row for row in week_events if row.event_type == event_type), None)
-        amount = round_xp(event.amount or 0.0) if event else weekly_summary[amount_key]
-        if amount:
-            week_bonus_events.append({
-                "type": event_type,
-                "title": (event.title if event else None) or event_type,
-                "amount": amount,
-                "scope": "week",
-            })
-
-    quality_xp_for_activity = round_xp(sum(item["amount"] for item in quality_events))
-    related_day_xp = round_xp(consistency_xp + day_quest_xp)
-    related_week_xp = round_xp(quality_xp_for_activity + sum(item["amount"] for item in week_bonus_events))
     return {
         "activity_id": activity.id,
         "activity_name": activity.name or "Без названия",
@@ -1965,31 +1902,22 @@ def get_activity_xp_breakdown(
             "xp": stored_effort_xp,
         },
         "related": {
-            "day": {
-                "scope": "day",
-                "consistency": {
-                    "xp": consistency_xp,
-                    "qualifying": consistency_event is not None,
-                    "count_once_in_day_total": True,
-                },
-                "quests": quests,
-                "quest_xp": day_quest_xp,
-                "total_xp": related_day_xp,
+            "activity": {
+                "events": activity_awards,
+                "total_xp": activity_award_xp,
             },
-            "week": {
-                "scope": "week",
-                "quality": quality_events,
-                "quality_xp_for_this_activity": quality_xp_for_activity,
-                "shared_bonuses": week_bonus_events,
-                "shared_bonus_xp": round_xp(sum(item["amount"] for item in week_bonus_events)),
-                "quest_xp_for_week": weekly_summary["quest_xp"],
-                "total_xp_for_this_activity": related_week_xp,
+            "general": {
+                "day": general_day,
+                "day_xp": general_day_xp,
+                "week": general_week,
+                "week_xp": general_week_xp,
+                "total_xp": general_total_xp,
             },
         },
         "totals": {
-            "for_this_activity_xp": stored_effort_xp,
-            "related_to_day_xp": related_day_xp,
-            "related_to_week_xp": related_week_xp,
+            "for_this_activity_xp": round_xp(stored_effort_xp + activity_award_xp),
+            "related_to_day_xp": general_day_xp,
+            "related_to_week_xp": general_week_xp,
             "weekly_summary_components_xp": component_sum,
             "weekly_summary_total_xp": weekly_summary["total_xp"],
             "weekly_summary_components_match": abs(component_sum - weekly_summary["total_xp"]) < 0.02,

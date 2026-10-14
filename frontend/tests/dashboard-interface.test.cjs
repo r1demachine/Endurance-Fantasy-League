@@ -9,6 +9,7 @@ const header = read("src/components/Header.tsx");
 const yearChart = read("src/components/dashboard/YearWeeksChart.tsx");
 const questsBoard = read("src/components/dashboard/QuestsBoard.tsx");
 const weekBlock = read("src/components/dashboard/WeekBlock.tsx");
+const activityCard = read("src/components/ActivityCard.tsx");
 const workoutsSection = read("src/components/dashboard/DashboardWorkoutsSection.tsx");
 const workoutsList = read("src/components/dashboard/WorkoutsList.tsx");
 const activityUpload = read("src/components/ActivityUpload.tsx");
@@ -72,8 +73,8 @@ test("manual uploads and sync refresh current activities and achievements", () =
   assert.match(dashboard, /await loadQuests\(\)/);
   assert.match(dashboard, /await refreshDashboardAfterDataChange\(\)/);
   assert.match(weekBlock, /Квесты и бонусы/);
-  assert.match(weekBlock, /\+12 XP/);
-  assert.match(weekBlock, /\+6 XP/);
+  assert.match(weekBlock, /«Нагрузка» — XP за нагрузку тренировок/);
+  assert.match(weekBlock, /максимум до 120%/);
   assert.match(dashboard, /<ActivityUpload onUploaded=\{refreshDashboardAfterDataChange\} \/>/);
   assert.match(dashboard, /setQuests\(\[\]\)/);
   assert.match(dashboard, /setQuestsError\(getApiErrorMessage/);
@@ -84,4 +85,15 @@ test("all visible week selectors use the shared Russian week formatter", () => {
   assert.match(weekBlock, /formatWeekRange\(option\.week_start\)/);
   assert.match(workoutsSection, /formatWeekRange\(week\.week_start\)/);
   assert.match(workoutsList, /formatWeekRange\(selectedWeekStart\)/);
+});
+
+
+test("activity XP card separates attached achievements from general bonuses", () => {
+  assert.match(activityCard, /Достижения за эту тренировку/);
+  assert.match(activityCard, /activityAwards\?\.total_xp/);
+  assert.match(activityCard, /Общие бонусы дня/);
+  assert.match(activityCard, /Общие бонусы недели/);
+  assert.match(activityCard, /Общие бонусы дня и недели показаны отдельно и не входят в итог XP этой тренировки/);
+  assert.doesNotMatch(activityCard, /Регулярность \(за день\)|Quality \(за неделю\)|Квесты дня/);
+  assert.match(activityCard, /for_this_activity_xp/);
 });
