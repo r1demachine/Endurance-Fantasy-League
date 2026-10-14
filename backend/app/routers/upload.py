@@ -64,6 +64,8 @@ class HeartRateSettingsUpdate(BaseModel):
 
 class ConfirmUploadInput(BaseModel):
     preview_token: str = Field(..., min_length=32, max_length=8192)
+    # Optional correction for an incorrect FIT trainer/virtual-activity detector result.
+    is_indoor_override: bool | None = None
 
 
 def _upload_rate_key(request: Request) -> str:
@@ -427,6 +429,59 @@ def _finalise_file_metrics(
     }
 
 
+def _fit_marker_text(value: Any) -> str:
+    """Normalise FIT enum values and device descriptors for robust comparisons."""
+    if value is None:
+        return ""
+    name = getattr(value, "name", None)
+    if name:
+        value = name
+    return re.sub(r"[^a-z0-9]+", "_", str(value).lower()).strip("_")
+
+
+def _fit_flag_is_true(value: Any) -> bool:
+    if value is True:
+        return True
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value != 0
+    return _fit_marker_text(value) in {"true", "yes", "on", "1"}
+
+
+def _is_indoor_fit_activity(session: dict, metadata_records: list[dict]) -> bool:
+    """Detect virtual rides and trainer-based activities from FIT session/device metadata."""
+    for key, value in session.items():
+        if str(key).lower() in {"trainer", "is_trainer", "indoor", "is_indoor", "virtual", "is_virtual"}:
+            if _fit_flag_is_true(value):
+                return True
+
+    sub_sport = _fit_marker_text(session.get("sub_sport")).replace("_", "")
+    if any(marker in sub_sport for marker in (
+        "virtualactivity", "virtualride", "indoorcycling", "spinning", "spin",
+        "stationarycycling", "indoorrunning", "treadmill",
+    )):
+        return True
+
+    app_markers = (
+        "trainingpeaksvirtual", "zwift", "mywhoosh", "rouvy", "wahoosystm",
+        "systm", "sufferfest", "bkool", "kinomap", "trainerroad", "fulgaz",
+        "rgtcycling", "tacxtraining", "tacxtrainer", "kickr", "virtualactivity",
+        "virtualride", "indoorcycling",
+    )
+    for record in metadata_records:
+        for value in record.values():
+            descriptor = _fit_marker_text(value).replace("_", "")
+            if any(marker in descriptor for marker in app_markers):
+                return True
+            if _fit_marker_text(value) in {"true", "yes", "on", "1"}:
+                # Only treat affirmative values as flags when the field is itself an explicit flag.
+                continue
+        for key, value in record.items():
+            if str(key).lower() in {"trainer", "is_trainer", "indoor", "is_indoor", "virtual", "is_virtual"}:
+                if _fit_flag_is_true(value):
+                    return True
+    return False
+
+
 def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None, resting_hr: int | None = None, user_timezone: str | None = "UTC") -> dict:
     from fitparse import FitFile
 
@@ -467,7 +522,12 @@ def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
         distance = _number(session.get("total_distance"))
         if not distance:
             distance = max((_number(s.get("distance")) or 0.0 for s in samples), default=0.0)
-        return _finalise_file_metrics(
+        metadata_records = []
+        for message_name in ("file_id", "device_info"):
+            for message in fit.get_messages(message_name):
+                metadata_records.append({field.name: field.value for field in message})
+
+        parsed = _finalise_file_metrics(
             start=activity_start,
             start_local=local_start,
             moving_time=_number(session.get("total_timer_time")),
@@ -483,6 +543,8 @@ def _parse_fit(data: bytes, lthr: int | None, user_max_hr: int | None, resting_h
             resting_hr=resting_hr,
             user_timezone=user_timezone,
         )
+        parsed["is_indoor"] = _is_indoor_fit_activity(session, metadata_records)
+        return parsed
     except (InvalidActivityFile, UnsupportedActivityFile):
         raise
     except Exception as exc:
@@ -861,11 +923,15 @@ def confirm_activity_upload(
     from ..services.activity_upload import create_activity_from_upload
     from ..services.xp import round_xp
 
+    upload_preview = dict(preview)
+    if data.is_indoor_override is not None:
+        upload_preview["is_indoor"] = data.is_indoor_override
+
     before_xp = float(current.total_xp or 0)
     status, activity, reason = create_activity_from_upload(
         db,
         current,
-        preview,
+        upload_preview,
         str(preview.get("file_sha256") or ""),
         source=UPLOAD_SOURCE,
     )
