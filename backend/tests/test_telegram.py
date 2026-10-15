@@ -23,7 +23,10 @@ from app.models import Activity, TelegramLinkAttempt, TelegramWebhookUpdate, Use
 from app.routers import telegram as telegram_router
 from app.routers.sync import _close_league_week
 from app.services.telegram_week import latest_completed_week_start, notify_week_results
-from app.routers.telegram import _hash_link_code, _new_link_code, LINK_TTL_MINUTES, UPLOAD_SOURCE
+from app.routers.telegram import (
+    _hash_link_code, _new_link_code, _telegram_deep_link,
+    LINK_TTL_MINUTES, UPLOAD_SOURCE,
+)
 
 TCX_BYTES = b"""<?xml version="1.0"?>
 <TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2">
@@ -123,6 +126,39 @@ class TelegramSecurityTestCase(unittest.TestCase):
         db = self.Session()
         self.assertEqual(db.get(User, user_id).telegram_link_code, _hash_link_code(code))
         self.assertNotEqual(db.get(User, user_id).telegram_link_code, code)
+        db.close()
+
+    def test_telegram_deep_link_uses_valid_start_payload(self):
+        code = "ABCDEFGH234567AB"
+        self.assertEqual(
+            _telegram_deep_link("@test_bot", code),
+            f"https://t.me/test_bot?start=link_{code}",
+        )
+        self.assertIsNone(_telegram_deep_link("bad username", code))
+        self.assertIsNone(_telegram_deep_link("test_bot", "contains/slash"))
+
+    def test_start_deep_link_links_account_without_manual_command(self):
+        code = "ABCDEFGH234567AB"
+        user_id = self.create_user(
+            username="deeplink",
+            telegram_link_code=_hash_link_code(code),
+            telegram_link_expires=datetime.utcnow() + timedelta(minutes=5),
+        )
+        response = self.post_update(
+            104,
+            {"message": {
+                "chat": {"id": 321, "type": "private"},
+                "text": f"/start link_{code}",
+            }},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Готово! Привязан аккаунт @deeplink", self.send_mock.await_args.args[1])
+        db = self.Session()
+        user = db.get(User, user_id)
+        self.assertEqual(user.telegram_chat_id, "321")
+        self.assertFalse(user.telegram_notify)
+        self.assertIsNone(user.telegram_link_code)
+        self.assertIsNone(user.telegram_link_expires)
         db.close()
 
     def test_expired_link_code_is_rejected_and_counted(self):

@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import logging
+import re
 import secrets
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -65,6 +66,16 @@ def _hash_link_code(code: str) -> str:
 def _new_link_code() -> str:
     # 10 random bytes -> 16 base32 characters, no padding; only SHA-256 is persisted.
     return base64.b32encode(secrets.token_bytes(10)).decode("ascii").rstrip("=")
+
+
+def _telegram_deep_link(bot_username: str | None, code: str) -> str | None:
+    """Build a Telegram start link without accepting arbitrary URL fragments."""
+    username = str(bot_username or "").strip().lstrip("@")
+    if not re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
+        return None
+    if not re.fullmatch(r"[A-Z2-7]{16}", str(code or "").upper()):
+        return None
+    return f"https://t.me/{username}?start=link_{str(code).upper()}"
 
 
 def _latest_completed_week_start(today: date | None = None) -> date:
@@ -131,13 +142,19 @@ def create_link_code(
     current.telegram_link_expires = datetime.utcnow() + timedelta(minutes=LINK_TTL_MINUTES)
     db.commit()
     settings = get_settings()
+    bot_username = str(settings.TELEGRAM_BOT_USERNAME or "").strip().lstrip("@") or None
     return {
         "code": code,
         "expires_at": current.telegram_link_expires.isoformat() + "Z",
-        "bot_username": settings.TELEGRAM_BOT_USERNAME,
+        "bot_username": bot_username,
+        "deep_link": _telegram_deep_link(bot_username, code),
         "linked": bool(current.telegram_chat_id),
         "notify": bool(current.telegram_notify),
-        "instructions": f"Открой бота и отправь: /link {code}. Затем включи уведомления командой /notify on.",
+        "instructions": (
+            "Открой ссылку, чтобы привязать аккаунт автоматически. "
+            f"Если ссылка не сработает, отправь боту /link {code}. "
+            "Уведомления после привязки нужно включить отдельно командой /notify on."
+        ),
     }
 
 
@@ -274,7 +291,17 @@ async def _handle_command(db: Session, chat_id: str, text: str, chat_type: str =
     parts = text.split()
     command = parts[0].split("@")[0].lower()
 
-    if command in ("/start", "/help"):
+    if command == "/start":
+        # Telegram deep links deliver their parameter as "/start <payload>".
+        # Reuse the existing one-time /link flow, including its privacy and rate-limit checks.
+        if len(parts) >= 2 and parts[1].lower().startswith("link_"):
+            code = parts[1][5:]
+            await _handle_command(db, chat_id, f"/link {code}", chat_type)
+            return
+        await send_message(chat_id, HELP_TEXT)
+        return
+
+    if command == "/help":
         await send_message(chat_id, HELP_TEXT)
         return
 

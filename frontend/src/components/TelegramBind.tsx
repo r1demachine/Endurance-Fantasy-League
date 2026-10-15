@@ -15,6 +15,7 @@ export default function TelegramBind() {
   const [status, setStatus] = useState<Status | null>(null);
   const [code, setCode] = useState<string | null>(null);
   const [expires, setExpires] = useState<string | null>(null);
+  const [deepLink, setDeepLink] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -22,6 +23,11 @@ export default function TelegramBind() {
     try {
       const r = await authApi.get("/api/telegram/status");
       setStatus(r.data);
+      if (r.data.linked) {
+        setCode(null);
+        setDeepLink(null);
+        setExpires(null);
+      }
     } catch {
       setStatus({
         bot_configured: false,
@@ -44,7 +50,8 @@ export default function TelegramBind() {
       const r = await authApi.post("/api/telegram/link-code");
       setCode(r.data.code);
       setExpires(r.data.expires_at);
-      setMsg(r.data.instructions || "Отправь код боту");
+      setDeepLink(typeof r.data.deep_link === "string" ? r.data.deep_link : null);
+      setMsg(r.data.instructions || "Открой ссылку, чтобы привязать аккаунт.");
       await load();
     } catch (e: any) {
       setMsg(e.response?.data?.detail || "Не удалось создать код");
@@ -70,6 +77,7 @@ export default function TelegramBind() {
     try {
       await authApi.post("/api/telegram/unlink");
       setCode(null);
+      setDeepLink(null);
       await load();
       setMsg("Telegram отвязан");
     } catch (e: any) {
@@ -82,7 +90,7 @@ export default function TelegramBind() {
   if (!status) return null;
 
   return (
-    <div className="border-t-2 border-black/20 pt-5">
+    <div data-tour="profile-telegram-bind" className="border-t-2 border-black/20 pt-5">
       <h3 className="font-display text-lg uppercase">Telegram</h3>
       <p className="mt-1 max-w-2xl text-sm text-[#666]">
         Привяжи бота для уведомлений (итоги недели, дуэли) и загрузки .fit / .gpx / .tcx.
@@ -113,10 +121,32 @@ export default function TelegramBind() {
             <div className="border-2 border-black bg-white p-3">
               <p className="text-[10px] font-bold tracking-widest uppercase text-[#666]">Код (15 мин)</p>
               <p className="font-display text-3xl tracking-widest">{code}</p>
-              <p className="mt-1 text-sm text-[#666]">
-                В боте отправь: <span className="font-bold">/link {code}</span>
+              {deepLink ? (
+                <a
+                  href={deepLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex border-2 border-black bg-[#229ED9] px-4 py-3 text-xs font-bold uppercase tracking-widest text-white hover:bg-black"
+                >
+                  Открыть Telegram и привязать
+                </a>
+              ) : (
+                <p className="mt-1 text-sm text-[#666]">
+                  В боте отправь: <span className="font-bold">/link {code}</span>
+                </p>
+              )}
+              <p className="mt-2 text-xs text-[#666]">
+                Ссылка одноразовая и действует 15 минут. Уведомления включаются отдельно после привязки.
               </p>
-              {expires && <p className="text-[10px] text-[#666]">до {expires}</p>}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={load}
+                className="mt-3 border border-black/40 px-3 py-2 text-[10px] font-bold uppercase tracking-wide hover:bg-[#ffd500] disabled:opacity-50"
+              >
+                Я привязал — проверить статус
+              </button>
+              {expires && <p className="mt-1 text-[10px] text-[#666]">до {expires}</p>}
             </div>
           )}
 
