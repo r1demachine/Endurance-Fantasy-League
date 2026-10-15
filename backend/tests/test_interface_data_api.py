@@ -504,6 +504,76 @@ class InterfaceDataApiTests(unittest.TestCase):
         self.assertTrue(quests["good_sleep_5"]["progress"]["steps"][1]["filled"])
         self.assertFalse(quests["good_sleep_5"]["progress"]["steps"][2]["filled"])
 
+
+    def test_execution_bonus_quests_are_included_in_existing_quests_response(self):
+        week = date(2026, 10, 12)
+        today = date(2026, 10, 18)
+        novice = User(
+            username="execution-novice",
+            password_hash="test-hash",
+            display_name="Execution Novice",
+            timezone_name="UTC",
+        )
+        pro = User(
+            username="execution-pro",
+            password_hash="test-hash",
+            display_name="Execution Pro",
+            timezone_name="UTC",
+        )
+        self.db.add_all([novice, pro])
+        self.db.commit()
+
+        def prepare_week(owner, target_days):
+            activities = []
+            for offset in (0, 1):
+                day = week + timedelta(days=offset)
+                activities.append(self.add_activity(
+                    f"{owner.username}-{offset}",
+                    user=owner,
+                    stamp=datetime.combine(day, datetime.min.time()).replace(hour=9),
+                    tss=30,
+                    moving_time=60 * 60,
+                ))
+            for offset in range(5):
+                self.add_sleep(week + timedelta(days=offset), user=owner, secs=6 * 3600)
+            summary = self.add_summary(
+                week,
+                user=owner,
+                ratio=1.0,
+                target_training_days=target_days,
+                paused=False,
+            )
+            return activities, summary
+
+        novice_activities, novice_summary = prepare_week(novice, target_days=2)
+        pro_activities, pro_summary = prepare_week(pro, target_days=5)
+        self.db.commit()
+
+        with patch("app.services.quests._user_local_today", return_value=today):
+            novice_quests = {
+                item["slug"]: item
+                for item in quest_service.quest_states(self.db, novice, selected_week=week)
+            }
+            pro_quests = {
+                item["slug"]: item
+                for item in quest_service.quest_states(self.db, pro, selected_week=week)
+            }
+
+        self.assertEqual(novice_quests["goal_100"]["kind"], "weekly")
+        self.assertEqual(novice_quests["goal_100"]["reward"], 20)
+        self.assertEqual(novice_quests["goal_100"]["status"], "earned")
+        self.assertEqual(novice_quests["goal_100"]["progress"], {"current": 100.0, "target": 100, "unit": "%"})
+
+        self.assertEqual(novice_quests["ideal_week"]["kind"], "weekly")
+        self.assertEqual(novice_quests["ideal_week"]["reward"], 40)
+        self.assertEqual(novice_quests["ideal_week"]["status"], "earned")
+        self.assertEqual(novice_quests["ideal_week"]["progress"], {"current": 3, "target": 3, "unit": "условия"})
+
+        # The pro still gets the goal bonus but needs five qualifying days for the ideal-week bonus.
+        self.assertEqual(pro_quests["goal_100"]["status"], "earned")
+        self.assertEqual(pro_quests["ideal_week"]["status"], "open")
+        self.assertEqual(pro_quests["ideal_week"]["progress"], {"current": 2, "target": 3, "unit": "условия"})
+
     def test_weekly_summary_recalculation_persists_repeatable_bonuses_idempotently(self):
         week_start = date(2026, 10, 12)
         # Historical weeks must still recalculate Goal XP after migration activation.

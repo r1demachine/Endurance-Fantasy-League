@@ -786,6 +786,83 @@ def quest_states(db, user, selected_week: date | None = None) -> list:
             "progress": progress,
         })
 
+
+    # Execution bonuses use the existing weekly quest payload so the dashboard
+    # can render them with the same cards/progress as other weekly achievements.
+    summaries_by_week = {
+        _trainer_week_start(summary.week_start.date()): summary
+        for summary in all_summaries
+    }
+    selected_summary = summaries_by_week.get(selected_week_start)
+    summary_paused = bool(getattr(selected_summary, "paused", False)) if selected_summary else False
+    completion_ratio = float(getattr(selected_summary, "completion_ratio", 0.0) or 0.0) if selected_summary else 0.0
+    goal_bonus_eligible = completion_ratio >= 1.0 and not summary_paused
+    goal_bonus_event = earned.get(f"quest:goal_100:{selected_week_start.isoformat()}")
+    goal_bonus_complete = goal_bonus_eligible or (
+        is_historical_week and goal_bonus_event is not None and not summary_paused
+    )
+    goal_percent = round(min(max(completion_ratio * 100.0, 0.0), 100.0), 1)
+    out.append({
+        "slug": "goal_100",
+        "title": "Цель выполнена",
+        "desc": "Достичь не менее 100% персональной недельной цели. Бонус начисляется один раз за неделю.",
+        "reward": int(WEEKLY_GOAL_TARGET_REWARD),
+        "kind": "weekly",
+        "week_start": selected_week_start.isoformat(),
+        "status": "earned" if goal_bonus_complete else "open",
+        "earned_at": (
+            goal_bonus_event.date.strftime("%d.%m.%Y")
+            if goal_bonus_event is not None and goal_bonus_complete and goal_bonus_event.date is not None
+            else selected_week_start.strftime("%d.%m.%Y") if goal_bonus_eligible else None
+        ),
+        "progress": {
+            "current": goal_percent if not summary_paused else 0,
+            "target": 100,
+            "unit": "%",
+        },
+    })
+
+    target_days_raw = getattr(selected_summary, "target_training_days", None) if selected_summary else None
+    try:
+        target_days = int(target_days_raw) if target_days_raw else WEEKLY_IDEAL_WEEK_QUALIFYING_DAYS_FALLBACK
+    except (TypeError, ValueError):
+        target_days = WEEKLY_IDEAL_WEEK_QUALIFYING_DAYS_FALLBACK
+    if target_days <= 0:
+        target_days = WEEKLY_IDEAL_WEEK_QUALIFYING_DAYS_FALLBACK
+    target_days = min(target_days, WEEKLY_IDEAL_WEEK_QUALIFYING_DAYS_FALLBACK)
+    qualifying_days = len(_qualifying_days_by_week(dated_activities).get(selected_week_start, []))
+    good_sleep_nights = int(weekly_progress["good_sleep_5"]["current"])
+    ideal_week_conditions = (
+        goal_bonus_eligible,
+        qualifying_days >= target_days,
+        good_sleep_nights >= WEEKLY_IDEAL_WEEK_GOOD_SLEEP_TARGET,
+    )
+    ideal_week_progress = sum(1 for condition in ideal_week_conditions if condition)
+    ideal_week_eligible = ideal_week_progress == len(ideal_week_conditions)
+    ideal_week_event = earned.get(f"quest:ideal_week:{selected_week_start.isoformat()}")
+    ideal_week_complete = ideal_week_eligible or (
+        is_historical_week and ideal_week_event is not None and not summary_paused
+    )
+    out.append({
+        "slug": "ideal_week",
+        "title": "Идеальная неделя",
+        "desc": "Выполнить 100% недельной цели, достичь персонального числа квалифицирующих дней и получить не менее 5 хороших ночей сна.",
+        "reward": int(WEEKLY_IDEAL_WEEK_REWARD),
+        "kind": "weekly",
+        "week_start": selected_week_start.isoformat(),
+        "status": "earned" if ideal_week_complete else "open",
+        "earned_at": (
+            ideal_week_event.date.strftime("%d.%m.%Y")
+            if ideal_week_event is not None and ideal_week_complete and ideal_week_event.date is not None
+            else selected_week_start.strftime("%d.%m.%Y") if ideal_week_eligible else None
+        ),
+        "progress": {
+            "current": ideal_week_progress,
+            "target": len(ideal_week_conditions),
+            "unit": "условия",
+        },
+    })
+
     # Lifetime statuses/progress remain based on raw history, independent of XPEvent presence.
     lifetime_activities = [
         activity for activity in dated_activities
