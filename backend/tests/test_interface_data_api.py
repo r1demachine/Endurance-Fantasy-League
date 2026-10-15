@@ -650,6 +650,7 @@ class InterfaceDataApiTests(unittest.TestCase):
             week = payload["week"]
             for field in ("effort_xp", "goal_xp", "consistency_xp", "quality_xp", "recovery_xp"):
                 self.assertGreater(week[field], 0, field)
+            # weekly_goal is deliberately excluded here because goal_xp already accounts for it.
             expected_quest_xp = sum(
                 float(event.amount or 0.0)
                 for event in event_rows
