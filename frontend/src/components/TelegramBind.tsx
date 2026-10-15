@@ -23,6 +23,11 @@ export default function TelegramBind() {
     try {
       const r = await authApi.get("/api/telegram/status");
       setStatus(r.data);
+      if (r.data.linked) {
+        setCode(null);
+        setDeepLink(null);
+        setExpires(null);
+      }
     } catch {
       setStatus({
         bot_configured: false,
@@ -133,7 +138,15 @@ export default function TelegramBind() {
               <p className="mt-2 text-xs text-[#666]">
                 Ссылка одноразовая и действует 15 минут. Уведомления включаются отдельно после привязки.
               </p>
-              {expires && <p className="text-[10px] text-[#666]">до {expires}</p>}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={load}
+                className="mt-3 border border-black/40 px-3 py-2 text-[10px] font-bold uppercase tracking-wide hover:bg-[#ffd500] disabled:opacity-50"
+              >
+                Я привязал — проверить статус
+              </button>
+              {expires && <p className="mt-1 text-[10px] text-[#666]">до {expires}</p>}
             </div>
           )}
 
