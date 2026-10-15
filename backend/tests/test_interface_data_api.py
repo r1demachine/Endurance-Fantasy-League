@@ -84,13 +84,14 @@ class InterfaceDataApiTests(unittest.TestCase):
         return activity
 
     def add_summary(
-        self, week, *, effort=0, consistency=0, quality=0, goal=0,
-        recovery=0, quest=0, total=0, training_days=0, ratio=0.0,
+        self, week, *, user=None, effort=0, consistency=0, quality=0, goal=0,
+        recovery=0, quest=0, total=0, training_days=0, target_training_days=None, ratio=0.0,
         finalized=True, actual_load=0, target_load=100,
         paused=False, is_deload=False,
     ):
+        owner = user or self.user
         row = WeeklySummary(
-            user_id=self.user.id,
+            user_id=owner.id,
             week_start=datetime.combine(week, datetime.min.time()),
             effort_xp=effort,
             consistency_xp=consistency,
@@ -100,6 +101,7 @@ class InterfaceDataApiTests(unittest.TestCase):
             quest_xp=quest,
             total_xp=total,
             training_days=training_days,
+            target_training_days=target_training_days,
             completion_ratio=ratio,
             finalized=finalized,
             actual_load=actual_load,
@@ -128,9 +130,10 @@ class InterfaceDataApiTests(unittest.TestCase):
         self.db.flush()
         return event
 
-    def add_sleep(self, day, *, secs=None, score=None):
+    def add_sleep(self, day, *, user=None, secs=None, score=None):
+        owner = user or self.user
         row = Wellness(
-            user_id=self.user.id,
+            user_id=owner.id,
             date=day.isoformat(),
             sleep_secs=secs,
             sleep_score=score,
@@ -193,6 +196,8 @@ class InterfaceDataApiTests(unittest.TestCase):
             (SimpleNamespace(event_type="quest", event_key="quest:long_workout_3h:2026-10-12"), "quality"),
             (SimpleNamespace(event_type="quest", event_key="quest:good_sleep_5:2026-10-12"), "recovery"),
             (SimpleNamespace(event_type="sleep_bonus", event_key="sleep_bonus:good_night:2026-10-13"), "recovery"),
+            (SimpleNamespace(event_type="quest", event_key="quest:goal_100:2026-10-12"), "quest"),
+            (SimpleNamespace(event_type="quest", event_key="quest:ideal_week:2026-10-12"), "quest"),
             (SimpleNamespace(event_type="quest", event_key="quest:trainer_week:2026-10-12"), "quest"),
             (SimpleNamespace(event_type="achievement", event_key="achievement:historic:1"), "quest"),
             (SimpleNamespace(event_type="unknown", event_key="unmapped:thing"), "quest"),
@@ -645,7 +650,14 @@ class InterfaceDataApiTests(unittest.TestCase):
             week = payload["week"]
             for field in ("effort_xp", "goal_xp", "consistency_xp", "quality_xp", "recovery_xp"):
                 self.assertGreater(week[field], 0, field)
-            self.assertEqual(week["quest_xp"], 0)
+            # weekly_goal is deliberately excluded here because goal_xp already accounts for it.
+            expected_quest_xp = sum(
+                float(event.amount or 0.0)
+                for event in event_rows
+                if event.event_type in sync_router.WEEKLY_XP_EVENT_TYPES
+                and sync_router.xp_category(event) == "quest"
+            )
+            self.assertAlmostEqual(week["quest_xp"], expected_quest_xp, places=1)
             components = sum(
                 week[field] for field in (
                     "effort_xp", "goal_xp", "consistency_xp",
@@ -657,6 +669,16 @@ class InterfaceDataApiTests(unittest.TestCase):
             self.assertEqual(week["daily_bonus_days"], 6)
             self.assertEqual(week["goal_xp"], 120.0)
             self.assertGreaterEqual(week["consistency_xp"], 6 * X6.DAILY_WORKOUT_BONUS_XP)
+            bonus_events = {
+                event.event_key: event
+                for event in event_rows
+                if event.event_key in {
+                    "quest:goal_100:2026-10-12",
+                    "quest:ideal_week:2026-10-12",
+                }
+            }
+            self.assertEqual(bonus_events["quest:goal_100:2026-10-12"].amount, 20.0)
+            self.assertEqual(bonus_events["quest:ideal_week:2026-10-12"].amount, 40.0)
             self.assertAlmostEqual(
                 week["total_xp"],
                 sum(week[field] for field in (
@@ -835,6 +857,116 @@ class InterfaceDataApiTests(unittest.TestCase):
         self.assertIsNone(sources["quality_long"])
         self.assertEqual(X6.quality_events_week(rows, {"RIDE": 9999}), [("quality_hard", 15.0)])
 
+
+
+    def test_goal_and_ideal_week_bonuses_use_personal_target_and_reconcile_idempotently(self):
+        week = date(2026, 10, 19)
+        novice = User(
+            username="ideal-week-novice",
+            password_hash="test-hash",
+            display_name="Ideal Week Novice",
+            timezone_name="UTC",
+        )
+        pro = User(
+            username="ideal-week-pro",
+            password_hash="test-hash",
+            display_name="Ideal Week Pro",
+            timezone_name="UTC",
+        )
+        self.db.add_all([novice, pro])
+        self.db.commit()
+
+        def add_week(owner, days, target_days):
+            activities = []
+            for index, day in enumerate(days):
+                activities.append(self.add_activity(
+                    f"{owner.username}-{index}",
+                    user=owner,
+                    stamp=datetime.combine(day, datetime.min.time()).replace(hour=9),
+                    tss=30,
+                    moving_time=60 * 60,
+                ))
+            for offset in range(5):
+                self.add_sleep(
+                    week + timedelta(days=offset),
+                    user=owner,
+                    secs=6 * 60 * 60,
+                )
+            summary = self.add_summary(
+                week,
+                user=owner,
+                ratio=1.0,
+                actual_load=100,
+                target_load=100,
+                target_training_days=target_days,
+                paused=False,
+            )
+            return activities, summary
+
+        novice_activities, novice_summary = add_week(
+            novice, [week, week + timedelta(days=1)], target_days=2,
+        )
+        pro_activities, pro_summary = add_week(
+            pro, [week, week + timedelta(days=1)], target_days=5,
+        )
+        pro_summary.league_score = 88.0
+        self.db.commit()
+
+        def get_event(owner, key):
+            return self.db.query(XPEvent).filter(
+                XPEvent.user_id == owner.id,
+                XPEvent.event_key == key,
+            ).first()
+
+        with patch("app.services.quests._user_local_today", return_value=date(2026, 10, 26)):
+            quest_service.grant_quests(self.db, novice, novice_activities, [novice_summary])
+            quest_service.grant_quests(self.db, pro, pro_activities, [pro_summary])
+            self.db.commit()
+
+            self.assertEqual(get_event(novice, "quest:goal_100:2026-10-19").amount, 20.0)
+            self.assertEqual(get_event(novice, "quest:ideal_week:2026-10-19").amount, 40.0)
+            self.assertEqual(get_event(pro, "quest:goal_100:2026-10-19").amount, 20.0)
+            self.assertIsNone(get_event(pro, "quest:ideal_week:2026-10-19"))
+            self.assertEqual(pro_summary.league_score, 88.0)
+
+            # Re-running the same recalculation must not duplicate either event.
+            self.assertEqual(
+                quest_service.grant_quests(self.db, novice, novice_activities, [novice_summary]),
+                0,
+            )
+            self.db.commit()
+            self.assertEqual(
+                self.db.query(XPEvent).filter(
+                    XPEvent.user_id == novice.id,
+                    XPEvent.event_key == "quest:ideal_week:2026-10-19",
+                ).count(),
+                1,
+            )
+
+            # The plan target remains personal: the pro earns the +40 only after
+            # reaching five qualifying days while keeping goal and sleep conditions.
+            for index, offset in enumerate((2, 3, 4), start=2):
+                day = week + timedelta(days=offset)
+                pro_activities.append(self.add_activity(
+                    f"{pro.username}-{index}",
+                    user=pro,
+                    stamp=datetime.combine(day, datetime.min.time()).replace(hour=9),
+                    tss=30,
+                    moving_time=60 * 60,
+                ))
+            quest_service.grant_quests(self.db, pro, pro_activities, [pro_summary])
+            self.db.commit()
+            self.assertEqual(get_event(pro, "quest:ideal_week:2026-10-19").amount, 40.0)
+            self.assertEqual(pro_summary.league_score, 88.0)
+
+            # If synced history invalidates goal completion, stale execution
+            # bonuses are removed instead of remaining in total XP.
+            novice_summary.completion_ratio = 0.99
+            self.db.commit()
+            quest_service.grant_quests(self.db, novice, novice_activities, [novice_summary])
+            self.db.commit()
+            self.assertIsNone(get_event(novice, "quest:goal_100:2026-10-19"))
+            self.assertIsNone(get_event(novice, "quest:ideal_week:2026-10-19"))
 
 if __name__ == "__main__":
     unittest.main()
