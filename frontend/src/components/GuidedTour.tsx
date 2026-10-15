@@ -97,6 +97,12 @@ const TOUR_STEPS: TourStep[] = [
     target: "profile-intervals-source",
     title: "Подключи Intervals.icu",
     description: "Открой строку Intervals.icu и введи ID спортсмена и API-ключ. После подключения синхронизируй историю тренировок — данные появятся на дашборде и будут участвовать в расчёте XP.",
+  },
+  {
+    href: "/profile?settings=sources",
+    target: "profile-telegram-bind",
+    title: "Подключи Telegram-бота",
+    description: "Создай код привязки и нажми «Открыть Telegram и привязать» — бот получит ссылку с одноразовым кодом и свяжет аккаунт автоматически. После этого отдельно включи уведомления. В чате также можно отправлять файлы FIT, GPX и TCX.",
     nextLabel: "Завершить",
   },
 ];
