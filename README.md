@@ -105,7 +105,7 @@ Endurance Fantasy League — веб-платформа, которая прев�
 
 <p align="center">
   <img src="screenshots/05-profile-social.png" alt="Профиль и социальные функции" width="49%">
-  <img src="screenshots/06-mobile.png" alt="Мобильная версия" width="49%">
+  <img src="screenshots/06-mobile.png" alt="Мобильная версия" width="25%">
 </p>
 
 ---
