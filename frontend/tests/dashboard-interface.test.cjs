@@ -132,6 +132,21 @@ test("activity XP card separates attached achievements from general bonuses", ()
 });
 
 
+
+test("weekly execution bonuses are rendered through the existing weekly quest cards", () => {
+  assert.match(questsBoard, /goal_100:/);
+  assert.match(questsBoard, /ideal_week:/);
+  assert.match(questsBoard, /Получите \+20 XP один раз за неделю/);
+  assert.match(questsBoard, /Получите \+40 XP один раз за неделю/);
+  assert.match(questsBoard, /Недельные достижения/);
+  assert.match(questsBoard, /quest\.reward/);
+  assert.match(questsBoard, /quest\.progress/);
+  assert.match(read("../backend/app/services/quests.py"), /"slug": "goal_100"/);
+  assert.match(read("../backend/app/services/quests.py"), /"slug": "ideal_week"/);
+  assert.match(read("../backend/app/services/quests.py"), /"quest:goal_100:/);
+  assert.match(read("../backend/app/services/quests.py"), /"quest:ideal_week:/);
+});
+
 test("global gradient stays fixed while dashboard and profile sections stagger top to bottom", () => {
   assert.ok(layout.includes("fixed inset-0 z-0 bg-gradient-to-br from-[#171a38]"));
   assert.equal(pageTransition.includes("bg-gradient-to-br"), false);
