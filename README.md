@@ -1,175 +1,512 @@
 # 🏆 Endurance Fantasy League
 
-> **Преврати свои тренировки в увлекательную игру.**
-> Геймифицированная платформа для спортсменов на выносливость: Strava, Garmin и Wahoo
-> превращаются в XP, уровни, сезоны и соревнования с друзьями.
+**Тренируйся. Выполняй план. Зарабатывай XP. Соревнуйся.**
 
-**Версия:** 5.3 «Ночная газета» · **Сезоны:** Rose → Peony 🌸 
-**Прод:** https://endurance-fantasy-league.vercel.app (Vercel + Render)
+Endurance Fantasy League — веб-платформа, которая превращает тренировки на выносливость в игровую систему с уровнями, достижениями, персональными целями, недельными бонусами, рейтингами и соревнованиями с другими спортсменами.
+
+Подключай [Intervals.icu](https://intervals.icu/), синхронизируй тренировочную историю и следи за своим прогрессом в едином интерфейсе.
+
+<p align="center">
+  <a href="https://endurance-fantasy-league.vercel.app">
+    <img src="https://img.shields.io/badge/WEB_APP-Открыть_приложение-5866f2?style=for-the-badge" alt="Открыть приложение">
+  </a>
+  <a href="https://github.com/r1demachine/Endurance-Fantasy-League">
+    <img src="https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github" alt="GitHub">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/r1demachine/Endurance-Fantasy-League/actions/workflows/frontend-checks.yml">
+    <img src="https://github.com/r1demachine/Endurance-Fantasy-League/actions/workflows/frontend-checks.yml/badge.svg" alt="Frontend CI">
+  </a>
+  <a href="https://github.com/r1demachine/Endurance-Fantasy-League/actions/workflows/security-regressions.yml">
+    <img src="https://github.com/r1demachine/Endurance-Fantasy-League/actions/workflows/security-regressions.yml/badge.svg" alt="Backend CI">
+  </a>
+</p>
+
+---
+
+## Содержание
+
+- [Возможности](#-возможности)
+- [Скриншоты](#-скриншоты)
+- [Система XP v6](#-система-xp-v6)
+- [Технологический стек](#-технологический-стек)
+- [Архитектура проекта](#-архитектура-проекта)
+- [Локальный запуск](#-локальный-запуск)
+- [Переменные окружения](#-переменные-окружения)
+- [Тестирование](#-тестирование)
+- [Безопасность и приватность](#-безопасность-и-приватность)
+- [Развёртывание](#-развёртывание)
+
+---
+
+## ✨ Возможности
+
+### 🏃 Тренировки и аналитика
+
+- **Синхронизация с Intervals.icu** — импорт тренировочной истории и доступных данных о восстановлении.
+- **Поддержка разных видов спорта** — велоспорт, бег, плавание и другие активности.
+- **Загрузка тренировок вручную** — импорт файлов FIT, GPX и TCX с предварительным разбором и подтверждением.
+- **Аналитика нагрузки** — динамика XP, недельные сводки и график тренировочной истории.
+- **Персональные параметры пульса** — настройки для анализа тренировок.
+- **Повторный пересчёт XP** — обновление результатов при синхронизации или изменении исходных данных.
+
+### 🎮 Геймификация
+
+- XP за тренировочную нагрузку с убывающей отдачей.
+- Уровни спортсмена и накопительный опыт.
+- Персональные недельные цели.
+- Квесты и достижения за тренировки, регулярность и восстановление.
+- Бонусы за качественное выполнение индивидуального плана.
+- История недельных результатов и разбивка начисленных XP по категориям.
+
+### 🏆 Соревнования
+
+- Общий рейтинг спортсменов.
+- Дружеские отношения и социальные уведомления.
+- Недельные лиги и дивизионы.
+- Дуэли между спортсменами.
+- Клубы для совместного участия в соревнованиях.
+- Профили спортсменов с доступной статистикой и историей активности.
+
+### 💬 Telegram-бот
+
+При настроенном боте доступны привязка аккаунта по одноразовому коду, удобная ссылка для привязки, уведомления и загрузка поддерживаемых файлов тренировок непосредственно через Telegram.
+
+### 🔐 Аккаунт и настройки
+
+- Регистрация и авторизация.
+- Персональное подключение Intervals.icu.
+- Настройки видимости профиля и тренировок.
+- Управление источниками данных.
+- Согласие на обработку персональных данных.
+- Отвязка Intervals.icu и удаление аккаунта.
 
 ---
 
 ## 📸 Скриншоты
 
-| 🏠 Главная (свет) | 📊 Дашборд |
-| :---: | :---: |
-| ![home](screenshots/01-home-light.png) | ![dashboard](screenshots/02-dashboard-light.png) |
+### Главная страница и дашборд
 
-| 🌙 Тёмная тема | 👀 Публичный профиль |
-| :---: | :---: |
-| ![dark](screenshots/03-dashboard-dark.png) | ![public](screenshots/04-public-profile.png) |
+<p align="center">
+  <img src="screenshots/01-home-light.png" alt="Главная страница" width="49%">
+  <img src="screenshots/02-dashboard-light.png" alt="Дашборд спортсмена" width="49%">
+</p>
 
-| 🔌 Профиль и Social | 📱 Мобилка |
-| :---: | :---: |
-| ![profile](screenshots/05-profile-social.png) | ![mobile](screenshots/06-mobile.png) |
+### Оформление и профили
 
----
+<p align="center">
+  <img src="screenshots/03-dashboard-dark.png" alt="Тёмная тема" width="49%">
+  <img src="screenshots/04-public-profile.png" alt="Профиль спортсмена" width="49%">
+</p>
 
-## ✨ Что внутри (v5.3)
+### Социальные функции и мобильная версия
 
-- 🔐 **Личный кабинет** — регистрация/вход (PBKDF2-SHA256 с постепенным обновлением хешей, JWT на 24 часа с серверным отзывом), у каждого атлета свой ключ Intervals.icu (шифрование Fernet)
-- 🔄 **Синхронизация** — тренировки и сон из Intervals.icu (агрегатор Strava/Garmin/Wahoo); сон «доливается» на старые тренировки при повторном синке, XP пересчитывается по всей истории
-- 🧮 **XP v6** — аддитивная система нагрузки, регулярности, качества, недельной цели, восстановления и квестов
-- 🏆 **Рейтинги** — Global открыт без логина (дашборд-витрина), Friends — только для друзей
-- 👥 **Друзья и социальные фичи** — поиск атлетов, заявки с взаимным автопринятием, живые уведомления (SSE + брокер Redis/in-memory), публичные профили `/u/{username}` со статистикой, графиком XP и пагинацией тренировок (20 + «Load more»)
-- 🌸 **Сезоны** — 10 цветков с цветом и номером сезона; демо-ротация 3 сек, боевой режим — смена раз в месяц
-- 🌙 **Тёмная тема** — «ночная газета»: глубокий индиго + светлые рамки; переключатель на главной
-- 🎮 **Пасхалка** — на главной: ↑ ↓ ← → (или WASD / цыфв / тапы) → 🏃💨 бежит через экран
-- 📱 **Мобильная версия** — нижняя навигация, тапы, safe-area, плавающий тултип графика
+<p align="center">
+  <img src="screenshots/05-profile-social.png" alt="Профиль и социальные функции" width="49%">
+  <img src="screenshots/06-mobile.png" alt="Мобильная версия" width="49%">
+</p>
 
 ---
 
-## 🧮 XP v6 «Additive»: формула и слои
+## ⚡ Система XP v6
 
-**XP складывается из независимых источников, а не перемножается:**
+XP v6 — аддитивная система начисления опыта. Тренировочная нагрузка, недельные цели и дополнительные достижения учитываются как отдельные источники опыта.
 
+Общая формула:
 
-Total XP = Legacy offset
-         + Σ Load XP за день        (убывающая отдача)
-         + Σ Consistency +30/день   (кап 5 дней/неделю)
-         + Σ Quality +15/+15        (кап 30/неделю)
-         + Weekly goal 0…120        (персональная норма)
-         + Recovery 0…10            (sleep score)
-         + Quests и достижения
+\[
+\text{Total XP} =
+\text{Legacy Offset}
++ \sum \text{Activity XP}
++ \sum \text{XP Events}
+\]
+
+| Источник | Правила |
+|---|---|
+| Тренировочная нагрузка | XP рассчитывается на основе нагрузки дня с убывающей отдачей |
+| Дневной бонус | +20 XP за один подходящий день с тренировкой |
+| Хороший сон | +6 XP за ночь при выполнении критерия сна |
+| Недельная цель | До 120 XP в зависимости от выполнения персональной цели |
+| Недельная регулярность | +50 XP за достижение пяти квалифицирующих тренировочных дней |
+| Хороший сон за неделю | +35 XP за пять хороших ночей |
+| Длинная тренировка | +25 XP за тренировку от двух часов |
+| Дополнительная длительность | +15 XP за тренировку от трёх часов |
+| Высокая интенсивность | +30 XP при выполнении условий недельного достижения |
+| Станок | +15 XP за подходящую тренировку в сезон |
+| Выполненная цель | +20 XP при выполнении не менее 100% недельной цели |
+| Идеальная неделя | +40 XP при одновременном выполнении цели, тренировочного плана и условий сна |
+| Разовые достижения | Дополнительные награды за достижения, предусмотренные системой |
+
+Указанные награды за достижения начисляются отдельно и могут складываться с XP за тренировочную нагрузку.
+
+### 🎯 Бонус «Идеальная неделя»
+
+Бонус составляет **+40 XP один раз за неделю**, если одновременно:
+
+- Выполнено не менее 100% персональной недельной цели.
+- Достигнуто целевое количество квалифицирующих дней, но не более пяти.
+- Есть минимум пять хороших ночей сна.
+
+Хорошей считается ночь с продолжительностью сна не менее шести часов **или** `sleep score ≥ 60`.
+
+Бонус за выполненную цель (+20 XP) начисляется отдельно. Оба события увеличивают общий XP, но не включаются непосредственно в расчёт League Score.
+
+### ⚖️ League Score
+
+Для рейтингов используется отдельная метрика, а не просто сумма XP. В текущей модели её веса распределяются так:
+
+- **70%** — выполнение персональной цели.
+- **20%** — регулярность.
+- **10%** — качество тренировок.
+
+Таким образом, общий XP отражает накопленную игровую ценность, а League Score помогает сравнивать спортсменов с разными тренировочными объёмами и персональными планами.
 
 ---
 
 ## 🛠 Технологический стек
 
-| Слой | Технологии |
-| :--- | :--- |
-| **Frontend** | Next.js (App Router), TypeScript, Tailwind CSS, Framer Motion, Recharts |
-| **Backend** | Python 3.12, FastAPI, SQLAlchemy, PyJWT, cryptography, HTTPX |
-| **База данных** | PostgreSQL + авто-миграция при старте; Redis опционально (fallback — in-memory брокер) |
-| **Deploy** | Vercel (frontend) + Render (backend) |
-| **Внешнее API** | Intervals.icu (агрегатор Strava / Garmin / Wahoo) |
+| Компонент | Технологии |
+|---|---|
+| Frontend | Next.js 16 App Router, React 19, TypeScript |
+| Стилизация | Tailwind CSS 4 |
+| Визуализация | Recharts |
+| Анимации | Framer Motion |
+| Backend | Python 3.12, FastAPI |
+| ORM | SQLAlchemy 2 |
+| База данных | PostgreSQL |
+| Валидация | Pydantic 2 |
+| Авторизация | JWT |
+| Защита данных | Fernet, PBKDF2-SHA256 |
+| Ограничение запросов | SlowAPI, Redis при необходимости |
+| Интеграции | Intervals.icu, Telegram Bot API |
+| Frontend-деплой | Vercel |
+| Backend-деплой | Render |
+| Автоматические проверки | GitHub Actions |
 
 ---
 
-## 🚀 Быстрый старт (локально)
+## 🗂 Архитектура проекта
 
-**Бэкенд** — окно 1:
+```text
+Endurance-Fantasy-League/
+│
+├── backend/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── models.py
+│   │   ├── database.py
+│   │   ├── auth.py
+│   │   ├── config.py
+│   │   ├── dependencies.py
+│   │   ├── rate_limit.py
+│   │   ├── broker.py
+│   │   │
+│   │   ├── routers/
+│   │   │   ├── auth.py
+│   │   │   ├── sync.py
+│   │   │   ├── upload.py
+│   │   │   ├── intervals_key.py
+│   │   │   ├── friends.py
+│   │   │   ├── notifications.py
+│   │   │   ├── privacy.py
+│   │   │   ├── telegram.py
+│   │   │   ├── clubs.py
+│   │   │   ├── duels.py
+│   │   │   └── admin.py
+│   │   │
+│   │   └── services/
+│   │       ├── xp.py
+│   │       ├── xp_v6.py
+│   │       ├── quests.py
+│   │       ├── intervals.py
+│   │       ├── notifications.py
+│   │       └── activity_upload.py
+│   │
+│   ├── tests/
+│   ├── requirements.txt
+│   ├── .env.example
+│   └── start.sh
+│
+├── frontend/
+│   ├── src/
+│   │   ├── app/
+│   │   ├── components/
+│   │   └── lib/
+│   ├── tests/
+│   ├── package.json
+│   └── next.config.ts
+│
+├── screenshots/
+├── docs/
+├── scripts/
+├── docker-compose.yml
+└── README.md
+```
+
+### Основные модули
+
+- `backend/app/services/xp_v6.py` — математические правила XP v6 и расчёт League Score.
+- `backend/app/services/quests.py` — недельные квесты, достижения и execution bonuses.
+- `backend/app/routers/sync.py` — синхронизация, недельные сводки и XP-события.
+- `backend/app/routers/upload.py` — загрузка и обработка файлов тренировок.
+- `backend/app/routers/telegram.py` — Telegram-интеграция и привязка аккаунтов.
+- `backend/app/models.py` — ORM-модели.
+- `frontend/src/components/dashboard/QuestsBoard.tsx` — интерфейс недельных и разовых достижений.
+- `frontend/src/app/dashboard/page.tsx` — основной дашборд спортсмена.
+
+---
+
+## 🚀 Локальный запуск
+
+### 1. Предварительные требования
+
+Установи:
+
+- Git.
+- Python 3.12.
+- Node.js 22 или совместимую актуальную версию.
+- PostgreSQL.
+- npm, который поставляется вместе с Node.js.
+
+Redis нужен только при использовании соответствующей конфигурации брокера или общего хранилища лимитов.
+
+### 2. Клонирование репозитория
+
+```bash
+git clone https://github.com/r1demachine/Endurance-Fantasy-League.git
+cd Endurance-Fantasy-League
+```
+
+### 3. Настройка Backend
+
+В PowerShell из корневой директории проекта:
 
 ```powershell
 cd backend
-.\venv\Scripts\Activate.ps1
+
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+
+Copy-Item .env.example .env
+```
+
+Создай локальную базу данных PostgreSQL и укажи её параметры в `backend/.env`.
+
+Сгенерировать секреты можно командами:
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Эта команда генерирует значение для `JWT_SECRET`.
+
+После установки зависимостей сгенерируй ключ шифрования:
+
+```powershell
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Полученное значение используй как `ENCRYPTION_KEY`. Храни его постоянно: потеря или замена ключа может сделать ранее зашифрованные ключи Intervals.icu недоступными.
+
+Запуск Backend:
+
+```powershell
 uvicorn app.main:app --reload --port 8000
 ```
 
-**Фронтенд** — окно 2:
+При локальной разработке документация API доступна по адресу:
+
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+
+В production-доменах документация API отключена настройкой приложения.
+
+### 4. Настройка Frontend
+
+Открой второе окно терминала:
 
 ```powershell
 cd frontend
-npm run dev
+
+npm ci
 ```
 
-→ Сайт: `http://localhost:3000` · Swagger: `http://localhost:8000/docs`
+Создай файл `frontend/.env.local` со следующим содержимым:
 
-### Переменные окружения
-
-`backend/.env` (ключевые настройки):
-```
-DATABASE_URL=postgresql://user:pass@host:5432/fantasy
-JWT_SECRET=replace-with-at-least-32-random-characters
-ENCRYPTION_KEY=your-fernet-key
-REDIS_URL=redis://localhost:6379/0   # опционально; рекомендуется для общего rate-limit storage
-CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,https://endurance-fantasy-league.vercel.app
-XP_ENGINE=v6
-XP_QUESTS_ACTIVATION_DATE=2026-10-12
-```
-Регистрация ограничена 5 попытками в час на IP, вход — 5 попытками в минуту на IP; sync — 3 запроса в минуту, подключение Intervals — 5 в час, запросы в друзья — 10 в час, пауза — 10 в час. Без `REDIS_URL` лимиты хранятся в памяти отдельного процесса; при нескольких backend workers используй Redis.
-
-Для корректного определения IP за Render в панели Render включи `TRUST_CF_CONNECTING_IP=true`. Rate limiter использует валидный `CF-Connecting-IP`, который Cloudflare формирует на edge; Render документирует, что этот заголовок перезаписывается на edge. Если заголовок отсутствует или некорректен, используется адрес соединения (за прокси это может временно объединить запросы в одно ведро). Не включай настройку на развёртываниях, где Cloudflare не контролирует и не перезаписывает заголовок. В Render Start Command установи `bash backend/start.sh` (если Root Directory = корень репозитория) или `bash start.sh` (если Root Directory = `backend`). Скрипт запускает Uvicorn с `--proxy-headers`, но не включает доверие ко всем `X-Forwarded-For` — для rate limiting используется отдельно проверяемый IP Cloudflare.
-
-Новые регистрации и вход ограничивают пароль 128 символами. Старые PBKDF2-хеши формата `salt:digest` проверяются с прежними 120 000 итерациями и автоматически повышаются до 600 000 при успешном входе. Выход через `POST /api/auth/logout` повышает `token_version` и отзывает все текущие access-токены пользователя. `XP_QUESTS_ACTIVATION_DATE` задаёт границу начисления новых квестов и должна быть согласована между окружениями.
-
-### P0: персональные данные и резервное копирование
-
-- Профили требуют Bearer-токен. Настройка `profile_visibility`: `authenticated` (сводная статистика после входа), `friends` (сводная статистика для принятых друзей), `private` (только владелец). Настройка `activity_visibility`: `friends` или `private`. Детали тренировок и история пульса доступны владельцу либо принятым друзьям при разрешённой видимости.
-- Новая регистрация требует явного согласия с политикой обработки данных. Существующие аккаунты должны принять актуальную версию в разделе Profile → Privacy & data; пока актуального согласия нет, новые подключения и синхронизация блокируются.
-- `DELETE /api/intervals/disconnect` отвязывает ключ и удаляет импортированные тренировки, wellness, XP-события, недельные сводки и историю членства в лигах; аккаунт и друзья сохраняются.
-- `DELETE /api/account` удаляет аккаунт и связанные персональные записи. Это необратимо.
-- Автоматическая синхронизация не удаляет тренировки, отсутствующие в окне ответа Intervals. Старые тренировки сохраняются; автоматический prune отключён, потому что обычный sync получает ограниченную историю.
-
-#### Еженедельные зашифрованные бэкапы PostgreSQL
-
-Workflow `.github/workflows/postgres-backup.yml` запускается каждый понедельник в 02:17 UTC и вручную через Actions → Weekly encrypted PostgreSQL backup → Run workflow. Он выполняет `pg_dump`, сжимает дамп, шифрует его через `age` и отправляет только зашифрованный файл в приватное S3-совместимое хранилище. Дампы не сохраняются в GitHub Actions artifacts, поскольку репозиторий публичный.
-
-Перед включением workflow настрой следующие GitHub Actions **Secrets**:
-
-- `BACKUP_DATABASE_URL` — отдельная переменная с URL production PostgreSQL Render.
-- `BACKUP_S3_ENDPOINT` — endpoint приватного S3/R2-хранилища.
-- `BACKUP_S3_BUCKET` — имя приватного бакета.
-- `BACKUP_AWS_REGION` — AWS region либо `auto` для R2.
-- `BACKUP_AWS_ACCESS_KEY_ID` и `BACKUP_AWS_SECRET_ACCESS_KEY` — отдельные учётные данные с минимальными правами на запись в backup-префикс.
-- `BACKUP_AGE_RECIPIENT` — публичный recipient-ключ `age`. **Приватную identity нужно хранить отдельно от бакета и репозитория**, иначе нельзя будет гарантировать конфиденциальность резервных копий.
-
-В бакете настрой lifecycle retention (например, 90 дней) и по возможности запрети публичный доступ и удаление объектов backup-учётной записью. После настройки запусти workflow вручную и убедись, что зашифрованный файл появился в бакете. Проверяй восстановление регулярно на отдельной пустой базе с помощью `scripts/restore-postgres-backup.sh`.
-
-Workflow — только механизм копирования. До тестового сезона отдельно проверь в панели Render фактический тариф PostgreSQL, срок жизни базы, доступные нативные бэкапы и то, что сервис не будет удалён автоматически. Код репозитория не может определить активный тариф Render.
-
-`frontend/.env.local`:
-```
+```dotenv
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
----
+Запусти приложение:
 
-## 🗂 Структура
-
-```
-backend/app/
-  routers/    auth · sync · friends · notifications · intervals_key · admin
-  services/   xp.py (математика XP + автотесты) · intervals.py · notifications.py
-  broker.py   Redis pub/sub / in-memory fallback (живые уведомления)
-  models.py   User · Activity · Wellness · Friendship · Notification
-frontend/src/
-  app/        / · /login · /dashboard · /profile · /u/[username]
-  components/ ActivityCard · XpTooltip · SocialHub · ConnectSources ·
-              NotificationBell · KonamiRunner · DreamDust · Header
-  lib/        auth · apiCache · notifications · seasons · theme
+```powershell
+npm run dev
 ```
 
----
+Локальный сайт: http://localhost:3000
 
-## 📜 История версий
-
-| Версия | Главное |
-| :--- | :--- |
-| v1.0 | MVP: синк Intervals, XP, дашборд, тултипы |
-| v3.x | Dream × BRUT-дизайн, кэш, анимации, мобильная шапка |
-| v4.x | Личный кабинет, per-user Intervals, друзья, живые уведомления |
-| v5.0 | Новая XP-система (длительность/сон/интенсивность/стрик), лидерборды |
-| v5.1–5.2 | Публичные профили, плавающий тултип, пасхалка-раннер, живые сезоны |
-| v5.3 | Тёмная тема «ночная газета», полировка UX |
+Для работы регистрации и синхронизации Backend должен быть запущен, PostgreSQL должен быть доступен, а `CORS_ORIGINS` должен содержать origin локального Frontend.
 
 ---
 
-## 🎮 Пасхалка
+## 🔧 Переменные окружения
 
-Главная страница → введи **↑ ↓ ← →** (или `W S A D`, или тапай по стрелкам) —
-и спринтер 🏃💨 пробежит через весь экран. Стрелки в ленте подсвечивают прогресс комбо.
+Пример основных параметров Backend:
+
+```dotenv
+DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/fantasy_league
+
+JWT_SECRET=replace_with_a_random_secret_at_least_32_characters
+ENCRYPTION_KEY=replace_with_a_persistent_fernet_key
+
+APP_ENV=development
+XP_ENGINE=v6
+
+INTERVALS_API_URL=https://intervals.icu/api/v1
+
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,https://endurance-fantasy-league.vercel.app
+
+REDIS_URL=
+
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_WEBHOOK_SECRET=
+TELEGRAM_BOT_USERNAME=
+```
+
+Это пример конфигурации, а не готовые секреты. Не используй демонстрационные значения в production.
+
+| Переменная | Назначение |
+|---|---|
+| `DATABASE_URL` | Строка подключения к PostgreSQL |
+| `JWT_SECRET` | Подпись токенов авторизации; минимум 32 символа |
+| `ENCRYPTION_KEY` | Шифрование пользовательских API-ключей |
+| `APP_ENV` | Окружение приложения |
+| `XP_ENGINE` | Выбранный движок опыта, по умолчанию `v6` |
+| `INTERVALS_API_URL` | Базовый URL Intervals.icu API |
+| `CORS_ORIGINS` | Разрешённые источники браузерных запросов |
+| `REDIS_URL` | Необязательное подключение к Redis |
+| `TELEGRAM_BOT_TOKEN` | Токен Telegram-бота, если интеграция включена |
+| `TELEGRAM_WEBHOOK_SECRET` | Секрет проверки Telegram webhook |
+| `TELEGRAM_BOT_USERNAME` | Имя бота для формирования deep links |
+
+Для каждого пользователя используется собственный ключ Intervals.icu. Он не должен попадать в репозиторий или обычные логи приложения.
+
+**Важно:** не публикуй `.env`, `frontend/.env.local`, JWT-секреты, API-ключи, токен Telegram и учётные данные PostgreSQL.
 
 ---
 
-*We don't follow chaos. We set the plan.* ⚡
+## ✅ Тестирование
+
+### Backend
+
+Из директории `backend`:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Тесты покрывают, в частности, правила XP, недельные бонусы, приватность, валидацию, синхронизацию, загрузку файлов и Telegram-интеграцию.
+
+### Frontend
+
+Из директории `frontend`:
+
+```bash
+npm test
+```
+
+Проверка типов:
+
+```bash
+npx tsc --noEmit
+```
+
+Production-сборка:
+
+```bash
+npm run build
+```
+
+Линтер:
+
+```bash
+npm run lint
+```
+
+В GitHub Actions frontend-проверки включают тесты, проверку типов, необходимые проверки UI и production build. Backend-регрессии запускаются отдельным workflow.
+
+---
+
+## 🔐 Безопасность и приватность
+
+Платформа работает с пользовательскими тренировочными данными, поэтому приватность учитывается в API и настройках аккаунта.
+
+- Авторизованные маршруты защищаются пользовательской аутентификацией.
+- Ключи Intervals.icu хранятся в зашифрованном виде.
+- Пароли хешируются с использованием PBKDF2-SHA256 и постепенно обновляются при успешной авторизации.
+- Для чувствительных операций применяются ограничения частоты запросов и валидация входных данных.
+- Настройки видимости профиля позволяют ограничивать доступ к статистике.
+- Детали тренировок доступны с учётом прав владельца, отношений дружбы и выбранных настроек приватности.
+- Для регистрации требуется согласие с политикой обработки данных.
+- Предусмотрены отвязка источника данных и удаление аккаунта вместе со связанными персональными записями.
+
+### Резервное копирование
+
+В репозитории предусмотрен GitHub Actions workflow для зашифрованных резервных копий PostgreSQL.
+
+Для его работы необходимо отдельно настроить GitHub Actions Secrets, приватное S3-совместимое хранилище и ключи шифрования. После настройки следует проверить ручной запуск workflow и восстановление копии на отдельной тестовой базе.
+
+Фактический тариф и срок жизни production-базы PostgreSQL зависят от конфигурации Render и проверяются в панели провайдера.
+
+---
+
+## ☁️ Развёртывание
+
+Проект разделён на два сервиса:
+
+| Сервис | Платформа | Назначение |
+|---|---|---|
+| Frontend | [Vercel](https://vercel.com/) | Next.js-приложение |
+| Backend | [Render](https://render.com/) | FastAPI и доступ к PostgreSQL |
+
+Production-приложение:
+
+**https://endurance-fantasy-league.vercel.app**
+
+Для production-конфигурации:
+
+1. Настрой переменные окружения Backend на Render.
+2. Укажи корректный `DATABASE_URL`.
+3. Установи надёжные постоянные значения `JWT_SECRET` и `ENCRYPTION_KEY`.
+4. Укажи production-origin Frontend в `CORS_ORIGINS`.
+5. Настрой `NEXT_PUBLIC_API_URL` во Frontend на URL Backend.
+6. При использовании Telegram настрой токен, имя бота и webhook secret.
+7. Проверь миграции, логи запуска, health endpoint и основные пользовательские сценарии.
+8. Настрой и протестируй резервное копирование PostgreSQL.
+
+Для запуска Backend на Render используется `backend/start.sh`. Скрипт запускает Uvicorn на порту, предоставленном окружением, с настройками proxy headers.
+
+---
+
+## 🧭 Направление развития
+
+Основные направления проекта:
+
+- дальнейшая настройка справедливости XP для спортсменов с разным тренировочным объёмом;
+- развитие недельных квестов, целей и execution bonuses;
+- повышение качества аналитики тренировок и восстановления;
+- развитие клубов, дуэлей, лиг и рейтингов;
+- улучшение мобильного интерфейса;
+- укрепление приватности и надёжности синхронизации.
+
+---
+
+<p align="center">
+  <strong>Endurance Fantasy League</strong><br>
+  <em>We don't follow chaos. We set the plan.</em>
+</p>
