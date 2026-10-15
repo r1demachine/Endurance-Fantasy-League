@@ -35,6 +35,7 @@ test("guided tour includes core dashboard, competition, profile, and Intervals s
     "compete-overall-rating",
     "profile-header",
     "profile-intervals-source",
+    "profile-telegram-bind",
   ]) {
     assert.ok(tour.includes(`target: "${target}"`), `missing tour step target: ${target}`);
   }
@@ -53,6 +54,7 @@ test("guided tour includes core dashboard, competition, profile, and Intervals s
   assert.ok(compete.includes('data-tour="compete-overall-rating"'));
   assert.ok(profile.includes('data-tour="profile-header"'));
   assert.ok(sources.includes('data-tour={s.id === "intervals" ? "profile-intervals-source" : undefined}'));
+  assert.ok(read("src/components/TelegramBind.tsx").includes('data-tour="profile-telegram-bind"'));
 });
 
 test("guided tour uses a spotlight mask, blocks outside clicks, and keeps page scrolling enabled", () => {
