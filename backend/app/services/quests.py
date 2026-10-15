@@ -19,6 +19,10 @@ WEEKLY_GOOD_SLEEP_NIGHTS_TARGET = 5
 WEEKLY_GOOD_SLEEP_MIN_SECONDS = 6 * 60 * 60
 WEEKLY_GOOD_SLEEP_MIN_SCORE = 60
 WEEKLY_GOOD_SLEEP_REWARD = 35.0
+WEEKLY_GOAL_TARGET_REWARD = 20.0
+WEEKLY_IDEAL_WEEK_REWARD = 40.0
+WEEKLY_IDEAL_WEEK_GOOD_SLEEP_TARGET = 5
+WEEKLY_IDEAL_WEEK_QUALIFYING_DAYS_FALLBACK = 5
 WEEKLY_LONG_WORKOUT_SECONDS = 2 * 60 * 60
 WEEKLY_LONG_WORKOUT_REWARD = 25.0
 WEEKLY_EXTRA_LONG_WORKOUT_SECONDS = 3 * 60 * 60
@@ -581,6 +585,113 @@ def grant_quests(db, user, acts, summaries) -> int:
                 title=f"🏆 {quest['title']}",
             ))
             granted += 1
+
+    # Reconcile the execution bonuses against the current source history. Stable
+    # week-scoped keys prevent duplicates, and an edited/deleted source record
+    # cannot leave an obsolete bonus in lifetime XP.
+    bonus_event_rows = (
+        db.query(XPEvent)
+        .filter(
+            XPEvent.user_id == user.id,
+            or_(
+                XPEvent.event_key.like("quest:goal_100:%"),
+                XPEvent.event_key.like("quest:ideal_week:%"),
+            ),
+        )
+        .all()
+    )
+    bonus_events_by_key = {event.event_key: event for event in bonus_event_rows}
+    expected_bonus_keys: set[str] = set()
+
+    def reconcile_bonus_event(
+        key: str,
+        week: date,
+        *,
+        eligible: bool,
+        amount: float,
+        title: str,
+    ) -> None:
+        nonlocal granted
+        expected_bonus_keys.add(key)
+        event = bonus_events_by_key.get(key)
+        if not eligible:
+            if event is not None:
+                db.delete(event)
+                bonus_events_by_key.pop(key, None)
+            return
+        if event is not None:
+            event.event_type = "quest"
+            event.amount = amount
+            event.title = title
+            event.week_start = datetime.combine(week, datetime.min.time())
+            event.date = datetime.combine(week, datetime.min.time())
+            event.source_type = "quest"
+            event.source_id = None
+            return
+
+        event = XPEvent(
+            user_id=user.id,
+            week_start=datetime.combine(week, datetime.min.time()),
+            date=datetime.combine(week, datetime.min.time()),
+            event_type="quest",
+            event_key=key,
+            amount=amount,
+            source_type="quest",
+            title=title,
+        )
+        db.add(event)
+        bonus_events_by_key[key] = event
+        granted += 1
+
+    qualifying_progress_by_week = _qualifying_days_by_week(all_activities)
+    for summary in all_summaries:
+        week = _trainer_week_start(summary.week_start.date())
+        goal_ratio = float(getattr(summary, "completion_ratio", 0.0) or 0.0)
+        goal_eligible = goal_ratio >= 1.0 and not bool(getattr(summary, "paused", False))
+
+        target_days_raw = getattr(summary, "target_training_days", None)
+        try:
+            target_days = int(target_days_raw) if target_days_raw else WEEKLY_IDEAL_WEEK_QUALIFYING_DAYS_FALLBACK
+        except (TypeError, ValueError):
+            target_days = WEEKLY_IDEAL_WEEK_QUALIFYING_DAYS_FALLBACK
+        if target_days <= 0:
+            target_days = WEEKLY_IDEAL_WEEK_QUALIFYING_DAYS_FALLBACK
+        target_days = min(target_days, WEEKLY_IDEAL_WEEK_QUALIFYING_DAYS_FALLBACK)
+
+        qualifying_days = len(qualifying_progress_by_week.get(week, []))
+        sleep_progress = _weekly_quest_progress(
+            week,
+            activities_by_week.get(week, []),
+            wellness_by_week.get(week, []),
+        )
+        good_sleep_nights = int(sleep_progress["good_sleep_5"]["current"])
+        ideal_week_eligible = (
+            goal_eligible
+            and qualifying_days >= target_days
+            and good_sleep_nights >= WEEKLY_IDEAL_WEEK_GOOD_SLEEP_TARGET
+        )
+
+        reconcile_bonus_event(
+            f"quest:goal_100:{week.isoformat()}",
+            week,
+            eligible=goal_eligible,
+            amount=WEEKLY_GOAL_TARGET_REWARD,
+            title="Цель недели ≥100% (+20 XP)",
+        )
+        reconcile_bonus_event(
+            f"quest:ideal_week:{week.isoformat()}",
+            week,
+            eligible=ideal_week_eligible,
+            amount=WEEKLY_IDEAL_WEEK_REWARD,
+            title="Идеальная неделя (+40 XP)",
+        )
+
+    # If the source history no longer produces a summary for a former week,
+    # remove any orphaned execution bonus from that week as well.
+    for key, event in list(bonus_events_by_key.items()):
+        if key not in expected_bonus_keys:
+            db.delete(event)
+            bonus_events_by_key.pop(key, None)
 
     return granted
 
