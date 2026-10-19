@@ -718,6 +718,17 @@ class InterfaceDataApiTests(unittest.TestCase):
                 week_start=week_start, current=self.user, db=self.db,
             )
             week = payload["week"]
+
+            # Required ledger invariant: workout-linked events are a subset of
+            # daily bonuses, never added to the same day total a second time.
+            self.assertEqual(len(payload["days"]), 7)
+            daily_ledger_total = sum(day["xp"]["total"] for day in payload["days"])
+            weekly_bonus_total = sum(item["amount"] for item in payload["week_bonuses"])
+            self.assertAlmostEqual(
+                daily_ledger_total + weekly_bonus_total,
+                float(summary.total_xp or 0.0),
+                delta=0.02,
+            )
             for field in ("effort_xp", "goal_xp", "consistency_xp", "quality_xp", "recovery_xp"):
                 self.assertGreater(week[field], 0, field)
             # weekly_goal is deliberately excluded here because goal_xp already accounts for it.
