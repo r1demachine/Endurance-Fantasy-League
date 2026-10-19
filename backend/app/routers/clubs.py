@@ -204,7 +204,12 @@ def _club_brief(c: Club, db: Session, me: User) -> dict:
 
 
 def _season_bounds(d: date) -> Tuple[datetime, datetime]:
-    return datetime(d.year, 1, 1), datetime(d.year, 12, 31, 23, 59, 59)
+    from ..services.seasons import season_for_date
+    season = season_for_date(d)
+    return (
+        datetime.combine(season.start, datetime.min.time()),
+        datetime.combine(season.next_start, datetime.min.time()),
+    )
 
 
 def _friend_ids(db: Session, me_id: int) -> set[int]:
@@ -252,7 +257,8 @@ def _rankings(db: Session, club_id: int, me: User) -> dict:
     if not user_ids:
         return {"weekly": [], "seasonal": []}
 
-    today = date.today()
+    from ..services.seasons import local_date
+    today = local_date(me.timezone_name)
     week_start = datetime.combine(X6.week_start(today), datetime.min.time())
     week_scores = {
         row.user_id: float(row.total_xp or 0)
@@ -271,7 +277,7 @@ def _rankings(db: Session, club_id: int, me: User) -> dict:
             WeeklySummary.user_id.in_(user_ids),
             WeeklySummary.finalized.is_(True),
             WeeklySummary.week_start >= season_start,
-            WeeklySummary.week_start <= season_end,
+            WeeklySummary.week_start < season_end,
         ).group_by(WeeklySummary.user_id).all()
     }
 
