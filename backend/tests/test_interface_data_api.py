@@ -2,6 +2,7 @@
 
 Run from backend/: python -m unittest tests.test_interface_data_api -v
 """
+import asyncio
 import os
 import unittest
 from datetime import date, datetime, timedelta
@@ -718,6 +719,17 @@ class InterfaceDataApiTests(unittest.TestCase):
                 week_start=week_start, current=self.user, db=self.db,
             )
             week = payload["week"]
+
+            # Required ledger invariant: workout-linked events are a subset of
+            # daily bonuses, never added to the same day total a second time.
+            self.assertEqual(len(payload["days"]), 7)
+            daily_ledger_total = sum(day["xp"]["total"] for day in payload["days"])
+            weekly_bonus_total = sum(item["amount"] for item in payload["week_bonuses"])
+            self.assertAlmostEqual(
+                daily_ledger_total + weekly_bonus_total,
+                float(summary.total_xp or 0.0),
+                delta=0.02,
+            )
             for field in ("effort_xp", "goal_xp", "consistency_xp", "quality_xp", "recovery_xp"):
                 self.assertGreater(week[field], 0, field)
             # weekly_goal is deliberately excluded here because goal_xp already accounts for it.
@@ -813,6 +825,35 @@ class InterfaceDataApiTests(unittest.TestCase):
                 )
             )
             self.assertAlmostEqual(current_week["total_xp"], current_components, places=1)
+
+    def test_today_and_user_profile_share_qualifying_day_streak(self):
+        self.add_activity(
+            "streak-friday", stamp=datetime(2026, 10, 16, 9, 0),
+            tss=30, moving_time=20 * 60,
+        )
+        self.add_activity(
+            "streak-saturday", stamp=datetime(2026, 10, 17, 9, 0),
+            tss=25, moving_time=25 * 60,
+        )
+        # Training minutes alone do not qualify when day TSS is below 20.
+        self.add_activity(
+            "streak-sunday-low-load", stamp=datetime(2026, 10, 18, 9, 0),
+            tss=10, moving_time=45 * 60,
+        )
+        self.db.commit()
+
+        with patch("app.routers.sync._user_local_today", return_value=date(2026, 10, 18)):
+            today_payload = sync_router.get_today(current=self.user, db=self.db)
+            profile_payload = asyncio.run(sync_router.get_user_profile(current=self.user, db=self.db))
+
+        self.assertEqual(today_payload["date"], "2026-10-18")
+        self.assertEqual(today_payload["streak"], 2)
+        self.assertEqual(profile_payload["stats"]["day_streak"], today_payload["streak"])
+        self.assertFalse(today_payload["ledger"]["qualifying"])
+        self.assertEqual(today_payload["ledger"]["xp"]["effort"], X6.effort_xp_day(10))
+        checklist = {item["id"]: item for item in today_payload["checklist"]}
+        self.assertFalse(checklist["qualifying_day"]["done"])
+        self.assertEqual(len(today_payload["ledger"]["activities"]), 1)
 
     def test_manual_workouts_do_not_qualify_for_weekly_long_or_intensity_quests(self):
         self.add_activity(
