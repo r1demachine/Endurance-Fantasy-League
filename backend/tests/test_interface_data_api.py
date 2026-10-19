@@ -2,6 +2,7 @@
 
 Run from backend/: python -m unittest tests.test_interface_data_api -v
 """
+import asyncio
 import os
 import unittest
 from datetime import date, datetime, timedelta
@@ -843,7 +844,7 @@ class InterfaceDataApiTests(unittest.TestCase):
 
         with patch("app.routers.sync._user_local_today", return_value=date(2026, 10, 18)):
             today_payload = sync_router.get_today(current=self.user, db=self.db)
-            profile_payload = sync_router.get_user_profile(current=self.user, db=self.db)
+            profile_payload = asyncio.run(sync_router.get_user_profile(current=self.user, db=self.db))
 
         self.assertEqual(today_payload["date"], "2026-10-18")
         self.assertEqual(today_payload["streak"], 2)
