@@ -75,3 +75,25 @@ def season_for_date(day: date) -> Season:
 def current_season(timezone_name: str | None = "UTC", now: datetime | None = None) -> Season:
     """Return the season for the user's local calendar date."""
     return season_for_date(local_date(timezone_name, now=now))
+
+
+def longest_consecutive_streak(days):
+    """Return the longest run of consecutive calendar dates in an iterable."""
+    from datetime import timedelta
+
+    ordered = sorted(set(days))
+    if not ordered:
+        return 0
+    longest = current = 1
+    for previous, today in zip(ordered, ordered[1:]):
+        if today == previous + timedelta(days=1):
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 1
+    return longest
+
+
+def sum_weekly_xp(values):
+    """Sum persisted WeeklySummary totals, including all weekly bonus components."""
+    return round(sum(float(value or 0.0) for value in values), 1)
