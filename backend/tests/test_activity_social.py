@@ -324,6 +324,15 @@ class ActivitySocialTests(unittest.TestCase):
 
     def test_comment_can_be_deleted_by_author_or_activity_owner_only(self):
         self.accept_friendship(self.owner, self.viewer)
+        authored = self.client.post(
+            f"/api/activities/{self.activity.id}/comments",
+            json={"body": "Author can delete"},
+        )
+        self.assertEqual(authored.status_code, 200)
+        authored_id = authored.json()["comment"]["id"]
+        author_delete = self.client.delete(f"/api/comments/{authored_id}")
+        self.assertEqual(author_delete.status_code, 200)
+
         created = self.client.post(
             f"/api/activities/{self.activity.id}/comments",
             json={"body": "Remove me"},
