@@ -906,11 +906,11 @@ class InterfaceDataApiTests(unittest.TestCase):
             title="Цель выполнена",
         )
         self.add_event(
-            "quest:first_three_day_week:lifetime",
+            "quest:sleep_connected:lifetime",
             "quest",
             25,
             day=today,
-            title="Три дня тренировок",
+            title="Данные о сне подключены",
             scope="quest",
         )
         self.db.commit()
@@ -937,7 +937,7 @@ class InterfaceDataApiTests(unittest.TestCase):
 
         self.assertEqual(
             [item["slug"] for item in payload["achievements_today"]],
-            ["first_three_day_week"],
+            ["sleep_connected"],
         )
         self.assertTrue(payload["achievements_today"][0]["earned_today"])
         self.assertEqual(
