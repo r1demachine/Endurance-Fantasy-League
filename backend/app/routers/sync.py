@@ -2720,7 +2720,18 @@ async def leaderboard(
                 entry["rank"] = per_division[div]
 
         your_rank = next((entry["rank"] for entry in entries if entry["is_you"]), None)
-        entries = entries[:limit]
+        if beta_league:
+            entries = entries[:limit]
+        else:
+            # Select the top ten by the shared tie-break first, then keep division
+            # headers contiguous in the rendered list.
+            entries = sorted(entries, key=lambda entry: league_ranking_key(
+                entry["_league_score"], entry["_weekly_xp"], entry["_actual_load"], entry["id"]
+            ))[:limit]
+            entries.sort(key=lambda entry: (
+                division_order.get(entry["division"], 99),
+                *league_ranking_key(entry["_league_score"], entry["_weekly_xp"], entry["_actual_load"], entry["id"]),
+            ))
         for entry in entries:
             entry.pop("_league_score", None)
             entry.pop("_weekly_xp", None)
