@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { authApi } from "@/lib/auth";
 
 export const SEASONS = [
@@ -35,6 +36,7 @@ const INITIAL_SEASON: SeasonView = {
 };
 
 export function useSeason(): SeasonView {
+  const pathname = usePathname();
   const [season, setSeason] = useState<SeasonView>(INITIAL_SEASON);
 
   useEffect(() => {
@@ -66,7 +68,7 @@ export function useSeason(): SeasonView {
       cancelled = true;
       window.removeEventListener("efl:timezone-updated", handleTimezoneUpdate);
     };
-  }, []);
+  }, [pathname]);
 
   return season;
 }
