@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, Check, Circle, MoonStar, Star, Timer, Trophy, Zap } from "lucide-react";
+import { ArrowUpRight, Check, Circle, Timer, Zap } from "lucide-react";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import {
   formatSecondsLeftToday,
