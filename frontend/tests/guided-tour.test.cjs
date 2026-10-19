@@ -9,6 +9,7 @@ const pageTransition = read("src/components/PageTransition.tsx");
 const layout = read("src/app/layout.tsx");
 const home = read("src/app/page.tsx");
 const dashboard = read("src/app/dashboard/page.tsx");
+const todayCard = read("src/components/dashboard/TodayCard.tsx");
 const compete = read("src/app/compete/page.tsx");
 const profile = read("src/app/profile/page.tsx");
 const sources = read("src/components/ConnectSources.tsx");
@@ -26,7 +27,6 @@ test("guided tour includes core dashboard, competition, profile, and Intervals s
     "home-globe",
     "dashboard-level",
     "dashboard-streak",
-    "dashboard-week-goal",
     "dashboard-year-chart",
     "dashboard-week-summary",
     "dashboard-achievements",
@@ -42,13 +42,12 @@ test("guided tour includes core dashboard, competition, profile, and Intervals s
 
   for (const marker of [
     "dashboard-level",
-    "dashboard-streak",
-    "dashboard-week-goal",
     "dashboard-year-chart",
     "dashboard-week-summary",
     "dashboard-achievements",
     "dashboard-workouts",
   ]) assert.ok(dashboard.includes(`data-tour="${marker}"`), `missing dashboard marker: ${marker}`);
+  assert.ok(todayCard.includes('data-tour="dashboard-streak"'));
 
   assert.ok(compete.includes('data-tour="compete-weekly-league"'));
   assert.ok(compete.includes('data-tour="compete-overall-rating"'));
