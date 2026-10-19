@@ -796,6 +796,7 @@ def quest_states(db, user, selected_week: date | None = None) -> list:
         .filter(
             XPEvent.user_id == user.id,
             XPEvent.event_type == "activity_bonus",
+            XPEvent.event_key.like("bonus:daily_workout:%"),
             XPEvent.amount > 0,
             XPEvent.date >= week_start_dt,
             XPEvent.date < next_week_dt,
