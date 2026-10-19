@@ -6,6 +6,7 @@ const path = require("node:path");
 const read = (relative) => fs.readFileSync(path.join(__dirname, "..", relative), "utf8");
 const dashboard = read("src/app/dashboard/page.tsx");
 const profile = read("src/app/profile/page.tsx");
+const publicProfile = read("src/app/u/[username]/page.tsx");
 const layout = read("src/app/layout.tsx");
 const globalCss = read("src/app/globals.css");
 const compete = read("src/app/compete/page.tsx");
@@ -289,7 +290,7 @@ test("week calendar renders seven ledger days and shares the XP breakdown compon
   assert.match(weekCalendar, /focus-visible:outline/);
   assert.match(weekCalendar, /useReducedMotion/);
   assert.match(xpDetails, /\/api\/activities\/\$\{act\.id\}\/xp/);
-  assert.match(profile, /<ActivityCard act=\{act\} \/>/);
+  assert.match(publicProfile, /<ActivityCard act=\{act\} \/>/);
   assert.match(activityCard, /ActivityXpDetails act=\{act\}/);
   assert.doesNotMatch(dashboard, /WorkoutsList|DashboardWorkoutsSection/);
 });
