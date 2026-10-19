@@ -116,6 +116,7 @@ export function WeekRecapCard({ weekStart, userName }: { weekStart: string; user
   const [recap, setRecap] = useState<WeekRecap | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     if (!weekStart) return;
@@ -132,10 +133,10 @@ export function WeekRecapCard({ weekStart, userName }: { weekStart: string; user
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [weekStart]);
+  }, [weekStart, retry]);
 
   if (loading && !recap) return <section className="border-b-2 border-black bg-white p-4"><Skeleton label="Загружаем итоги недели" rows={2} /></section>;
-  if (!recap) return error ? <section className="border-b-2 border-black bg-white p-4"><ErrorState message={error} onRetry={() => setWeekStartRetry(weekStart)} /></section> : null;
+  if (!recap) return error ? <section className="border-b-2 border-black bg-white p-4"><ErrorState message={error} onRetry={() => setRetry((value) => value + 1)} /></section> : null;
 
   const tiles = [
     ["Нагрузка", recap.tiles?.effort],
@@ -196,30 +197,42 @@ export function WeekRecapCard({ weekStart, userName }: { weekStart: string; user
   );
 }
 
-function setWeekStartRetry(_weekStart: string) {
-  // ErrorState exposes retry without component-local setters; this function is replaced by a refresh.
-  if (typeof window !== "undefined") window.location.reload();
+function previousSeasonStart(value: string): string {
+  const match = /^(\\d{4})-(\\d{2})-\\d{2}$/.exec(value);
+  if (!match) return value;
+  const previous = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 2, 1));
+  return `${previous.getUTCFullYear()}-${String(previous.getUTCMonth() + 1).padStart(2, "0")}-01`;
 }
 
 export function SeasonRecapCard({ userName }: { userName?: string }) {
   const [recap, setRecap] = useState<SeasonRecap | null>(null);
+  const [currentSeasonStart, setCurrentSeasonStart] = useState("");
+  const [selectedSeasonStart, setSelectedSeasonStart] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    authApi.get("/api/season/recap").then((response) => {
-      if (!cancelled) setRecap(response.data as SeasonRecap);
+    setLoading(true);
+    setError("");
+    authApi.get("/api/season/recap", {
+      params: selectedSeasonStart ? { season_start: selectedSeasonStart } : {},
+    }).then((response) => {
+      if (cancelled) return;
+      const value = response.data as SeasonRecap;
+      setRecap(value);
+      if (!currentSeasonStart && !selectedSeasonStart) setCurrentSeasonStart(value.season.start);
     }).catch(() => {
       if (!cancelled) setError("Не удалось загрузить итоги сезона.");
     }).finally(() => {
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [selectedSeasonStart, retry]);
 
   if (loading && !recap) return <section className="border-b-2 border-black bg-white p-4"><Skeleton label="Загружаем итоги сезона" rows={2} /></section>;
-  if (!recap) return error ? <section className="border-b-2 border-black bg-white p-4"><ErrorState message={error} onRetry={() => window.location.reload()} /></section> : null;
+  if (!recap) return error ? <section className="border-b-2 border-black bg-white p-4"><ErrorState message={error} onRetry={() => setRetry((value) => value + 1)} /></section> : null;
   const metrics = recap.metrics;
   return (
     <section className="border-b-2 border-black bg-[#f4f4f0] p-4 md:p-6" aria-label="Итоги сезона">
@@ -227,6 +240,15 @@ export function SeasonRecapCard({ userName }: { userName?: string }) {
         <div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Season {String(recap.season.num).padStart(3, "0")} · {recap.is_final ? "Финальные итоги" : "Промежуточные итоги"}</p>
           <h2 className="mt-1 font-display text-2xl uppercase">Итоги сезона</h2>
+          {currentSeasonStart && (
+            <label className="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold">
+              <span>Период:</span>
+              <select value={selectedSeasonStart} onChange={(event) => setSelectedSeasonStart(event.target.value)} className="max-w-full border-2 border-black bg-white px-2 py-1">
+                <option value="">Текущий сезон</option>
+                <option value={previousSeasonStart(currentSeasonStart)}>Предыдущий сезон</option>
+              </select>
+            </label>
+          )}
           <p className="font-display text-3xl text-[#ff4b26]">+{xp(metrics.total_xp)} XP</p>
         </div>
         <ShareButton data={{
