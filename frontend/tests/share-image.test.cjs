@@ -72,14 +72,12 @@ test("season share format includes metrics and duel balance", () => {
 
 test("share layouts use portrait 1080×1920 and optional square 1080×1080", () => {
   const { calculateShareLayout } = loadShareImageModule();
-  assert.deepEqual(
-    { width: calculateShareLayout().width, height: calculateShareLayout().height },
-    { width: 1080, height: 1920 },
-  );
-  assert.deepEqual(
-    { width: calculateShareLayout(true).width, height: calculateShareLayout(true).height },
-    { width: 1080, height: 1080 },
-  );
+  const portrait = calculateShareLayout();
+  assert.equal(portrait.width, 1080);
+  assert.equal(portrait.height, 1920);
+  const square = calculateShareLayout(true);
+  assert.equal(square.width, 1080);
+  assert.equal(square.height, 1080);
 });
 
 test("share image is local, transparent, waits for local fonts, and does not require upload", () => {
