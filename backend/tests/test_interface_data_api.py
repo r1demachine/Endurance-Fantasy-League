@@ -949,6 +949,8 @@ class InterfaceDataApiTests(unittest.TestCase):
         week_start = date(2026, 10, 19)
         self.add_summary(week_start, consistency=40, quest=17, total=57)
         self.add_event("bonus:daily_workout:test:2026-10-19", "activity_bonus", 20, day=week_start)
+        # Another positive activity_bonus type must not fill a daily-workout slot.
+        self.add_event("unrelated:bonus:2026-10-20", "activity_bonus", 20, day=week_start + timedelta(days=1))
         self.add_event("bonus:daily_workout:test:2026-10-21:a", "activity_bonus", 20, day=week_start + timedelta(days=2))
         # Multiple bonus events on one date still produce one filled day.
         self.add_event("bonus:daily_workout:test:2026-10-21:b", "activity_bonus", 20, day=week_start + timedelta(days=2))
