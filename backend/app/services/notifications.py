@@ -1,6 +1,6 @@
 """Notification persistence, realtime publication and optional Telegram delivery."""
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -48,7 +48,7 @@ async def notify_user(
     send_telegram: bool = True,
 ) -> None:
     """Persist and publish a notification; roll up recent unread activity notifications."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     row = None
 
     if link and ntype in _ACTIVITY_NOTIFICATION_MARKERS:

@@ -377,6 +377,8 @@ class ActivitySocialTests(unittest.TestCase):
         self.assertIsNone(
             self.db.query(ActivityComment).filter(ActivityComment.id == comment_id).first()
         )
+        # The database cascade deletes the row outside SQLAlchemy's identity map.
+        self.db.expunge(comment)
 
         other_activity = self.make_activity(self.owner, "cascade-second-activity")
         second = ActivityComment(

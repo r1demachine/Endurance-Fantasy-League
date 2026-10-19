@@ -1,5 +1,5 @@
 """Likes for activity social interactions (Stage 6a)."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import unicodedata
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -295,6 +295,6 @@ def delete_activity_comment(
     if comment.user_id != current.id and activity.user_id != current.id:
         raise HTTPException(status_code=403, detail="Удалить комментарий может его автор или владелец тренировки")
 
-    comment.deleted_at = datetime.utcnow()
+    comment.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
     return {"ok": True, "comment_id": comment.id}
