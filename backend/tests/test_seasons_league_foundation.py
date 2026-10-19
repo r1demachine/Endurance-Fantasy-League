@@ -1,7 +1,6 @@
 """Regression tests for monthly season calculation and weekly league ordering."""
 import unittest
 from datetime import date, datetime, timezone
-from zoneinfo import ZoneInfo
 
 from app.services.league import league_ranking_key
 from app.services.seasons import SEASONS, current_season, season_for_date
