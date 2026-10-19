@@ -787,6 +787,56 @@ def quest_states(db, user, selected_week: date | None = None) -> list:
         })
 
 
+    # Virtual weekly card backed by existing activity_bonus events. This view
+    # never creates XPEvents: the +20 XP was already awarded by the XP v6 bonus.
+    week_start_dt = datetime.combine(selected_week_start, datetime.min.time())
+    next_week_dt = week_start_dt + timedelta(days=7)
+    daily_bonus_events = (
+        db.query(XPEvent)
+        .filter(
+            XPEvent.user_id == user.id,
+            XPEvent.event_type == "activity_bonus",
+            XPEvent.amount > 0,
+            XPEvent.date >= week_start_dt,
+            XPEvent.date < next_week_dt,
+        )
+        .all()
+    )
+    daily_bonus_dates = {
+        event.date.date()
+        for event in daily_bonus_events
+        if event.date is not None
+    }
+    weekday_labels = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+    daily_bonus_steps = [
+        {
+            "slot": index + 1,
+            "label": weekday_labels[index],
+            "filled": selected_week_start + timedelta(days=index) in daily_bonus_dates,
+            "date": (selected_week_start + timedelta(days=index)).isoformat(),
+        }
+        for index in range(7)
+    ]
+    daily_bonus_count = sum(1 for step in daily_bonus_steps if step["filled"])
+    from ..services import xp_v6 as X6
+    out.append({
+        "slug": "daily_workout_bonus",
+        "title": "Дневной бонус",
+        "desc": "Бонус +20 XP за день с не ручной тренировкой от 45 минут. XP уже начисляется отдельным событием activity_bonus.",
+        "reward": float(X6.DAILY_WORKOUT_BONUS_XP),
+        "reward_kind": "per_item",
+        "kind": "weekly",
+        "week_start": selected_week_start.isoformat(),
+        "status": "earned" if daily_bonus_count == 7 else "open",
+        "earned_at": None,
+        "progress": {
+            "current": daily_bonus_count,
+            "target": 7,
+            "unit": "дней",
+            "steps": daily_bonus_steps,
+        },
+    })
+
     # Execution bonuses use the existing weekly quest payload so the dashboard
     # can render them with the same cards/progress as other weekly achievements.
     summaries_by_week = {
