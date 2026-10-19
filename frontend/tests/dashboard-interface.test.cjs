@@ -275,7 +275,7 @@ test("week calendar renders seven ledger days and shares the XP breakdown compon
   assert.match(dashboard, /<WeekCalendar/);
   assert.match(dashboard, /days: Array\.isArray\(result\.days\)/);
   assert.match(weekCalendar, /getCalendarWeekDates\(start\)/);
-  assert.match(weekCalendar, /Array\.from\(\{ length: 7 \}/);
+  assert.match(weekCalendar, /dates\\.map/);
   assert.match(weekCalendar, /lg:grid-cols-7/);
   assert.match(weekCalendar, /grid-cols-1 gap-3/);
   assert.match(weekCalendar, /weekData\?\.days/);
