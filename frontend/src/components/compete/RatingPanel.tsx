@@ -19,8 +19,6 @@ type LeaderboardEntry = {
 type LeaderboardPayload = {
   entries?: LeaderboardEntry[];
   your_rank?: number | null;
-  beta?: boolean;
-  participants?: number;
 };
 
 const scopeTabs: { value: Scope; label: string }[] = [
@@ -40,6 +38,19 @@ export default function RatingPanel() {
     friends: false,
   });
   const [errors, setErrors] = useState<Partial<Record<Scope, string>>>({});
+  const [isBeta, setIsBeta] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    authApi.get("/api/leaderboard", { params: { scope: "weekly", limit: 1 } })
+      .then((response) => {
+        if (!cancelled) setIsBeta(Boolean(response.data?.beta));
+      })
+      .catch(() => {
+        if (!cancelled) setIsBeta(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const loadScope = useCallback(async (requestedScope: Scope) => {
     setAttempted((previous) => ({ ...previous, [requestedScope]: true }));
@@ -87,7 +98,7 @@ export default function RatingPanel() {
       <div className="border-b-2 border-black bg-[#f4f4f0] p-4 md:p-6">
         <div className="flex items-center gap-2">
           <h2 id="rating-heading" className="font-display text-2xl uppercase">Рейтинг</h2>
-          {board?.beta && <span className="border-2 border-black bg-[#ffd500] px-2 py-1 text-[10px] font-black tracking-widest">БЕТА</span>}
+          {isBeta && <span className="border-2 border-black bg-[#ffd500] px-2 py-1 text-[10px] font-black tracking-widest">БЕТА</span>}
           <HelpTip label="Как устроен общий рейтинг">
             Общий и друзья показывают общий XP без недельных дивизионов. В таблице отображаются первые 10 участников и твоё место, если оно ниже десятого.
           </HelpTip>
