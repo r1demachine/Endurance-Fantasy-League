@@ -83,7 +83,8 @@ assert abs(LEAGUE_GOAL_WEIGHT + LEAGUE_CONSISTENCY_WEIGHT + LEAGUE_QUALITY_WEIGH
 DIVISION_NAMES = ["Foundation", "Builder", "Contender", "Elite", "Legend"]
 DIVISION_CTL_THRESHOLDS = (25.0, 45.0, 70.0, 100.0)       # полосы CTL
 DIVISION_LOAD_THRESHOLDS = (150.0, 300.0, 500.0, 800.0)   # недельный TSS (fallback)
-MIN_LEAGUE_SIZE = 5          # минимум участников лиги
+MIN_LEAGUE_SIZE = 1          # Бета-лига доступна даже единственному участнику
+BETA_SINGLE_LEAGUE_UNTIL_USERS = 20  # До этого числа участников используется одна общая Бета-лига
 PROMOTION_ZONE = 5           # зона повышения
 DEMOTION_ZONE = 5            # зона понижения
 NEWCOMER_PROTECTION_WEEKS = 2

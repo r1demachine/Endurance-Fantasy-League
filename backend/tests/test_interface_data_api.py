@@ -350,7 +350,7 @@ class InterfaceDataApiTests(unittest.TestCase):
             self.assertEqual(payload["xp"], 42)
         self.assertEqual(weekly["start_date"], "2026-10-12")
         self.assertEqual(yearly["start_date"], "2026-01-01")
-        self.assertEqual(seasonal["start_date"], "2026-09-01")
+        self.assertEqual(seasonal["start_date"], "2026-10-01")
 
     def test_lifetime_achievements_ignore_records_before_activation_date(self):
         # Pre-activation source records remain available to weekly quests, not lifetime quests.

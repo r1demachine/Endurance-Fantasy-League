@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from .database import engine, Base
 from .config import get_settings
 from .rate_limit import limiter
-from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy, upload, duels, clubs, telegram
+from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy, upload, duels, clubs, telegram, season
 
 Base.metadata.create_all(bind=engine)
 
@@ -46,6 +46,9 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN resting_hr INTEGER"))
             if "timezone_name" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN timezone_name VARCHAR(64) NOT NULL DEFAULT 'UTC'"))
+            if "timezone_confirmed" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN timezone_confirmed BOOLEAN NOT NULL DEFAULT FALSE"))
+                conn.execute(text("UPDATE users SET timezone_confirmed = TRUE WHERE timezone_name IS NOT NULL AND timezone_name <> 'UTC'"))
             if "legacy_xp_offset" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN legacy_xp_offset FLOAT DEFAULT 0"))
             if "xp_migrated_at" not in cols:
@@ -384,6 +387,7 @@ app.include_router(upload.router)
 app.include_router(duels.router)
 app.include_router(clubs.router)
 app.include_router(telegram.router)
+app.include_router(season.router)
 
 @app.on_event("startup")
 async def _init_broker():

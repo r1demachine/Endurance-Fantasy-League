@@ -49,7 +49,9 @@ test("weekly league is its own container before the Global/Friends rating", () =
   assert.match(weekly, /scope: "weekly", limit: 10/);
   assert.match(weekly, /entry\.division/);
   assert.match(weekly, /entry\.score/);
-  assert.match(weekly, /Лига формируется/);
+  assert.doesNotMatch(weekly, /Лига формируется/);
+  assert.match(weekly, /board\?\.beta/);
+  assert.match(weekly, /Ты первый, позови друзей/);
   assert.match(weekly, /Ты — место \{yourRank\}/);
   assert.match(weekly, /<Skeleton label="Загружаем Weekly League"/);
   assert.match(weekly, /<ErrorState message=\{error\} onRetry=\{\(\) => void loadWeekly\(\)\}/);

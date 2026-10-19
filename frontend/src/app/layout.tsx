@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import Header from "@/components/Header";
+import TimezoneConfirmation from "@/components/TimezoneConfirmation";
 import PageTransition from "@/components/PageTransition";
 import DataWarmup from "@/components/DataWarmup";
 import DreamDust from "@/components/DreamDust";
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2]" />
         <ThemeInit />
         <Header />
+        <TimezoneConfirmation />
         <DreamDust />
         <DataWarmup />
         <PageTransition>{children}</PageTransition>

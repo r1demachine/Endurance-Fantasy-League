@@ -231,3 +231,40 @@ test("global typography grows one point but restores heading and display scales"
   assert.ok(css.includes("font-size: calc(10px + 1pt)"));
   assert.ok(css.includes("prefers-reduced-motion: reduce"));
 });
+
+
+test("beta league uses one shared league and invites the first athlete instead of showing formation progress", () => {
+  assert.match(xpV6, /MIN_LEAGUE_SIZE = 1/);
+  assert.match(xpV6, /BETA_SINGLE_LEAGUE_UNTIL_USERS = 20/);
+  assert.match(syncRouter, /group_key="beta"/);
+  assert.match(syncRouter, /league_ranking_key\(/);
+  assert.match(weeklyLeague, /board\?\.beta/);
+  assert.match(weeklyLeague, /Ты первый, позови друзей/);
+  assert.match(weeklyLeague, /Скопировать ссылку/);
+  assert.equal(weeklyLeague.includes("Лига формируется"), false);
+  assert.match(ratingPanel, /isBeta &&/);
+  assert.match(ratingPanel, /scope: "weekly", limit: 1/);
+});
+
+test("season display is API-backed and no longer rotates as demo state", () => {
+  const seasons = read("src/lib/seasons.ts");
+  const seasonService = read("../backend/app/services/seasons.py");
+  const seasonRouter = read("../backend/app/routers/season.py");
+  assert.match(seasons, /authApi\.get\("\/api\/season"/);
+  assert.equal(seasons.includes("setInterval"), false);
+  assert.match(seasonService, /SEASON_EPOCH = date\(2026, 9, 1\)/);
+  assert.match(seasonService, /SEASONS\[number % len\(SEASONS\)\]/);
+  assert.match(seasonRouter, /@router\.get\("\/season"\)/);
+});
+
+test("timezone is explicitly confirmed before timezone-dependent reminders can rely on it", () => {
+  const timezonePrompt = read("src/components/TimezoneConfirmation.tsx");
+  const seasonRouter = read("../backend/app/routers/season.py");
+  const models = read("../backend/app/models.py");
+  const main = read("../backend/app/main.py");
+  assert.match(models, /timezone_confirmed = Column\(Boolean/);
+  assert.match(main, /ADD COLUMN timezone_confirmed BOOLEAN/);
+  assert.match(timezonePrompt, /Intl\.DateTimeFormat\(\)\.resolvedOptions\(\)\.timeZone/);
+  assert.match(timezonePrompt, /authApi\.patch\("\/api\/timezone"/);
+  assert.match(seasonRouter, /@router\.patch\("\/timezone"\)/);
+});

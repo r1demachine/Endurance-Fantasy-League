@@ -44,6 +44,7 @@ class User(Base):
     max_hr = Column(Integer, nullable=True)  # максимальный пульс пользователя
     resting_hr = Column(Integer, nullable=True)  # пульс в покое для HRSS/TRIMP
     timezone_name = Column(String(64), nullable=False, default="UTC", server_default="UTC")  # IANA timezone
+    timezone_confirmed = Column(Boolean, nullable=False, default=False, server_default="false")  # Explicit timezone choice before reminders
     
     # Устаревшие поля — оставим для совместимости, но не обязательны
     email = Column(String, unique=True, index=True, nullable=True)

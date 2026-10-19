@@ -34,6 +34,23 @@ def get_current_user(
     return user
 
 
+def get_optional_current_user(
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """Resolve an authenticated user when a valid bearer token is supplied."""
+    if not creds:
+        return None
+    claims = decode_access_token_claims(creds.credentials)
+    if claims is None:
+        return None
+    user_id, token_version = claims
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user or token_version != int(user.token_version or 0):
+        return None
+    return user
+
+
 def _admin_ids() -> set[int]:
     raw = get_settings().ADMIN_USER_IDS
     return {int(x) for x in raw.split(",") if x.strip().isdigit()}
