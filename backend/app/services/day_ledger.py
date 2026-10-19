@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..models import Activity, User, Wellness, XPEvent
+from ..models import Activity, ActivityComment, ActivityReaction, User, Wellness, XPEvent
 
 # Every XPEvent type written in sync.py/quests.py (plus legacy rows that can
 # still exist before reconciliation) is explicitly classified in one place.
@@ -176,6 +176,35 @@ def build_day_ledger(db: Session, user: User, day: date) -> dict:
         .all()
     )
 
+    activity_ids = [activity.id for activity in activities]
+    likes_by_activity: dict[int, int] = {}
+    comments_by_activity: dict[int, int] = {}
+    if activity_ids:
+        likes_by_activity = {
+            activity_id: count
+            for activity_id, count in (
+                db.query(ActivityReaction.activity_id, func.count(ActivityReaction.id))
+                .filter(
+                    ActivityReaction.activity_id.in_(activity_ids),
+                    ActivityReaction.kind == "like",
+                )
+                .group_by(ActivityReaction.activity_id)
+                .all()
+            )
+        }
+        comments_by_activity = {
+            activity_id: count
+            for activity_id, count in (
+                db.query(ActivityComment.activity_id, func.count(ActivityComment.id))
+                .filter(
+                    ActivityComment.activity_id.in_(activity_ids),
+                    ActivityComment.deleted_at.is_(None),
+                )
+                .group_by(ActivityComment.activity_id)
+                .all()
+            )
+        }
+
     event_rows = _week_event_rows(db, user, day)
     day_events = [
         event for event in event_rows
@@ -220,6 +249,8 @@ def build_day_ledger(db: Session, user: User, day: date) -> dict:
             "is_indoor": bool(getattr(activity, "is_indoor", False) or getattr(activity, "indoor", False)),
             "effort_xp": effort_xp,
             "xp": round(effort_xp + awards, 2),
+            "likes_count": int(likes_by_activity.get(activity.id, 0)),
+            "comments_count": int(comments_by_activity.get(activity.id, 0)),
         })
         day_activities_for_rule.append({"moving_time": int(activity.moving_time or 0)})
 

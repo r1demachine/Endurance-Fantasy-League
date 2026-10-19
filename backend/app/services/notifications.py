@@ -101,6 +101,6 @@ async def notify_user(
     if send_telegram:
         try:
             from .telegram import notify_telegram_user
-            await notify_telegram_user(db, user_id, row.text)
+            await notify_telegram_user(db, user_id, text)
         except Exception as exc:  # noqa: BLE001
             print(f"Telegram notify failed: {type(exc).__name__}: {exc}")

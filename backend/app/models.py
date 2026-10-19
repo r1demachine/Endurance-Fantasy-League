@@ -267,6 +267,33 @@ class ActivityReaction(Base):
     )
 
 
+class ActivityComment(Base):
+    """User comment attached to an activity; deletion is represented by deleted_at."""
+
+    __tablename__ = "activity_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    activity_id = Column(
+        Integer, ForeignKey("activities.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    body = Column(String(500), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    deleted_at = Column(DateTime, nullable=True)
+
+    activity = relationship("Activity", foreign_keys=[activity_id])
+    user = relationship("User", foreign_keys=[user_id])
+
+    __table_args__ = (
+        Index("idx_activity_comments_activity_created", "activity_id", "created_at"),
+        Index("idx_activity_comments_user_created", "user_id", "created_at"),
+    )
+
+
 class Notification(Base):
     __tablename__ = "notifications"
 

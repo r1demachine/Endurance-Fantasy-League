@@ -15,7 +15,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.database import Base, get_db
 from app.dependencies import get_current_user
-from app.models import Activity, ActivityReaction, Friendship, FriendshipStatus, Notification, User
+from app.models import Activity, ActivityComment, ActivityReaction, Friendship, FriendshipStatus, Notification, User
 from app.rate_limit import limiter
 from app.routers import sync as sync_router
 from app.routers.social import router as social_router
@@ -244,6 +244,196 @@ class ActivitySocialTests(unittest.TestCase):
         self.assertEqual(rows[0].text, "Иван и ещё 2 оценили твою тренировку")
         self.assertEqual(rows[0].link, link)
 
+
+
+    def test_comment_is_trimmed_and_notifies_with_activity_link(self):
+        self.accept_friendship(self.owner, self.viewer)
+        with patch("app.services.notifications.publish", new_callable=AsyncMock), patch(
+            "app.services.telegram.notify_telegram_user", new_callable=AsyncMock
+        ) as telegram_notify:
+            response = self.client.post(
+                f"/api/activities/{self.activity.id}/comments",
+                json={"body": "  Хорошая тренировка!  "},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["comment"]["body"], "Хорошая тренировка!")
+        self.assertEqual(payload["comments_count"], 1)
+        self.assertTrue(payload["comment"]["can_delete"])
+        self.assertEqual(telegram_notify.await_count, 1)
+
+        notification = self.db.query(Notification).filter(
+            Notification.user_id == self.owner.id,
+            Notification.type == "activity_comment",
+        ).one()
+        self.assertEqual(
+            notification.link,
+            f"/dashboard?activity_id={self.activity.id}&week_start=2026-10-12",
+        )
+
+    def test_comments_reject_empty_overlong_and_control_characters(self):
+        self.accept_friendship(self.owner, self.viewer)
+        invalid_bodies = ["   ", "x" * 501, "line one\nline two", "nul\x00byte"]
+        for body in invalid_bodies:
+            with self.subTest(body=repr(body)):
+                response = self.client.post(
+                    f"/api/activities/{self.activity.id}/comments",
+                    json={"body": body},
+                )
+                self.assertEqual(response.status_code, 422)
+
+        valid_boundary = self.client.post(
+            f"/api/activities/{self.activity.id}/comments",
+            json={"body": " " + ("x" * 500) + " "},
+        )
+        self.assertEqual(valid_boundary.status_code, 200)
+        self.assertEqual(len(valid_boundary.json()["comment"]["body"]), 500)
+        self.assertEqual(
+            self.db.query(ActivityComment).filter(
+                ActivityComment.activity_id == self.activity.id,
+                ActivityComment.deleted_at.is_(None),
+            ).count(),
+            1,
+        )
+
+    def test_comment_endpoints_enforce_same_activity_visibility(self):
+        self.viewer = self.outsider
+        get_response = self.client.get(f"/api/activities/{self.activity.id}/comments")
+        post_response = self.client.post(
+            f"/api/activities/{self.activity.id}/comments",
+            json={"body": "Not allowed"},
+        )
+        self.assertEqual(get_response.status_code, 403)
+        self.assertEqual(post_response.status_code, 403)
+
+        self.accept_friendship(self.owner, self.outsider)
+        self.owner.profile_visibility = "private"
+        self.db.commit()
+        self.assertEqual(
+            self.client.get(f"/api/activities/{self.activity.id}/comments").status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.post(
+                f"/api/activities/{self.activity.id}/comments",
+                json={"body": "Still not allowed"},
+            ).status_code,
+            403,
+        )
+
+    def test_comment_can_be_deleted_by_author_or_activity_owner_only(self):
+        self.accept_friendship(self.owner, self.viewer)
+        created = self.client.post(
+            f"/api/activities/{self.activity.id}/comments",
+            json={"body": "Remove me"},
+        )
+        self.assertEqual(created.status_code, 200)
+        comment_id = created.json()["comment"]["id"]
+
+        self.accept_friendship(self.owner, self.outsider)
+        self.viewer = self.outsider
+        forbidden = self.client.delete(f"/api/comments/{comment_id}")
+        self.assertEqual(forbidden.status_code, 403)
+
+        self.viewer = self.owner
+        deleted = self.client.delete(f"/api/comments/{comment_id}")
+        self.assertEqual(deleted.status_code, 200)
+        self.assertTrue(deleted.json()["ok"])
+        stored = self.db.query(ActivityComment).filter(ActivityComment.id == comment_id).first()
+        self.assertIsNotNone(stored.deleted_at)
+        self.assertEqual(
+            self.client.get(f"/api/activities/{self.activity.id}/comments").json()["total"],
+            0,
+        )
+        self.assertEqual(self.client.delete(f"/api/comments/{comment_id}").status_code, 404)
+
+    def test_own_activity_comment_creates_no_notification(self):
+        self.viewer = self.owner
+        with patch("app.services.notifications.publish", new_callable=AsyncMock), patch(
+            "app.services.telegram.notify_telegram_user", new_callable=AsyncMock
+        ) as telegram_notify:
+            response = self.client.post(
+                f"/api/activities/{self.activity.id}/comments",
+                json={"body": "Self comment"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.db.query(Notification).count(), 0)
+        telegram_notify.assert_not_awaited()
+
+    def test_comment_rows_cascade_on_activity_and_account_deletion(self):
+        comment = ActivityComment(
+            activity_id=self.activity.id,
+            user_id=self.viewer.id,
+            body="Activity cascade",
+        )
+        self.db.add(comment)
+        self.db.commit()
+        comment_id = comment.id
+
+        self.db.delete(self.activity)
+        self.db.commit()
+        self.assertIsNone(
+            self.db.query(ActivityComment).filter(ActivityComment.id == comment_id).first()
+        )
+
+        other_activity = self.make_activity(self.owner, "cascade-second-activity")
+        second = ActivityComment(
+            activity_id=other_activity.id,
+            user_id=self.outsider.id,
+            body="Account cascade",
+        )
+        self.db.add(second)
+        self.db.commit()
+        second_id = second.id
+
+        self.db.delete(self.outsider)
+        self.db.commit()
+        self.assertIsNone(
+            self.db.query(ActivityComment).filter(ActivityComment.id == second_id).first()
+        )
+
+    def test_activity_comment_notifications_roll_up_and_reach_telegram(self):
+        link = f"/dashboard?activity_id={self.activity.id}&week_start=2026-10-12"
+        with patch("app.services.notifications.publish", new_callable=AsyncMock), patch(
+            "app.services.telegram.notify_telegram_user", new_callable=AsyncMock
+        ) as telegram_notify:
+            for name in ("Иван", "Мария", "Пётр"):
+                asyncio.run(notify_user(
+                    self.db,
+                    self.owner.id,
+                    "activity_comment",
+                    f"{name} оставил комментарий к твоей тренировке",
+                    link=link,
+                ))
+
+        rows = self.db.query(Notification).filter(
+            Notification.user_id == self.owner.id,
+            Notification.type == "activity_comment",
+            Notification.link == link,
+        ).all()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(
+            rows[0].text,
+            "Иван и ещё 2 оставили комментарии к твоей тренировке",
+        )
+        self.assertEqual(telegram_notify.await_count, 3)
+
+    def test_social_summary_includes_comment_count_and_recent_comments(self):
+        self.accept_friendship(self.owner, self.viewer)
+        self.db.add(ActivityComment(
+            activity_id=self.activity.id,
+            user_id=self.viewer.id,
+            body="Recent comment",
+        ))
+        self.db.commit()
+
+        response = self.client.get(f"/api/activities/{self.activity.id}/social")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["comments_count"], 1)
+        self.assertEqual(payload["latest_comments"][0]["body"], "Recent comment")
 
 if __name__ == "__main__":
     unittest.main()

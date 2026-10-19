@@ -32,3 +32,22 @@ test("social notifications expose their link and open the selected activity", ()
   assert.match(dashboard, /activity_id/);
   assert.match(dashboard, /initialActivityId=\{deepLinkActivityId\}/);
 });
+
+
+test("activity social UI supports comments and deletes without rendering HTML", () => {
+  const component = read("src/components/ActivitySocial.tsx");
+  assert.match(component, /\/api\/activities\/\$\{activityId\}\/comments/);
+  assert.match(component, /\/api\/comments\/\$\{commentId\}/);
+  assert.match(component, /maxLength=\{500\}/);
+  assert.match(component, /comment\.body/);
+  assert.match(component, /comment\.can_delete/);
+  assert.doesNotMatch(component, /dangerouslySetInnerHTML/);
+});
+
+test("calendar workout tiles show server-provided like and comment counts", () => {
+  const calendar = read("src/components/dashboard/WeekCalendar.tsx");
+  assert.match(calendar, /likes_count\?: number/);
+  assert.match(calendar, /comments_count\?: number/);
+  assert.match(calendar, /♥ \{Math\.max\(0, Number\(activity\.likes_count\)/);
+  assert.match(calendar, /💬 \{Math\.max\(0, Number\(activity\.comments_count\)/);
+});
