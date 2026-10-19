@@ -1,5 +1,5 @@
 """Season metadata, recap, and explicit user timezone confirmation endpoints."""
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, Query
@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..dependencies import get_current_user, get_optional_current_user
 from ..models import Activity, Duel, DuelStatus, LeagueMembership, User, WeeklySummary, XPEvent
-from ..services.seasons import current_season, local_date, longest_consecutive_streak, sum_weekly_xp
+from ..services.seasons import current_season, local_date, longest_consecutive_streak, season_for_date, sum_weekly_xp
 
 router = APIRouter(prefix="/api", tags=["Season and timezone"])
 
@@ -33,13 +33,14 @@ def get_season(
 
 @router.get("/season/recap")
 def get_season_recap(
+    season_start: date | None = Query(default=None),
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Season statistics use weekly XP totals, including non-workout bonuses."""
     zone = current.timezone_name or "UTC"
     today = local_date(zone)
-    season = current_season(zone)
+    season = season_for_date(season_start or today)
     start_dt = datetime.combine(season.start, datetime.min.time())
     end_dt = datetime.combine(season.next_start, datetime.min.time())
     activities = db.query(Activity).filter(Activity.user_id == current.id).all()
