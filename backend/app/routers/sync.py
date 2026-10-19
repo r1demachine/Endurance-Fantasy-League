@@ -20,6 +20,7 @@ from typing import Optional, Literal
 
 from ..rate_limit import limiter
 from ..services.deload import cooldown_passed, manual_deload_block_reason, suggestion_is_appropriate
+from ..services.league import league_ranking_key
 
 router = APIRouter(prefix="/api", tags=["Sync"])
 settings = get_settings()
@@ -774,31 +775,45 @@ def _close_league_week(
             "source": source, "score": summary.league_score or 0,
         })
 
-    formed = len(entries) >= X6.MIN_LEAGUE_SIZE
+    participant_count = len(entries)
+    formed = participant_count >= X6.MIN_LEAGUE_SIZE
+    beta_league = participant_count < X6.BETA_SINGLE_LEAGUE_UNTIL_USERS
     db.add(LeagueWeek(week_start=ws_dt, status="closed" if formed else "not_formed"))
 
     if entries:
-        groups: dict = {}
-        for entry in entries:
-            groups.setdefault(entry["div"] or "Open", []).append(entry)
-        order = list(X6.DIVISION_NAMES) + ["Open"]
-        keys = [key for key in order if key in groups] + [key for key in groups if key not in order]
-        merged = []
-        for key in keys:
-            if merged and len(merged[-1][1]) < X6.MIN_LEAGUE_SIZE:
-                merged[-1][0].append(key)
-                merged[-1][1].extend(groups[key])
-            else:
-                merged.append(([key], list(groups[key])))
-        if len(merged) > 1 and len(merged[-1][1]) < X6.MIN_LEAGUE_SIZE:
-            merged[-2][0].extend(merged[-1][0])
-            merged[-2][1].extend(merged[-1][1])
-            merged.pop()
+        if beta_league:
+            # Keep the early community in one shared league, regardless of CTL/division.
+            for entry in entries:
+                entry["div"] = "Бета-лига"
+                entry["source"] = "beta"
+            merged = [(["beta"], entries)]
+        else:
+            groups: dict = {}
+            for entry in entries:
+                groups.setdefault(entry["div"] or "Open", []).append(entry)
+            order = list(X6.DIVISION_NAMES) + ["Open"]
+            keys = [key for key in order if key in groups] + [key for key in groups if key not in order]
+            merged = []
+            for key in keys:
+                if merged and len(merged[-1][1]) < X6.MIN_LEAGUE_SIZE:
+                    merged[-1][0].append(key)
+                    merged[-1][1].extend(groups[key])
+                else:
+                    merged.append(([key], list(groups[key])))
+            if len(merged) > 1 and len(merged[-1][1]) < X6.MIN_LEAGUE_SIZE:
+                merged[-2][0].extend(merged[-1][0])
+                merged[-2][1].extend(merged[-1][1])
+                merged.pop()
 
         for group_keys, members in merged:
-            members.sort(key=lambda entry: (-entry["score"], entry["user"].id))
+            members.sort(key=lambda entry: league_ranking_key(
+                entry["score"],
+                entry["summ"].total_xp,
+                entry["summ"].actual_load,
+                entry["user"].id,
+            ))
             count = len(members)
-            zone = X6.PROMOTION_ZONE if formed and count >= 2 * X6.PROMOTION_ZONE else 0
+            zone = X6.PROMOTION_ZONE if formed and not beta_league and count >= 2 * X6.PROMOTION_ZONE else 0
             for index, entry in enumerate(members):
                 user = entry["user"]
                 protected = False
@@ -814,12 +829,11 @@ def _close_league_week(
                 db.add(LeagueMembership(
                     week_start=ws_dt, user_id=user.id, division=entry["div"],
                     division_source=entry["source"], league_score=round(entry["score"], 2),
-                    rank=index + 1, group_key="+".join(group_keys), promoted=promoted,
-                    demoted=demoted, protected=protected,
+                    rank=index + 1, group_key="beta" if beta_league else "+".join(group_keys),
+                    promoted=promoted, demoted=demoted, protected=protected,
                 ))
                 entry["summ"].division = entry["div"]
                 entry["summ"].division_source = entry["source"]
-
     db.commit()
 
     # Finalize duels even if the league itself did not meet the minimum size.
@@ -2626,27 +2640,43 @@ async def leaderboard(
         )
         return int(ahead or 0) + 1
 
+    today = _user_local_today(current)
+    this_ws_d = X6.week_start(today)
+    this_ws = datetime.combine(this_ws_d, datetime.min.time())
+    population_rows = (
+        db.query(WeeklySummary, User)
+        .join(User, User.id == WeeklySummary.user_id)
+        .filter(WeeklySummary.week_start == this_ws)
+        .all()
+    )
+    active_population = [
+        (summary, user) for summary, user in population_rows
+        if not _is_paused_week(user, this_ws_d)
+    ]
+    participant_count = len(active_population)
+    beta_league = participant_count < X6.BETA_SINGLE_LEAGUE_UNTIL_USERS
+    formed = participant_count >= X6.MIN_LEAGUE_SIZE
+
     if scope == "weekly":
-        today = _user_local_today(current)
-        this_ws_d = X6.week_start(today)
-        this_ws = datetime.combine(this_ws_d, datetime.min.time())
-        rows = (
+        visible_rows = (
             db.query(WeeklySummary, User)
             .join(User, User.id == WeeklySummary.user_id)
             .filter(WeeklySummary.week_start == this_ws, visible_filter)
-            .order_by(
-                func.coalesce(WeeklySummary.league_score, 0.0).desc(),
-                User.id.asc(),
-            )
-            .limit(limit)
             .all()
         )
+        visible_rows = [
+            (summary, user) for summary, user in visible_rows
+            if not _is_paused_week(user, this_ws_d)
+        ]
         divisions_by_user = _user_divisions_for_week(
-            db, [user.id for _summary, user in rows], this_ws_d
+            db, [user.id for _summary, user in visible_rows], this_ws_d
         )
         entries = []
-        for summary, user in rows:
-            div, source = divisions_by_user.get(user.id, (None, "provisional"))
+        for summary, user in visible_rows:
+            if beta_league:
+                div, source = "Бета-лига", "beta"
+            else:
+                div, source = divisions_by_user.get(user.id, (None, "provisional"))
             entries.append({
                 "id": user.id,
                 "username": user.username,
@@ -2656,20 +2686,37 @@ async def leaderboard(
                 "division": div,
                 "division_source": source,
                 "is_you": user.id == current.id,
+                "_league_score": summary.league_score or 0,
+                "_weekly_xp": summary.total_xp or 0,
+                "_actual_load": summary.actual_load or 0,
             })
+
         division_order = {name: i for i, name in enumerate(X6.DIVISION_NAMES)}
         division_order["Open"] = len(division_order)
         division_order[None] = len(division_order) + 1
-        entries.sort(key=lambda entry: (
-            division_order.get(entry["division"], 99),
-            -entry["score"],
-            entry["id"],
-        ))
-        per_division: dict = {}
+        if beta_league:
+            entries.sort(key=lambda entry: league_ranking_key(
+                entry["_league_score"], entry["_weekly_xp"], entry["_actual_load"], entry["id"]
+            ))
+            for rank, entry in enumerate(entries, 1):
+                entry["rank"] = rank
+        else:
+            entries.sort(key=lambda entry: (
+                division_order.get(entry["division"], 99),
+                *league_ranking_key(entry["_league_score"], entry["_weekly_xp"], entry["_actual_load"], entry["id"]),
+            ))
+            per_division: dict = {}
+            for entry in entries:
+                div = entry["division"]
+                per_division[div] = per_division.get(div, 0) + 1
+                entry["rank"] = per_division[div]
+
+        your_rank = next((entry["rank"] for entry in entries if entry["is_you"]), None)
+        entries = entries[:limit]
         for entry in entries:
-            div = entry["division"]
-            per_division[div] = per_division.get(div, 0) + 1
-            entry["rank"] = per_division[div]
+            entry.pop("_league_score", None)
+            entry.pop("_weekly_xp", None)
+            entry.pop("_actual_load", None)
 
         last_week = (
             db.query(LeagueWeek)
@@ -2678,11 +2725,11 @@ async def leaderboard(
         )
         return {
             "scope": "weekly",
-            "your_rank": next(
-                (entry["rank"] for entry in entries if entry["is_you"]), None
-            ),
+            "your_rank": your_rank,
             "week": this_ws_d.isoformat(),
-            "formed": len(entries) >= X6.MIN_LEAGUE_SIZE,
+            "formed": formed,
+            "beta": beta_league,
+            "participants": participant_count,
             "min_size": X6.MIN_LEAGUE_SIZE,
             "last_closed": last_week.week_start.strftime("%d.%m") if last_week else None,
             "entries": entries,
@@ -2699,7 +2746,11 @@ async def leaderboard(
         your_rank = _rank_before_user(visible_filter)
     else:
         if not friend_ids:
-            return {"scope": scope, "entries": [], "your_rank": None}
+            return {
+                "scope": scope, "entries": [], "your_rank": None,
+                "formed": formed, "beta": beta_league,
+                "participants": participant_count, "min_size": X6.MIN_LEAGUE_SIZE,
+            }
         friend_scope_filter = and_(
             visible_filter,
             User.id.in_(visible_ids),
@@ -2716,6 +2767,10 @@ async def leaderboard(
     return {
         "scope": scope,
         "your_rank": your_rank,
+        "formed": formed,
+        "beta": beta_league,
+        "participants": participant_count,
+        "min_size": X6.MIN_LEAGUE_SIZE,
         "entries": [
             {
                 "rank": i + 1,
