@@ -5,6 +5,7 @@ import Card from "@/components/ui/Card";
 import FloatingTooltip from "@/components/ui/FloatingTooltip";
 import { EmptyState, ErrorState, HelpTip, Skeleton } from "@/components/ui";
 import { formatWeekRange } from "@/lib/format";
+import { getLifetimeAchievementModel } from "@/lib/quests-board";
 
 type QuestStep = { slot: number; label: string; filled: boolean; date?: string | null };
 type QuestProgress = {
@@ -26,13 +27,13 @@ type Quest = {
   earned_at?: string | null;
   progress?: QuestProgress | null;
   progress_reason?: string | null;
+  reward_kind?: "per_item";
 };
 
 type Props = {
   quests: Quest[];
   loading: boolean;
   error: string;
-  dailyBonusDays: number;
   onRetry: () => void;
 };
 
@@ -160,12 +161,44 @@ function QuestExplanationTooltip({ quest, children }: { quest: Quest; children: 
   );
 }
 
-export default function QuestsBoard({ quests, loading, error, dailyBonusDays, onRetry }: Props) {
-  const [showAll, setShowAll] = useState(true);
-  const dailyBonusCount = Math.min(7, Math.max(0, Number(dailyBonusDays) || 0));
+const LIFETIME_EXPANDED_STORAGE_KEY = "efl:lifetime-achievements-expanded";
+const LIFETIME_EARNED_VISIBLE_STORAGE_KEY = "efl:lifetime-achievements-earned-visible";
+
+export default function QuestsBoard({ quests, loading, error, onRetry }: Props) {
+  const [expandedLifetime, setExpandedLifetime] = useState(false);
+  const [showEarnedLifetime, setShowEarnedLifetime] = useState(false);
+  const [lifetimePreferencesLoaded, setLifetimePreferencesLoaded] = useState(false);
+
+  useEffect(() => {
+    try {
+      const expanded = window.localStorage.getItem(LIFETIME_EXPANDED_STORAGE_KEY);
+      const earnedVisible = window.localStorage.getItem(LIFETIME_EARNED_VISIBLE_STORAGE_KEY);
+      if (expanded !== null) setExpandedLifetime(expanded === "true");
+      if (earnedVisible !== null) setShowEarnedLifetime(earnedVisible === "true");
+    } catch {
+      // Storage may be disabled; the component keeps its safe collapsed defaults.
+    } finally {
+      setLifetimePreferencesLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!lifetimePreferencesLoaded) return;
+    try {
+      window.localStorage.setItem(LIFETIME_EXPANDED_STORAGE_KEY, String(expandedLifetime));
+      window.localStorage.setItem(LIFETIME_EARNED_VISIBLE_STORAGE_KEY, String(showEarnedLifetime));
+    } catch {
+      // The board still works for this session when storage is unavailable.
+    }
+  }, [expandedLifetime, showEarnedLifetime, lifetimePreferencesLoaded]);
+
   const weeklyQuests = quests.filter((quest) => quest.kind === "weekly");
   const lifetimeQuests = quests.filter((quest) => quest.kind !== "weekly");
-  const visibleLifetimeQuests = showAll ? lifetimeQuests : lifetimeQuests.slice(0, 4);
+  const lifetimeModel = getLifetimeAchievementModel(lifetimeQuests);
+  const allAvailableEarned = lifetimeModel.allAvailableEarned;
+  const visibleLifetimeQuests = allAvailableEarned
+    ? (expandedLifetime ? lifetimeModel.all : [])
+    : (showEarnedLifetime ? lifetimeModel.all : lifetimeModel.unearned);
   const weekStart = weeklyQuests.find((quest) => quest.week_start)?.week_start;
 
   const renderCards = (items: Quest[]) => (
@@ -193,7 +226,9 @@ export default function QuestsBoard({ quests, loading, error, dailyBonusDays, on
                 <span aria-hidden="true">{quest.status === "earned" ? "⭐" : unavailable ? "🔒" : "🏆"}</span>{" "}
                 {quest.title}
               </p>
-              <span className="shrink-0 font-display text-[#16a34a]">+{quest.reward}</span>
+              <span className="shrink-0 font-display text-[#16a34a]">
+                {quest.reward_kind === "per_item" ? `+${quest.reward} за день` : `+${quest.reward}`}
+              </span>
             </div>
             <span className="sr-only">{quest.desc} {questExplanation(quest)}</span>
 
@@ -201,13 +236,14 @@ export default function QuestsBoard({ quests, loading, error, dailyBonusDays, on
               <p className="sr-only">{quest.progress_reason || "Необходимые данные пока недоступны."}</p>
             ) : progress?.steps && progress.steps.length > 0 ? (
               <div className="mt-3">
-                <div className="flex gap-2" role="img" aria-label={`${quest.title}: ${current} из ${target} ${progress.unit}`}>
+                <div className="flex gap-1.5" role="img" aria-label={`${quest.title}: ${current} из ${target} ${progress.unit}`}>
                   {progress.steps.map((step) => (
-                    <span
-                      key={step.slot}
-                      title={step.date ? `${step.label}: ${step.date}` : step.label}
-                      className={`h-5 flex-1 border-2 border-black ${step.filled ? "bg-[#16a34a]" : "bg-white"}`}
-                    />
+                    <div key={step.slot} className="min-w-0 flex-1" title={step.date ? `${step.label}: ${step.date}` : step.label}>
+                      <span
+                        className={`block h-5 w-full border-2 border-black ${step.filled ? "bg-[#16a34a]" : "bg-white"}`}
+                      />
+                      <span className="mt-1 block text-center text-[9px] font-bold leading-tight text-[#666]">{step.label}</span>
+                    </div>
                   ))}
                 </div>
                 <p className="mt-1 text-[10px] font-bold text-[#666]">{current} / {target} {progress.unit}</p>
@@ -241,28 +277,6 @@ export default function QuestsBoard({ quests, loading, error, dailyBonusDays, on
   return (
     <section className="border-b-2 border-black bg-white p-4 md:p-6" aria-labelledby="achievements-heading">
       <h3 id="achievements-heading" className="mb-4 font-display text-xl uppercase md:text-2xl">Достижения</h3>
-      <div className="mb-4 border-2 border-black/10 p-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Дневные бонусы за выбранную неделю</p>
-            <HelpTip label="Как работают дневные бонусы">
-              Один бонус +20 XP в день получает одна не ручная тренировка длительностью от 45 минут. Если тренировок несколько, выбирается тренировка с максимальным TSS; при равенстве — более ранняя.
-            </HelpTip>
-          </div>
-          <p className="shrink-0 font-display text-lg">{dailyBonusCount} / 7</p>
-        </div>
-        <div
-          className="mt-2 h-2 overflow-hidden border border-black/20 bg-black/10"
-          role="progressbar"
-          aria-label="Дневные бонусы"
-          aria-valuemin={0}
-          aria-valuemax={7}
-          aria-valuenow={dailyBonusCount}
-        >
-          <div className="h-full bg-[#16a34a] transition-all" style={{ width: `${(dailyBonusCount / 7) * 100}%` }} />
-        </div>
-        
-      </div>
       {loading && quests.length === 0 ? (
         <Skeleton label="Загружаем достижения" rows={3} />
       ) : error && quests.length === 0 ? (
@@ -291,21 +305,46 @@ export default function QuestsBoard({ quests, loading, error, dailyBonusDays, on
 
           {lifetimeQuests.length > 0 && (
             <section aria-labelledby="lifetime-achievements-heading">
-              <div className="mb-3 border-b-2 border-black pb-2">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b-2 border-black pb-2">
                 <div className="flex items-center gap-2">
-                  <h4 id="lifetime-achievements-heading" className="font-display text-lg uppercase md:text-xl">Разовые достижения</h4>
+                  <h4 id="lifetime-achievements-heading" className="font-display text-lg uppercase md:text-xl">
+                    {allAvailableEarned
+                      ? `Разовые · ${lifetimeModel.earnedCount}/${lifetimeModel.availableCount} ✓`
+                      : `Разовые достижения · ${lifetimeModel.earnedCount}/${lifetimeModel.availableCount}`}
+                  </h4>
                   <HelpTip label="О разовых достижениях">
                     Разовые достижения рассчитываются по всей доступной истории тренировок и восстановления.
                   </HelpTip>
                 </div>
-              </div>
-              {renderCards(visibleLifetimeQuests)}
-              {lifetimeQuests.length > 4 && (
-                <div className="mt-4 border-t-2 border-black/10 pt-3">
-                  <button type="button" onClick={() => setShowAll((value) => !value)} className="text-[10px] font-bold uppercase tracking-widest text-[#5866f2] underline">
-                    {showAll ? "Свернуть" : `Показать все (${lifetimeQuests.length})`}
+                {allAvailableEarned && (
+                  <button
+                    type="button"
+                    onClick={() => setExpandedLifetime((value) => !value)}
+                    className="text-[10px] font-bold uppercase tracking-widest text-[#5866f2] underline"
+                  >
+                    {expandedLifetime ? "Свернуть" : "Развернуть"}
                   </button>
-                </div>
+                )}
+              </div>
+              {allAvailableEarned ? (
+                expandedLifetime ? renderCards(lifetimeModel.all) : null
+              ) : (
+                <>
+                  {renderCards(visibleLifetimeQuests)}
+                  {lifetimeModel.earnedCount > 0 && (
+                    <div className="mt-4 border-t-2 border-black/10 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => setShowEarnedLifetime((value) => !value)}
+                        className="text-[10px] font-bold uppercase tracking-widest text-[#5866f2] underline"
+                      >
+                        {showEarnedLifetime
+                          ? "Скрыть полученные"
+                          : `Показать полученные (${lifetimeModel.earnedCount})`}
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </section>
           )}
