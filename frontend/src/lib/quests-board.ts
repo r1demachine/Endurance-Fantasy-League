@@ -1,7 +1,7 @@
 export type LifetimeAchievementSummaryItem = {
   slug: string;
   kind?: "weekly" | "lifetime";
-  status: "earned" | "open" | "unavailable" | string;
+  status: "earned" | "open" | "unavailable";
 };
 
 export function getLifetimeAchievementModel(quests: LifetimeAchievementSummaryItem[]) {
