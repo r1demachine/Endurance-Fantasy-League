@@ -18,7 +18,7 @@ test("friend activity cards and expanded calendar activity show likes", () => {
   const friendCard = read("src/components/ActivityCard.tsx");
   const weekCalendar = read("src/components/dashboard/WeekCalendar.tsx");
   assert.match(friendCard, /ActivitySocial(?: key=\{act\.id\})? activityId=\{act\.id\}/);
-  assert.match(weekCalendar, /ActivitySocial activityId=\{selectedActivity\.id\}/);
+  assert.match(weekCalendar, /ActivitySocial(?: key=\{selectedActivity\.id\})? activityId=\{selectedActivity\.id\}/);
   assert.match(weekCalendar, /initialActivityId/);
 });
 
