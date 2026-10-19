@@ -859,8 +859,8 @@ class InterfaceDataApiTests(unittest.TestCase):
         self.assertEqual(len(today_payload["ledger"]["activities"]), 1)
 
     def test_today_card_payload_includes_actionable_weekly_items_and_only_awards_received_today(self):
-        today = date(2026, 10, 16)
-        week_start = date(2026, 10, 12)
+        today = date(2026, 10, 23)
+        week_start = date(2026, 10, 19)
         self.user.api_key_encrypted = "encrypted-test-source-key"
         self.add_summary(week_start, ratio=1.0, finalized=True, actual_load=100, target_load=100)
 
