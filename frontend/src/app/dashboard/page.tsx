@@ -112,7 +112,6 @@ export default function Dashboard() {
       });
       const result = response.data;
       setWeekData(result.week ? { ...result.week, days: Array.isArray(result.days) ? result.days : [], week_bonuses: Array.isArray(result.week_bonuses) ? result.week_bonuses : [], is_current_week: Boolean(result.is_current_week) } : null);
-      setWeekActivities(Array.isArray(result.activities) ? result.activities : []);
       setWeekOptions(Array.isArray(result.week_options) ? result.week_options : []);
       if (!selectedWeekStart && result.week?.week_start) {
         setSelectedWeekStart(result.week.week_start);
