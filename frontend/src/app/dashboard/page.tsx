@@ -437,7 +437,7 @@ export default function Dashboard() {
         <ProfileSettingsModal
           tab={settingsTab}
           userData={userData ?? data}
-          onClose={() => setSettingsTab(null)}
+          onClose={() => { setSettingsTab(null); void loadToday(); }}
           onTabChange={setSettingsTab}
           onLogout={handleSettingsLogout}
           onActivityUploaded={refreshDashboardAfterDataChange}
