@@ -39,8 +39,9 @@ test("dashboard removes weekly XP events and puts workouts after the complete ac
   assert.ok(positions.every((position) => position >= 0));
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
   assert.doesNotMatch(dashboard, /EventsFeed|setEvents|recent_events/);
-  assert.match(questsBoard, /useState\(true\)/);
-  assert.match(questsBoard, /Показать все/);
+  assert.match(questsBoard, /useState\(false\)/);
+  assert.match(questsBoard, /Развернуть/);
+  assert.match(questsBoard, /Показать полученные/);
   assert.match(questsBoard, /quest\.status === "earned"/);
   assert.match(questsBoard, /quest\.progress_reason/);
 });
@@ -108,7 +109,8 @@ test("long dashboard explanations are tucked behind accessible HelpTip controls"
   assert.match(weekBlock, /<HelpTip label="Что такое League Score">/);
   assert.match(questsBoard, /<HelpTip label="О прогрессе недельных достижений">/);
   assert.doesNotMatch(questsBoard, /<p className="mt-1 text-xs text-\[#666\]">Прогресс считается/);
-  assert.match(questsBoard, /<HelpTip label="Как работают дневные бонусы">/);
+  assert.match(questsBoard, /daily_workout_bonus:/);
+  assert.match(questsBoard, /сама XP уже записывается событием activity_bonus/);
   assert.match(weeklyLeague, /<HelpTip label="Как работает Weekly League">/);
   assert.doesNotMatch(weeklyLeague, /Недельный League Score с группировкой по дивизионам\. Пока участников/);
   assert.match(ratingPanel, /<HelpTip label="Как устроен общий рейтинг">/);
@@ -129,8 +131,9 @@ test("activity XP card separates attached achievements from general bonuses", ()
   assert.match(xpDetails, /for_this_activity_xp/);
   assert.match(activityCard, /<ActivityXpDetails act=\{act\} enabled=\{open\} \/>/);
   assert.doesNotMatch(xpDetails, /Общие бонусы дня|Общие бонусы недели|Регулярность \(за день\)|Quality \(за неделю\)|Квесты дня/);
-  assert.match(questsBoard, /dailyBonusDays/);
-  assert.match(questsBoard, /Дневные бонусы за выбранную неделю/);
+  assert.doesNotMatch(questsBoard, /dailyBonusDays|Дневные бонусы за выбранную неделю/);
+  assert.match(questsBoard, /quest.reward_kind === "per_item"/);
+  assert.match(read("../backend/app/services/quests.py"), /"slug": "daily_workout_bonus"/);
 });
 
 

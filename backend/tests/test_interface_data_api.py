@@ -945,6 +945,66 @@ class InterfaceDataApiTests(unittest.TestCase):
             20,
         )
 
+    def test_daily_workout_bonus_is_virtual_weekly_progress_without_duplicate_xp(self):
+        week_start = date(2026, 10, 19)
+        self.add_summary(week_start, consistency=40, quest=17, total=57)
+        self.add_event("bonus:daily_workout:test:2026-10-19", "activity_bonus", 20, day=week_start)
+        # Another positive activity_bonus type must not fill a daily-workout slot.
+        self.add_event("unrelated:bonus:2026-10-20", "activity_bonus", 20, day=week_start + timedelta(days=1))
+        self.add_event("bonus:daily_workout:test:2026-10-21:a", "activity_bonus", 20, day=week_start + timedelta(days=2))
+        # Multiple bonus events on one date still produce one filled day.
+        self.add_event("bonus:daily_workout:test:2026-10-21:b", "activity_bonus", 20, day=week_start + timedelta(days=2))
+        # A non-positive event is not a qualifying bonus day.
+        self.add_event("bonus:daily_workout:test:2026-10-24:zero", "activity_bonus", 0, day=week_start + timedelta(days=5))
+        self.db.commit()
+
+        events_before = self.db.query(XPEvent).filter(XPEvent.user_id == self.user.id).count()
+        summary = self.db.query(WeeklySummary).filter(
+            WeeklySummary.user_id == self.user.id,
+            WeeklySummary.week_start == datetime.combine(week_start, datetime.min.time()),
+        ).first()
+        quest_xp_before = summary.quest_xp
+
+        with patch("app.services.quests._user_local_today", return_value=date(2026, 10, 22)):
+            payload = quest_service.quest_states(self.db, self.user, selected_week=week_start)
+
+        daily = next(item for item in payload if item["slug"] == "daily_workout_bonus")
+        self.assertEqual(daily["kind"], "weekly")
+        self.assertEqual(daily["reward_kind"], "per_item")
+        self.assertEqual(daily["reward"], X6.DAILY_WORKOUT_BONUS_XP)
+        self.assertEqual(daily["progress"]["current"], 2)
+        self.assertEqual(daily["progress"]["target"], 7)
+        self.assertEqual(
+            [step["label"] for step in daily["progress"]["steps"]],
+            ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"],
+        )
+        self.assertEqual(
+            [step["filled"] for step in daily["progress"]["steps"]],
+            [True, False, True, False, False, False, False],
+        )
+        self.assertEqual(
+            [step["date"] for step in daily["progress"]["steps"]],
+            [(week_start + timedelta(days=index)).isoformat() for index in range(7)],
+        )
+
+        # quest_states returns a view model only: no duplicate XPEvent or quest_xp.
+        self.assertEqual(
+            self.db.query(XPEvent).filter(XPEvent.user_id == self.user.id).count(),
+            events_before,
+        )
+        self.assertEqual(
+            self.db.query(XPEvent).filter(
+                XPEvent.user_id == self.user.id,
+                XPEvent.event_key.like("quest:daily_workout_bonus:%"),
+            ).count(),
+            0,
+        )
+        summary_after = self.db.query(WeeklySummary).filter(
+            WeeklySummary.user_id == self.user.id,
+            WeeklySummary.week_start == datetime.combine(week_start, datetime.min.time()),
+        ).first()
+        self.assertEqual(summary_after.quest_xp, quest_xp_before)
+
     def test_manual_workouts_do_not_qualify_for_weekly_long_or_intensity_quests(self):
         self.add_activity(
             "manual-long-hard", stamp=datetime(2026, 10, 14, 9, 0),

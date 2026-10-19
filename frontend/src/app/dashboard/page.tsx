@@ -384,7 +384,6 @@ export default function Dashboard() {
               quests={quests}
               loading={questsLoading}
               error={questsError}
-              dailyBonusDays={Number(weekData?.daily_bonus_days) || 0}
               onRetry={() => void loadQuests()}
             />
             </motion.div>
