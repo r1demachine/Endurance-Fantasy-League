@@ -15,6 +15,7 @@ import {
 import ActivityXpDetails, { type ActivityXpContext } from "@/components/ActivityXpDetails";
 import { EmptyState } from "@/components/ui";
 import { formatWeekRange } from "@/lib/format";
+import { formatActivityDuration, formatSleepDuration, getCalendarWeekDates } from "@/lib/week-calendar";
 
 type WeekOption = { week_start: string; label: string };
 type Wellness = {
@@ -71,34 +72,12 @@ function toIsoDate(value: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-function shiftIsoDate(value: string, days: number): string {
-  const parsed = dateFromIso(value);
-  if (!parsed) return value;
-  parsed.setDate(parsed.getDate() + days);
-  return toIsoDate(parsed);
-}
-
-function formatSleep(seconds: number): string {
-  const totalMinutes = Math.max(0, Math.floor(seconds / 60));
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${hours}ч ${String(minutes).padStart(2, "0")}м`;
-}
-
-function formatDuration(minutes: number): string {
-  const safeMinutes = Math.max(0, Math.floor(minutes || 0));
-  if (safeMinutes < 60) return `${safeMinutes} мин`;
-  const hours = Math.floor(safeMinutes / 60);
-  const rest = safeMinutes % 60;
-  return rest ? `${hours}ч ${rest}м` : `${hours}ч`;
-}
-
 function formatDistance(km: number): string {
   return Number(km || 0).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 }
 
 function presentNumber(value: number | null | undefined, suffix: string): string | null {
-  if (value === null || value === undefined || value === "") return null;
+  if (value === null || value === undefined) return null;
   return `${Number(value).toLocaleString("ru-RU", { maximumFractionDigits: 1 })}${suffix}`;
 }
 
@@ -120,7 +99,7 @@ function DayHeading({ day, isToday }: { day: DayLedger; isToday: boolean }) {
   return (
     <div className={`flex min-w-0 items-center justify-between gap-2 border-b-2 border-black px-3 py-2 ${isToday ? "bg-[#ffd500]" : "bg-[#f4f4f0]"}`}>
       <div className="min-w-0">
-        <h3 className="truncate text-xs font-black uppercase tracking-widest">{weekday}</h3>
+        <h3 id={`day-${day.date}`} className="truncate text-xs font-black uppercase tracking-widest">{weekday}</h3>
         <p className="text-[10px] font-bold text-[#555]">{day.date}</p>
       </div>
       <span
@@ -137,7 +116,7 @@ function DayHeading({ day, isToday }: { day: DayLedger; isToday: boolean }) {
 function HealthStrip({ wellness }: { wellness: Wellness }) {
   const chips: { label: string; value: string }[] = [];
   if (wellness.sleep_secs !== null && wellness.sleep_secs !== undefined) {
-    chips.push({ label: "Сон", value: formatSleep(Number(wellness.sleep_secs)) });
+    chips.push({ label: "Сон", value: formatSleepDuration(Number(wellness.sleep_secs)) });
   }
   const score = presentNumber(wellness.sleep_score, "");
   if (score !== null) chips.push({ label: "Sleep score", value: score });
@@ -178,7 +157,7 @@ function WorkoutTile({
   const ariaLabel = [
     activity.name,
     activity.sport,
-    formatDuration(activity.moving_time_min),
+    formatActivityDuration(activity.moving_time_min),
     `${formatDistance(activity.distance_km)} км`,
     tss === null ? null : `TSS ${tss}`,
     `плюс ${Math.round(xp)} XP`,
@@ -201,7 +180,7 @@ function WorkoutTile({
         <span className="min-w-0 break-words text-xs font-bold leading-snug">{activity.name || "Без названия"}</span>
       </div>
       <p className="mt-1 text-[10px] leading-snug text-[#555]">
-        {formatDuration(activity.moving_time_min)} · {formatDistance(activity.distance_km)} км
+        {formatActivityDuration(activity.moving_time_min)} · {formatDistance(activity.distance_km)} км
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-1">
         {tss !== null && <span className="border border-black/20 bg-[#f4f4f0] px-1 py-0.5 text-[10px] font-bold">TSS {tss}</span>}
@@ -286,15 +265,14 @@ export default function WeekCalendar({
     const start = activeWeek;
     if (!start || (selectedWeekStart && weekData?.week_start !== selectedWeekStart)) return [];
     const fromApi: DayLedger[] = Array.isArray(weekData?.days) ? weekData.days : [];
-    return Array.from({ length: 7 }, (_, index) => {
-      const date = shiftIsoDate(start, index);
-      return fromApi.find((day) => day.date === date) ?? {
-        date,
-        wellness: {},
-        activities: [],
-        xp: { effort: 0, bonuses: [], total: 0 },
-        qualifying: false,
-      };
+    const dates = getCalendarWeekDates(start);
+    if (dates.length !== 7) return [];
+    return dates.map((date) => fromApi.find((day) => day.date === date) ?? {
+      date,
+      wellness: {},
+      activities: [],
+      xp: { effort: 0, bonuses: [], total: 0 },
+      qualifying: false,
     });
   }, [activeWeek, selectedWeekStart, weekData]);
 
@@ -439,6 +417,12 @@ export default function WeekCalendar({
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 8, opacity: 0 }}
               transition={{ duration: reduceMotion ? 0 : 0.16 }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.stopPropagation();
+                  closeActivity();
+                }
+              }}
             >
               <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b-2 border-black bg-[#ffd500] px-4 py-3">
                 <div className="min-w-0">
@@ -446,7 +430,7 @@ export default function WeekCalendar({
                     {selectedActivity.name || "Тренировка"}
                   </h2>
                   <p className="mt-1 text-xs font-bold text-[#444]">
-                    {selectedActivity.sport} · {formatDuration(selectedActivity.moving_time_min)} · {formatDistance(selectedActivity.distance_km)} км
+                    {selectedActivity.sport} · {formatActivityDuration(selectedActivity.moving_time_min)} · {formatDistance(selectedActivity.distance_km)} км
                   </p>
                 </div>
                 <button
