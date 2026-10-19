@@ -15,7 +15,8 @@ const profile = read("src/app/profile/page.tsx");
 
 test("activity XP breakdown loads lazily, caches success, and supports retry", () => {
   assert.match(activityXpDetails, /authApi\.get\(\`\/api\/activities\/\$\{act\.id\}\/xp\`\)/);
-  assert.match(activityXpDetails, /if \(enabled && !breakdown && !loading && !error\)/);
+  assert.match(activityXpDetails, /if \(!enabled \|\| breakdown \|\| loading \|\| error\) return/);
+  assert.match(activityXpDetails, /window\.setTimeout\(\(\) =>/);
   assert.match(activity, /<ActivityXpDetails act=\{act\} enabled=\{open\} \/>/);
   assert.match(activityXpDetails, /<ErrorState message=\{error\} onRetry=\{\(\) => void loadBreakdown\(\)\}/);
   for (const label of ["За нагрузку этой тренировки", "Достижения за эту тренировку", "Итого"]) {
