@@ -242,7 +242,8 @@ test("beta league uses one shared league and invites the first athlete instead o
   assert.match(weeklyLeague, /Ты первый, позови друзей/);
   assert.match(weeklyLeague, /Скопировать ссылку/);
   assert.equal(weeklyLeague.includes("Лига формируется"), false);
-  assert.match(ratingPanel, /board\?\.beta/);
+  assert.match(ratingPanel, /isBeta &&/);
+  assert.match(ratingPanel, /scope: "weekly", limit: 1/);
 });
 
 test("season display is API-backed and no longer rotates as demo state", () => {
