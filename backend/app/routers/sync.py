@@ -2148,7 +2148,7 @@ def get_quests(
 
 @router.get("/season-weeks")
 def get_season_weeks(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """WeeklySummary timeline for the current September–August season."""
+    """WeeklySummary timeline for the current calendar-month season."""
     from ..models import WeeklySummary
     today = _user_local_today(current)
     from ..services.seasons import season_for_date
