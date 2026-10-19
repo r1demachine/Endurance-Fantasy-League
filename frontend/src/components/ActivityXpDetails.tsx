@@ -5,7 +5,6 @@ import { authApi } from "@/lib/auth";
 import { getApiErrorMessage } from "@/components/dialog-utils";
 import XpTooltip from "@/components/XpTooltip";
 import { ErrorState, Skeleton } from "@/components/ui";
-import { useReducedMotion } from "framer-motion";
 import { useState } from "react";
 
 export type ActivityXpContext = {
@@ -102,11 +101,10 @@ function awardExplanation(title: string): string {
   return "Отдельная награда, привязанная к этой тренировке. Она учитывается в разделе достижений за тренировку отдельно от XP за нагрузку.";
 }
 
-export default function ActivityXpDetails({ act }: { act: ActivityXpContext }) {
+export default function ActivityXpDetails({ act, enabled = true }: { act: ActivityXpContext; enabled?: boolean }) {
   const [breakdown, setBreakdown] = useState<Breakdown | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const reduceMotion = useReducedMotion();
 
   const loadBreakdown = useCallback(async () => {
     setLoading(true);
@@ -122,8 +120,8 @@ export default function ActivityXpDetails({ act }: { act: ActivityXpContext }) {
   }, [act.id]);
 
   useEffect(() => {
-    void loadBreakdown();
-  }, [loadBreakdown]);
+    if (enabled && !breakdown && !loading && !error) void loadBreakdown();
+  }, [enabled, breakdown, loading, error, loadBreakdown]);
 
   const effort = breakdown?.effort;
   const activityAwards = breakdown?.related?.activity;
@@ -193,7 +191,6 @@ export default function ActivityXpDetails({ act }: { act: ActivityXpContext }) {
           />
         </>
       )}
-      {reduceMotion && <span className="sr-only">Анимация сокращена согласно настройкам устройства.</span>}
     </div>
   );
 }
