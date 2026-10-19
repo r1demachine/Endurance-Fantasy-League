@@ -20,7 +20,7 @@ from app.models import (
 )
 from app.routers import season as season_router
 from app.routers import recaps as recaps_router
-from app.services.seasons import current_season, longest_consecutive_streak, sum_weekly_xp
+from app.services.seasons import current_season, longest_consecutive_streak
 
 
 class RecapTests(unittest.TestCase):
@@ -192,6 +192,12 @@ class RecapTests(unittest.TestCase):
         self.assertFalse(response.json()["available"])
         self.assertEqual(response.json()["reason"], "week_not_finalized")
 
+    def test_week_recap_requires_authentication(self):
+        self.app.dependency_overrides.pop(get_current_user, None)
+        response = self.client.get("/api/week-recap")
+        self.assertEqual(response.status_code, 401)
+        self.app.dependency_overrides[get_current_user] = lambda: self.owner
+
     def test_week_recap_never_reads_another_users_summary(self):
         monday = self.last_completed_monday()
         self.add_week(self.other, monday, finalized=True, total_xp=999)
@@ -222,7 +228,16 @@ class RecapTests(unittest.TestCase):
         response = self.client.get("/api/season/recap")
         self.assertEqual(response.status_code, 200)
         metrics = response.json()["metrics"]
-        self.assertEqual(metrics["total_xp"], sum_weekly_xp(values[:len(week_starts)]))
+        persisted_rows = (
+            self.db.query(WeeklySummary)
+            .filter(
+                WeeklySummary.user_id == self.owner.id,
+                WeeklySummary.week_start >= datetime.combine(season.start, datetime.min.time()),
+                WeeklySummary.week_start < datetime.combine(season.next_start, datetime.min.time()),
+            )
+            .all()
+        )
+        self.assertEqual(metrics["total_xp"], round(sum(float(row.total_xp or 0) for row in persisted_rows), 1))
         self.assertNotEqual(metrics["total_xp"], 999)
         self.assertEqual(metrics["total_workouts"], 1)
         self.assertEqual(metrics["total_km"], 25.0)
