@@ -35,6 +35,8 @@ type DayActivity = ActivityXpContext & {
   tss_estimated?: boolean;
   is_manual?: boolean;
   is_indoor?: boolean;
+  likes_count?: number;
+  comments_count?: number;
 };
 type DayLedger = {
   date: string;
@@ -188,6 +190,9 @@ function WorkoutTile({
         {tss !== null && <span className="border border-black/20 bg-[#f4f4f0] px-1 py-0.5 text-[10px] font-bold">TSS {tss}</span>}
         <span className="border border-[#16a34a]/40 bg-[#e9f8ee] px-1 py-0.5 text-[10px] font-black text-[#166534]">+{Math.round(xp)} XP</span>
       </div>
+      <p className="mt-1 text-[9px] font-bold tracking-wide text-[#666]">
+        ♥ {Math.max(0, Number(activity.likes_count) || 0)} · 💬 {Math.max(0, Number(activity.comments_count) || 0)}
+      </p>
       {(activity.tss_estimated || activity.is_manual || activity.is_indoor) && (
         <div className="mt-1.5 flex flex-wrap gap-1">
           {activity.tss_estimated && <span className="bg-[#ff4b26] px-1 py-0.5 text-[9px] font-black text-white">EST</span>}
@@ -459,7 +464,7 @@ export default function WeekCalendar({
                 </button>
               </header>
               <ActivityXpDetails act={selectedActivity} />
-              <div className="px-4 pb-4"><ActivitySocial activityId={selectedActivity.id} /></div>
+              <div className="px-4 pb-4"><ActivitySocial key={selectedActivity.id} activityId={selectedActivity.id} /></div>
             </motion.div>
           </motion.div>
         )}

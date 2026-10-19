@@ -55,7 +55,7 @@ export default function ActivityCard({ act }: { act: Act }) {
         inert={!open}
       >
         <ActivityXpDetails act={act} enabled={open} />
-        {open && <div className="px-4 pb-4"><ActivitySocial activityId={act.id} /></div>}
+        {open && <div className="px-4 pb-4"><ActivitySocial key={act.id} activityId={act.id} /></div>}
       </motion.div>
     </div>
   );
