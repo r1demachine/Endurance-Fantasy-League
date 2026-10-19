@@ -2009,21 +2009,21 @@ def get_weekly_summary(
             "deload_suggestion": False,
         })
 
-    # Match the existing current-week placement logic, without recalculating a user's division from a historical week.
+    membership = (
+        db.query(LeagueMembership)
+        .filter(LeagueMembership.user_id == current.id, LeagueMembership.week_start == selected_dt)
+        .first()
+    )
+    # Match existing current-week placement logic, without recalculating a historical division.
     if selected_start == current_start:
         division, division_source = _user_division(db, current, selected_start, week["actual_load"])
         week["division"] = division
         week["division_source"] = division_source
-    else:
-        membership = (
-            db.query(LeagueMembership)
-            .filter(LeagueMembership.user_id == current.id, LeagueMembership.week_start == selected_dt)
-            .first()
-        )
-        if membership is not None:
-            week["division"] = membership.division
-            week["division_source"] = membership.division_source
+    elif membership is not None:
+        week["division"] = membership.division
+        week["division_source"] = membership.division_source
 
+    week["league_rank"] = membership.rank if membership is not None else None
     week["is_current_week"] = selected_start == current_start
 
     event_rows = (
