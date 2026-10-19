@@ -67,6 +67,7 @@ function persistDismissed(key: string) {
 export function PreviousWeekRecapBanner() {
   const [recap, setRecap] = useState<WeekRecap | null>(null);
   const [visible, setVisible] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -92,21 +93,28 @@ export function PreviousWeekRecapBanner() {
   return (
     <section className="relative border-b-2 border-black bg-[#ffd500] p-4 md:p-5" aria-label="Итоги прошлой недели">
       <button type="button" onClick={close} aria-label="Скрыть итоги прошлой недели" className="absolute right-3 top-3 h-8 w-8 border-2 border-black bg-white text-lg font-bold">×</button>
-      <p className="text-[10px] font-bold uppercase tracking-widest">Прошлая неделя · {recap.week_start}</p>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-3 pr-8">
+      <div className="flex flex-wrap items-center justify-between gap-2 pr-8">
         <div>
-          <p className="font-display text-3xl uppercase">+{xp(recap.total_xp)} XP</p>
-          <p className="mt-1 text-sm">{fmt(recap.goal_percent)}% цели · {recap.workout_days ?? 0} дней с тренировками{recap.league_rank ? ` · место #${recap.league_rank}` : ""}</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest">Прошлая неделя · {recap.week_start}</p>
+          <button type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} className="mt-1 text-xs font-bold underline underline-offset-2">
+            {expanded ? "Свернуть итоги ↑" : "Развернуть итоги ↓"}
+          </button>
         </div>
-        <ShareButton data={{
-          kind: "week",
-          xp: Number(recap.total_xp || 0),
-          weekStart: recap.week_start,
-          goalPercent: recap.goal_percent,
-          trainingDays: recap.workout_days,
-          leagueRank: recap.league_rank,
-        }} />
+        <span className="font-display text-xl uppercase">+{xp(recap.total_xp)} XP</span>
       </div>
+      {expanded && (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+          <p className="min-w-0 text-sm">{fmt(recap.goal_percent)}% цели · {recap.workout_days ?? 0} дней с тренировками{recap.league_rank ? ` · место #${recap.league_rank}` : ""}</p>
+          <ShareButton data={{
+            kind: "week",
+            xp: Number(recap.total_xp || 0),
+            weekStart: recap.week_start,
+            goalPercent: recap.goal_percent,
+            trainingDays: recap.workout_days,
+            leagueRank: recap.league_rank,
+          }} />
+        </div>
+      )}
       {error && <p className="mt-2 text-xs">{error}</p>}
     </section>
   );
