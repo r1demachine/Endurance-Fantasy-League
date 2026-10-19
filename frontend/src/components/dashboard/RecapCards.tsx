@@ -131,6 +131,7 @@ export function WeekRecapCard({ weekStart, userName }: { weekStart: string; user
     let cancelled = false;
     setLoading(true);
     setError("");
+    setRecap(null);
     authApi.get("/api/week-recap", { params: { week_start: weekStart } }).then((response) => {
       if (cancelled) return;
       const value = response.data as WeekRecap;
@@ -224,6 +225,7 @@ export function SeasonRecapCard({ userName }: { userName?: string }) {
     let cancelled = false;
     setLoading(true);
     setError("");
+    setRecap(null);
     authApi.get("/api/season/recap", {
       params: selectedSeasonStart ? { season_start: selectedSeasonStart } : {},
     }).then((response) => {
