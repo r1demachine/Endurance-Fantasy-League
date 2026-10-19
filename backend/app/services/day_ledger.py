@@ -24,11 +24,6 @@ XP_EVENT_SCOPE_BY_TYPE: dict[str, str] = {
     "achievement": "day",
     "weekly_goal": "week",
     "deload_manual": "week",
-    # Obsolete v5/v6 migration-era rows were weekly buckets, not extra day XP.
-    "consistency": "week",
-    "quality_hard": "week",
-    "quality_long": "week",
-    "recovery": "week",
 }
 
 WEEKLY_EVENT_KEY_PREFIXES = (
@@ -151,9 +146,6 @@ def build_week_bonuses(db: Session, user: User, week_start: date) -> list[dict]:
 
 def build_day_ledger(db: Session, user: User, day: date) -> dict:
     """Build one date's raw-source XP ledger, wellness data, and activities."""
-    if day > local_today(user):
-        return empty_day_ledger(day)
-
     from . import xp_v6 as X6
 
     start_dt = datetime.combine(day, time.min)
