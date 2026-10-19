@@ -11,11 +11,12 @@ import { Star, Sticker } from "@/components/DreamBits";
 import { Modal, PauseDialog } from "@/components/Modal";
 import ActivityUpload from "@/components/ActivityUpload";
 import { getApiErrorMessage, parsePauseDate, parsePauseWeeks } from "@/components/dialog-utils";
-import { ErrorState, Label, SectionTitle, Skeleton } from "@/components/ui";
+import { ErrorState, Label, Skeleton } from "@/components/ui";
 import WeekBlock from "@/components/dashboard/WeekBlock";
 import QuestsBoard from "@/components/dashboard/QuestsBoard";
 import YearWeeksChart from "@/components/dashboard/YearWeeksChart";
 import WeekCalendar from "@/components/dashboard/WeekCalendar";
+import TodayCard from "@/components/dashboard/TodayCard";
 import ProfileSettingsModal, { type SettingsTab } from "@/components/ProfileSettingsModal";
 import { useSeason } from "@/lib/seasons";
 
@@ -26,6 +27,9 @@ export default function Dashboard() {
   const [userData, setUserData] = useState<any>(null);
   const [weekData, setWeekData] = useState<any>(null);
   const [weekOptions, setWeekOptions] = useState<{ week_start: string; label: string }[]>([]);
+  const [todayData, setTodayData] = useState<any>(null);
+  const [todayLoading, setTodayLoading] = useState(true);
+  const [todayError, setTodayError] = useState("");
   const [selectedWeekStart, setSelectedWeekStart] = useState("");
   const [quests, setQuests] = useState<any[]>([]);
   const [questsLoading, setQuestsLoading] = useState(true);
@@ -103,6 +107,19 @@ export default function Dashboard() {
     }
   }, [selectedWeekStart]);
 
+  const loadToday = useCallback(async () => {
+    setTodayLoading(true);
+    setTodayError("");
+    try {
+      const response = await authApi.get("/api/today");
+      setTodayData(response.data);
+    } catch (error: unknown) {
+      setTodayError(getApiErrorMessage(error, "Не удалось загрузить данные за сегодня."));
+    } finally {
+      setTodayLoading(false);
+    }
+  }, []);
+
   const refreshDashboardAfterDataChange = useCallback(async () => {
     setWeekLoading(true);
     setDashboardError("");
@@ -122,15 +139,18 @@ export default function Dashboard() {
       setWeekLoading(false);
     }
     await loadQuests();
-  }, [selectedWeekStart, loadQuests]);
+    await loadToday();
+  }, [selectedWeekStart, loadQuests, loadToday]);
 
   useEffect(() => {
     if (!isAuthed) {
       setQuestsLoading(false);
+      setTodayLoading(false);
       return;
     }
     void loadQuests();
-  }, [isAuthed, loadQuests]);
+    void loadToday();
+  }, [isAuthed, loadQuests, loadToday]);
 
   if (loading) {
     return (
@@ -145,9 +165,7 @@ export default function Dashboard() {
     user: { name: "athlete", level: 1, total_xp: 0, xp_to_next_level: 100 },
     recent_activities: [],
   };
-  const stats = data.stats ?? { day_streak: 0, week_streak: 0, week_hours: 0, week_goal_hours: 10 };
-  const goalHours = Math.max(1, Number(stats.week_goal_hours) || 10);
-  const xpProgress = isEmpty ? 0 : Number(data.user.total_xp || 0) % 100;
+  const currentLevelXp = isEmpty ? 0 : Math.floor(Number(data.user.total_xp || 0) % 100);
   const weekOptionIndex = weekOptions.findIndex((option) =>
     option.week_start === (selectedWeekStart || weekData?.week_start)
   );
@@ -301,9 +319,16 @@ export default function Dashboard() {
           <Sticker className="right-4 top-2 rotate-[-4deg] bg-[#f6b8d0] text-black md:right-10">не останавливайся на достигнутом</Sticker>
           <div className="flex flex-col gap-3 p-5 md:border-r-2 md:border-black md:p-8">
             <Label className="text-[#666]">ТВОЙ ПРОГРЕСС · SEASON {String(season.num).padStart(3, "0")}</Label>
-            <h1 className="font-display text-4xl uppercase leading-[0.9] md:text-6xl lg:text-7xl">
-              Привет, <span className="text-[#ff4b26]">{data.user.name}</span>.
-            </h1>
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <h1 className="font-display text-4xl uppercase leading-[0.9] md:text-6xl lg:text-7xl">
+                Привет, <span className="text-[#ff4b26]">{data.user.name}</span>.
+              </h1>
+              {isAuthed && !isEmpty && (
+                <span data-tour="dashboard-level" className="inline-flex shrink-0 items-center border-2 border-black bg-[#ffd500] px-3 py-2 font-display text-sm uppercase md:text-base">
+                  Ур. {data.user.level} · {currentLevelXp}/100 XP
+                </span>
+              )}
+            </div>
           </div>
           <Link href="/profile" className="flex items-center justify-between gap-4 bg-[#5866f2] px-5 py-4 text-[11px] font-bold uppercase tracking-widest text-white transition-colors hover:bg-black">
             <span>Профиль<br />атлета</span><span>→</span>
@@ -312,36 +337,17 @@ export default function Dashboard() {
 
         {dashboardError && <motion.div variants={sectionItemVariants} custom={transitionDirection}><ErrorState message={dashboardError} onRetry={() => window.location.reload()} /></motion.div>}
 
-        <motion.section variants={sectionItemVariants} custom={transitionDirection} className="grid border-b-2 border-black md:grid-cols-3">
-          <div data-tour="dashboard-level" className="md:border-r-2 md:border-black">
-            <SectionTitle>Уровень</SectionTitle>
-            <div className="p-5 md:p-6">
-              <p className="font-display text-5xl md:text-7xl">{data.user.level}</p>
-              <div className="mt-4 h-3 w-full border border-black/20 bg-black/10">
-                <div className="h-full bg-[#ffd500] transition-all" style={{ width: `${xpProgress}%` }} />
-              </div>
-              <Label className="mt-3 text-[#666]">{isEmpty ? "100 XP до следующего" : `${Math.round(Number(data.user.xp_to_next_level) || 0)} XP до следующего уровня`}</Label>
-            </div>
-          </div>
-          <div data-tour="dashboard-streak" className="border-t-2 border-black md:border-r-2 md:border-t-0">
-            <SectionTitle tone="yellow">Стрик</SectionTitle>
-            <div className="p-5 md:p-6">
-              <p className="font-display text-5xl text-[#ff4b26] md:text-7xl">{stats.day_streak}</p>
-              <Label className="mt-2 text-[#666]">Дней подряд</Label>
-              <div className="mt-4 border-t border-black/20 pt-3"><Label className="text-[#666]">{stats.week_streak} недель подряд</Label></div>
-            </div>
-          </div>
-          <div data-tour="dashboard-week-goal" className="border-t-2 border-black md:border-t-0">
-            <SectionTitle>Цель на Неделю</SectionTitle>
-            <div className="p-5 md:p-6">
-              <p className="font-display text-5xl md:text-7xl">{stats.week_hours}<span className="text-xl text-[#666] md:text-2xl"> / {stats.week_goal_hours}h</span></p>
-              <div className="mt-4 h-3 w-full border border-black/20 bg-black/10">
-                <div className="h-full bg-[#5866f2] transition-all" style={{ width: `${Math.min(100, (Number(stats.week_hours) || 0) / goalHours * 100)}%` }} />
-              </div>
-              <Label className="mt-3 text-[#666]">{Math.min(100, Math.round((Number(stats.week_hours) || 0) / goalHours * 100))}% цели</Label>
-            </div>
-          </div>
-        </motion.section>
+        {isAuthed && !isEmpty && (
+          <motion.div variants={sectionItemVariants} custom={transitionDirection}>
+            <TodayCard
+              data={todayData}
+              loading={todayLoading}
+              error={todayError}
+              onRetry={() => void loadToday()}
+              onOpenSources={openSourceSettings}
+            />
+          </motion.div>
+        )}
 
         {isAuthed && !isEmpty && (
           <>
@@ -432,7 +438,7 @@ export default function Dashboard() {
         <ProfileSettingsModal
           tab={settingsTab}
           userData={userData ?? data}
-          onClose={() => setSettingsTab(null)}
+          onClose={() => { setSettingsTab(null); void loadToday(); }}
           onTabChange={setSettingsTab}
           onLogout={handleSettingsLogout}
           onActivityUploaded={refreshDashboardAfterDataChange}

@@ -2103,9 +2103,10 @@ def get_today(
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Today's user-local XP ledger, qualifying streak, and actionable checklist."""
+    """Today's ledger and all checklist data in one response."""
     from ..services.day_ledger import build_day_ledger, qualifying_day_streak
     from ..services import xp_v6 as X6
+    from ..services.quests import quest_states
 
     today = _user_local_today(current)
     ledger = build_day_ledger(db, current, today)
@@ -2125,12 +2126,95 @@ def get_today(
     )
 
     wellness = ledger["wellness"]
+    has_sleep_data = "sleep_secs" in wellness or "sleep_score" in wellness
     sleep_seconds = float(wellness.get("sleep_secs") or 0)
     sleep_score = float(wellness.get("sleep_score") or 0)
     sleep_done = (
         sleep_seconds >= X6.GOOD_SLEEP_MIN_SECONDS
         or sleep_score >= X6.GOOD_SLEEP_MIN_SCORE
     )
+    daily_bonus_event = next(
+        (
+            item for item in ledger["xp"]["bonuses"]
+            if item.get("type") == "activity_bonus"
+            and float(item.get("amount") or 0) > 0
+        ),
+        None,
+    )
+
+    # The TodayCard receives all its checklist data from this endpoint. Reuse
+    # the canonical quest service instead of making separate frontend requests.
+    all_quests = quest_states(db, current, selected_week=today)
+    today_label = today.strftime("%d.%m.%Y")
+    week_start = _monday_for_day(today)
+    week_start_dt = datetime.combine(week_start, datetime.min.time())
+    week_events = (
+        db.query(XPEvent)
+        .filter(
+            XPEvent.user_id == current.id,
+            XPEvent.week_start == week_start_dt,
+            XPEvent.event_type.in_(("quest", "achievement")),
+        )
+        .all()
+    )
+    weekly_events_by_key = {event.event_key: event for event in week_events}
+    actionable_weekly_slugs = {
+        "long_workout_2h",
+        "long_workout_3h",
+        "high_intensity",
+        "trainer_week",
+        "qualifying_days_5",
+        "good_sleep_5",
+        "goal_100",
+    }
+
+    def _quest_earned_day(quest, event):
+        if event is not None and event.date is not None:
+            return event.date.date()
+        value = quest.get("earned_at")
+        if not value:
+            return None
+        try:
+            return datetime.strptime(value, "%d.%m.%Y").date()
+        except (TypeError, ValueError):
+            return None
+
+    weekly_achievements = []
+    achievements_today = []
+    for quest in all_quests:
+        if quest.get("kind") == "weekly":
+            slug = quest.get("slug")
+            if slug not in actionable_weekly_slugs:
+                continue
+            event_key = f"quest:{slug}:{week_start.isoformat()}"
+            receipt = weekly_events_by_key.get(event_key)
+            earned_day = _quest_earned_day(quest, receipt)
+            done = quest.get("status") == "earned"
+            completed_today = bool(done and earned_day == today)
+            progress = quest.get("progress") or {}
+            in_season = bool(progress.get("season_active", True))
+            weekly_achievements.append({
+                **quest,
+                "completed_today": completed_today,
+                "completed_before_today": bool(done and not completed_today),
+                "actionable_today": bool(not done and (slug != "trainer_week" or in_season)),
+                "earned_today": completed_today,
+            })
+        elif (
+            quest.get("kind") == "lifetime"
+            and quest.get("status") == "earned"
+            and quest.get("earned_at") == today_label
+        ):
+            achievements_today.append({
+                "slug": quest["slug"],
+                "title": quest["title"],
+                "reward": quest["reward"],
+                "kind": "lifetime",
+                "status": "earned",
+                "earned_at": quest["earned_at"],
+                "earned_today": True,
+            })
+
     checklist = [
         {
             "id": "training_recorded",
@@ -2146,14 +2230,38 @@ def get_today(
             "id": "sleep_logged",
             "title": "Сон: ≥6 часов или Sleep Score ≥60",
             "done": bool(sleep_done),
+            "waiting_for_data": not has_sleep_data,
+        },
+        {
+            "id": "daily_bonus",
+            "title": "Дневной бонус +20 XP",
+            "done": bool(daily_bonus_event),
         },
     ]
     return {
         "date": today.isoformat(),
         "seconds_left_today": seconds_left_today,
         "streak": streak,
+        "has_source": bool(current.api_key_encrypted),
         "ledger": ledger,
         "checklist": checklist,
+        "daily_bonus": {
+            "title": "Дневной бонус +20 XP",
+            "amount": float(X6.DAILY_WORKOUT_BONUS_XP),
+            "done": bool(daily_bonus_event),
+            "description": "Тренировка от 45 минут, не ручная.",
+        },
+        "sleep": {
+            "title": "Хороший сон",
+            "has_data": has_sleep_data,
+            "done": bool(has_sleep_data and sleep_done),
+            "waiting_for_data": not has_sleep_data,
+            "sleep_secs": wellness.get("sleep_secs"),
+            "sleep_score": wellness.get("sleep_score"),
+            "description": "Не менее 6 часов сна или Sleep Score ≥60.",
+        },
+        "weekly_achievements": weekly_achievements,
+        "achievements_today": achievements_today,
     }
 
 

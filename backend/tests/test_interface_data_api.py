@@ -842,7 +842,10 @@ class InterfaceDataApiTests(unittest.TestCase):
         )
         self.db.commit()
 
-        with patch("app.routers.sync._user_local_today", return_value=date(2026, 10, 18)):
+        with (
+            patch("app.routers.sync._user_local_today", return_value=date(2026, 10, 18)),
+            patch("app.services.quests._user_local_today", return_value=date(2026, 10, 18)),
+        ):
             today_payload = sync_router.get_today(current=self.user, db=self.db)
             profile_payload = asyncio.run(sync_router.get_user_profile(current=self.user, db=self.db))
 
@@ -854,6 +857,93 @@ class InterfaceDataApiTests(unittest.TestCase):
         checklist = {item["id"]: item for item in today_payload["checklist"]}
         self.assertFalse(checklist["qualifying_day"]["done"])
         self.assertEqual(len(today_payload["ledger"]["activities"]), 1)
+
+    def test_today_card_payload_includes_actionable_weekly_items_and_only_awards_received_today(self):
+        today = date(2026, 10, 23)
+        week_start = date(2026, 10, 19)
+        self.user.api_key_encrypted = "encrypted-test-source-key"
+        self.add_summary(week_start, ratio=1.0, finalized=True, actual_load=100, target_load=100)
+
+        for offset in range(5):
+            day = week_start + timedelta(days=offset)
+            self.add_activity(
+                f"today-card-{day.isoformat()}",
+                stamp=datetime.combine(day, datetime.min.time()).replace(hour=9),
+                tss=30,
+                moving_time=30 * 60 if day == today else 20 * 60,
+                indoor=day == today,
+                intensity=0.5,
+            )
+        for offset in range(4):
+            self.add_sleep(week_start + timedelta(days=offset), secs=7 * 3600, score=80)
+
+        self.add_event(
+            "bonus:daily_workout:today-card",
+            "activity_bonus",
+            20,
+            day=today,
+            title="Дневной бонус +20 XP",
+        )
+        self.add_event(
+            "sleep_bonus:good_night:today-card",
+            "sleep_bonus",
+            6,
+            day=today,
+            title="Хороший сон +6 XP",
+        )
+        self.add_event(
+            "quest:trainer_week:2026-10-12",
+            "quest",
+            15,
+            day=today,
+            title="Станок",
+        )
+        self.add_event(
+            "quest:goal_100:2026-10-12",
+            "quest",
+            20,
+            day=week_start + timedelta(days=3),
+            title="Цель выполнена",
+        )
+        self.add_event(
+            "quest:sleep_connected:lifetime",
+            "quest",
+            25,
+            day=today,
+            title="Данные о сне подключены",
+            scope="quest",
+        )
+        self.db.commit()
+
+        with (
+            patch("app.routers.sync._user_local_today", return_value=today),
+            patch("app.services.quests._user_local_today", return_value=today),
+        ):
+            payload = sync_router.get_today(current=self.user, db=self.db)
+
+        self.assertTrue(payload["has_source"])
+        self.assertTrue(payload["daily_bonus"]["done"])
+        self.assertTrue(payload["sleep"]["waiting_for_data"])
+        self.assertFalse(payload["sleep"]["done"])
+        self.assertIn("type", payload["ledger"]["xp"]["bonuses"][0])
+
+        weekly = {item["slug"]: item for item in payload["weekly_achievements"]}
+        self.assertTrue(weekly["trainer_week"]["completed_today"])
+        self.assertTrue(weekly["trainer_week"]["completed_before_today"] is False)
+        self.assertTrue(weekly["qualifying_days_5"]["completed_today"])
+        self.assertTrue(weekly["goal_100"]["completed_before_today"])
+        self.assertTrue(weekly["long_workout_2h"]["actionable_today"])
+        self.assertEqual(weekly["good_sleep_5"]["progress"]["current"], 4)
+
+        self.assertEqual(
+            [item["slug"] for item in payload["achievements_today"]],
+            ["sleep_connected"],
+        )
+        self.assertTrue(payload["achievements_today"][0]["earned_today"])
+        self.assertEqual(
+            next(item for item in payload["ledger"]["xp"]["bonuses"] if item["type"] == "activity_bonus")["amount"],
+            20,
+        )
 
     def test_manual_workouts_do_not_qualify_for_weekly_long_or_intensity_quests(self):
         self.add_activity(
