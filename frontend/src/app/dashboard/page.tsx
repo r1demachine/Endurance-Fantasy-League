@@ -17,9 +17,11 @@ import QuestsBoard from "@/components/dashboard/QuestsBoard";
 import YearWeeksChart from "@/components/dashboard/YearWeeksChart";
 import DashboardWorkoutsSection from "@/components/dashboard/DashboardWorkoutsSection";
 import ProfileSettingsModal, { type SettingsTab } from "@/components/ProfileSettingsModal";
+import { useSeason } from "@/lib/seasons";
 
 export default function Dashboard() {
   const router = useRouter();
+  const season = useSeason();
   const transitionDirection = useTransitionDirection();
   const [userData, setUserData] = useState<any>(null);
   const [weekData, setWeekData] = useState<any>(null);
@@ -302,7 +304,7 @@ export default function Dashboard() {
         <motion.header variants={sectionItemVariants} custom={transitionDirection} className="relative grid border-b-2 border-black md:grid-cols-[1fr_auto]">
           <Sticker className="right-4 top-2 rotate-[-4deg] bg-[#f6b8d0] text-black md:right-10">не останавливайся на достигнутом</Sticker>
           <div className="flex flex-col gap-3 p-5 md:border-r-2 md:border-black md:p-8">
-            <Label className="text-[#666]">ТВОЙ ПРОГРЕСС · SEASON 001</Label>
+            <Label className="text-[#666]">ТВОЙ ПРОГРЕСС · SEASON {String(season.num).padStart(3, "0")}</Label>
             <h1 className="font-display text-4xl uppercase leading-[0.9] md:text-6xl lg:text-7xl">
               Привет, <span className="text-[#ff4b26]">{data.user.name}</span>.
             </h1>
