@@ -110,7 +110,7 @@ test("long dashboard explanations are tucked behind accessible HelpTip controls"
   assert.match(questsBoard, /<HelpTip label="О прогрессе недельных достижений">/);
   assert.doesNotMatch(questsBoard, /<p className="mt-1 text-xs text-\[#666\]">Прогресс считается/);
   assert.match(questsBoard, /daily_workout_bonus:/);
-  assert.match(questsBoard, /XP уже начисляется отдельным событием activity_bonus/);
+  assert.match(questsBoard, /сама XP уже записывается событием activity_bonus/);
   assert.match(weeklyLeague, /<HelpTip label="Как работает Weekly League">/);
   assert.doesNotMatch(weeklyLeague, /Недельный League Score с группировкой по дивизионам\. Пока участников/);
   assert.match(ratingPanel, /<HelpTip label="Как устроен общий рейтинг">/);
