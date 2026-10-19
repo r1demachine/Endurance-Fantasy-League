@@ -1416,15 +1416,8 @@ async def get_user_profile(
     all_activities = db.query(Activity).filter(Activity.user_id == user.id).all()
     today = _user_local_today(user)
     
-    dates = sorted({(a.start_date_local or a.start_date).date() for a in all_activities if (a.start_date_local or a.start_date)}, reverse=True)
-    day_streak = 0
-    if dates and (today - dates[0]).days <= 1:
-        day_streak = 1
-        for i in range(len(dates) - 1):
-            if (dates[i] - dates[i+1]).days == 1:
-                day_streak += 1
-            else:
-                break
+    from ..services.day_ledger import qualifying_day_streak
+    day_streak = qualifying_day_streak(db, user, today, activities=all_activities)
     
     def week_start(d):
         return d - timedelta(days=d.weekday())
@@ -1763,6 +1756,8 @@ def _week_activity_payload(act: Activity, *, activity_award_xp: float = 0.0) -> 
         "sport": act.sport_type or "WORKOUT",
         "distance_km": round((act.distance or 0) / 1000, 2),
         "moving_time_min": (act.moving_time or 0) // 60,
+        "tss": round(float(act.tss or 0.0), 2) if act.tss is not None else None,
+        "is_manual": bool(act.is_manual),
         "xp": round(effort_xp + attached_awards_xp, 2),
         "effort_xp": effort_xp,
         "activity_awards_xp": attached_awards_xp,
@@ -2078,12 +2073,87 @@ def get_weekly_summary(
         )
         for activity in activities
     ]
+    from ..services.day_ledger import build_day_ledger, build_week_bonuses, empty_day_ledger
+
+    day_ledgers = []
+    for offset in range(7):
+        calendar_day = selected_start + timedelta(days=offset)
+        if calendar_day > today:
+            day_ledgers.append(empty_day_ledger(calendar_day))
+        else:
+            day_ledgers.append(build_day_ledger(db, current, calendar_day))
+    weekly_bonuses = (
+        build_week_bonuses(db, current, selected_start)
+        if selected_start <= current_start else []
+    )
+
     return {
         "week": week,
         "week_options": week_options,
         "events": events,
         "activities": activity_payloads,
         "is_current_week": selected_start == current_start,
+        "days": day_ledgers,
+        "week_bonuses": weekly_bonuses,
+    }
+
+
+@router.get("/today")
+def get_today(
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Today's user-local XP ledger, qualifying streak, and actionable checklist."""
+    from ..services.day_ledger import build_day_ledger, qualifying_day_streak
+    from ..services import xp_v6 as X6
+
+    today = _user_local_today(current)
+    ledger = build_day_ledger(db, current, today)
+    streak = qualifying_day_streak(db, current, today)
+
+    try:
+        zone = ZoneInfo(current.timezone_name or "UTC")
+    except (ZoneInfoNotFoundError, TypeError, ValueError):
+        zone = ZoneInfo("UTC")
+    now_utc = datetime.now(timezone.utc)
+    next_midnight = datetime.combine(
+        today + timedelta(days=1), datetime.min.time(),
+    ).replace(tzinfo=zone)
+    seconds_left_today = max(
+        0,
+        int((next_midnight.astimezone(timezone.utc) - now_utc).total_seconds()),
+    )
+
+    wellness = ledger["wellness"]
+    sleep_seconds = float(wellness.get("sleep_secs") or 0)
+    sleep_score = float(wellness.get("sleep_score") or 0)
+    sleep_done = (
+        sleep_seconds >= X6.GOOD_SLEEP_MIN_SECONDS
+        or sleep_score >= X6.GOOD_SLEEP_MIN_SCORE
+    )
+    checklist = [
+        {
+            "id": "training_recorded",
+            "title": "Добавить тренировку",
+            "done": bool(ledger["activities"]),
+        },
+        {
+            "id": "qualifying_day",
+            "title": "Квалифицирующий день: ≥20 TSS и ≥20 минут",
+            "done": bool(ledger["qualifying"]),
+        },
+        {
+            "id": "sleep_logged",
+            "title": "Сон: ≥6 часов или Sleep Score ≥60",
+            "done": bool(sleep_done),
+        },
+    ]
+    return {
+        "date": today.isoformat(),
+        "seconds_left_today": seconds_left_today,
+        "streak": streak,
+        "ledger": ledger,
+        "checklist": checklist,
     }
 
 
