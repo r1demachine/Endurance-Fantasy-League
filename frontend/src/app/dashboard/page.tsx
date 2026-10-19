@@ -107,6 +107,19 @@ export default function Dashboard() {
     }
   }, [selectedWeekStart]);
 
+  const loadToday = useCallback(async () => {
+    setTodayLoading(true);
+    setTodayError("");
+    try {
+      const response = await authApi.get("/api/today");
+      setTodayData(response.data);
+    } catch (error: unknown) {
+      setTodayError(getApiErrorMessage(error, "Не удалось загрузить данные за сегодня."));
+    } finally {
+      setTodayLoading(false);
+    }
+  }, []);
+
   const refreshDashboardAfterDataChange = useCallback(async () => {
     setWeekLoading(true);
     setDashboardError("");
@@ -127,19 +140,6 @@ export default function Dashboard() {
     }
     await Promise.all([loadQuests(), loadToday()]);
   }, [selectedWeekStart, loadQuests, loadToday]);
-
-  const loadToday = useCallback(async () => {
-    setTodayLoading(true);
-    setTodayError("");
-    try {
-      const response = await authApi.get("/api/today");
-      setTodayData(response.data);
-    } catch (error: unknown) {
-      setTodayError(getApiErrorMessage(error, "Не удалось загрузить данные за сегодня."));
-    } finally {
-      setTodayLoading(false);
-    }
-  }, []);
 
   useEffect(() => {
     if (!isAuthed) {
