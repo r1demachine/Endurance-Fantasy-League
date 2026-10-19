@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import ActivityXpDetails, { type ActivityXpContext } from "@/components/ActivityXpDetails";
 
 type Act = ActivityXpContext & {
@@ -44,20 +44,17 @@ export default function ActivityCard({ act }: { act: Act }) {
           <span aria-hidden="true" className="text-[#666]">{open ? "▲" : "▼"}</span>
         </div>
       </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            key="activity-xp-details"
-            initial={reduceMotion ? false : { height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: reduceMotion ? 0 : 0.2, ease: "easeInOut" }}
-            className="overflow-hidden"
-          >
-            <ActivityXpDetails act={act} />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <motion.div
+        key="activity-xp-details"
+        initial={false}
+        animate={{ height: open ? "auto" : 0, opacity: open ? 1 : 0 }}
+        transition={{ duration: reduceMotion ? 0 : 0.2, ease: "easeInOut" }}
+        className="overflow-hidden"
+        aria-hidden={!open}
+        inert={!open}
+      >
+        <ActivityXpDetails act={act} enabled={open} />
+      </motion.div>sence>
     </div>
   );
 }
