@@ -948,12 +948,12 @@ class InterfaceDataApiTests(unittest.TestCase):
     def test_daily_workout_bonus_is_virtual_weekly_progress_without_duplicate_xp(self):
         week_start = date(2026, 10, 19)
         self.add_summary(week_start, consistency=40, quest=17, total=57)
-        self.add_event("daily-bonus-monday", "activity_bonus", 20, day=week_start)
-        self.add_event("daily-bonus-wednesday-a", "activity_bonus", 20, day=week_start + timedelta(days=2))
+        self.add_event("bonus:daily_workout:test:2026-10-19", "activity_bonus", 20, day=week_start)
+        self.add_event("bonus:daily_workout:test:2026-10-21:a", "activity_bonus", 20, day=week_start + timedelta(days=2))
         # Multiple bonus events on one date still produce one filled day.
-        self.add_event("daily-bonus-wednesday-b", "activity_bonus", 20, day=week_start + timedelta(days=2))
+        self.add_event("bonus:daily_workout:test:2026-10-21:b", "activity_bonus", 20, day=week_start + timedelta(days=2))
         # A non-positive event is not a qualifying bonus day.
-        self.add_event("daily-bonus-saturday-zero", "activity_bonus", 0, day=week_start + timedelta(days=5))
+        self.add_event("bonus:daily_workout:test:2026-10-24:zero", "activity_bonus", 0, day=week_start + timedelta(days=5))
         self.db.commit()
 
         events_before = self.db.query(XPEvent).filter(XPEvent.user_id == self.user.id).count()
