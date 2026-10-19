@@ -63,6 +63,8 @@ test("QuestsBoard uses persisted collapsed state, shows earned separately, and h
   assert.match(board, /catch\s*\{/);
   assert.match(board, /"Развернуть"/);
   assert.match(board, /Показать полученные/);
+  assert.match(board, /: lifetimeModel\.unearned;/);
+  assert.match(board, /showEarnedLifetime && renderCards\(lifetimeModel\.earned\)/);
   assert.ok(board.includes('title={step.date ? `${step.label}: ${step.date}` : step.label}'));
   assert.match(board, /\{step\.label\}<\/span>/);
   assert.match(board, /quest\.reward_kind === "per_item"/);
