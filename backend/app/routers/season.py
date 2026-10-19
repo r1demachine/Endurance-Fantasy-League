@@ -20,6 +20,14 @@ def get_season(
 ):
     """Season for the authenticated user's saved timezone or browser timezone."""
     zone = (current.timezone_name if current else timezone_name) or "UTC"
+    # While a UTC account has not confirmed its timezone, use the browser hint so
+    # the first page render agrees with the one-time confirmation prompt.
+    if current and zone == "UTC" and not bool(current.timezone_confirmed) and timezone_name:
+        zone = timezone_name
+    try:
+        ZoneInfo(zone)
+    except (ZoneInfoNotFoundError, TypeError, ValueError):
+        zone = "UTC"
     return current_season(zone).to_payload(zone)
 
 
