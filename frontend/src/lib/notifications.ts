@@ -6,6 +6,7 @@ export interface Notif {
   id: number;
   type: string;
   text: string;
+  link: string | null;
   read: boolean;
   created_at: string | null;
 }

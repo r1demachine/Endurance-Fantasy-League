@@ -31,6 +31,7 @@ export default function Dashboard() {
   const [todayLoading, setTodayLoading] = useState(true);
   const [todayError, setTodayError] = useState("");
   const [selectedWeekStart, setSelectedWeekStart] = useState("");
+  const [deepLinkActivityId, setDeepLinkActivityId] = useState<number | null>(null);
   const [quests, setQuests] = useState<any[]>([]);
   const [questsLoading, setQuestsLoading] = useState(true);
   const [questsError, setQuestsError] = useState("");
@@ -49,6 +50,19 @@ export default function Dashboard() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
   const [syncError, setSyncError] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const activityIdValue = params.get("activity_id");
+    const activityId = Number(activityIdValue);
+    if (activityIdValue && Number.isSafeInteger(activityId) && activityId > 0) {
+      setDeepLinkActivityId(activityId);
+    }
+    const weekStart = params.get("week_start");
+    if (weekStart && /^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
+      setSelectedWeekStart(weekStart);
+    }
+  }, []);
 
   useEffect(() => {
     const cached = getCachedUser();
@@ -395,6 +409,7 @@ export default function Dashboard() {
               selectedWeekStart={selectedWeekStart || weekData?.week_start || ""}
               onWeekChange={setSelectedWeekStart}
               onOpenSources={openSourceSettings}
+              initialActivityId={deepLinkActivityId}
             />
             </motion.div>
           </>

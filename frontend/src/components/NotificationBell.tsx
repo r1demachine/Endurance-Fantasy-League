@@ -27,6 +27,8 @@ function timeAgo(iso: string | null) {
 function iconFor(type: string) {
   if (type === "friend_request") return "👥";
   if (type === "friend_accepted") return "✅";
+  if (type === "activity_like") return "♥";
+  if (type === "activity_comment") return "▤";
   return "🌙";
 }
 
@@ -117,17 +119,37 @@ export default function NotificationBell({ variant }: { variant: "top" | "bottom
                     Empty. Sweet dreams 🌙
                   </p>
                 )}
-                {items.map((n: Notif) => (
-                  <div key={n.id} className="px-4 py-3 border-b border-black/15 flex gap-3 items-start bg-white">
-                    <span className="text-lg shrink-0">{iconFor(n.type)}</span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold leading-snug">{n.text}</p>
-                      <p className="text-[9px] text-[#666] font-bold tracking-widest uppercase mt-1">
-                        {timeAgo(n.created_at)}
-                      </p>
+                {items.map((n: Notif) => {
+                  const content = (
+                    <>
+                      <span aria-hidden="true" className="text-lg shrink-0">{iconFor(n.type)}</span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold leading-snug">{n.text}</p>
+                        <p className="text-[9px] text-[#666] font-bold tracking-widest uppercase mt-1">
+                          {timeAgo(n.created_at)}
+                        </p>
+                      </div>
+                    </>
+                  );
+                  const itemClass = "flex w-full gap-3 items-start border-b border-black/15 bg-white px-4 py-3 text-left hover:bg-[#fff8cc] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#5866f2]";
+                  return n.link ? (
+                    <a
+                      key={n.id}
+                      href={n.link}
+                      onClick={() => {
+                        setOpen(false);
+                        void markAllRead();
+                      }}
+                      className={itemClass}
+                    >
+                      {content}
+                    </a>
+                  ) : (
+                    <div key={n.id} className="flex gap-3 items-start border-b border-black/15 bg-white px-4 py-3">
+                      {content}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </motion.div>
           </>

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, BigInteger, String, Float, DateTime, Date, ForeignKey, Index, Boolean, Enum as SAEnum, text
+from sqlalchemy import Column, Integer, BigInteger, String, Float, DateTime, Date, ForeignKey, Index, Boolean, Enum as SAEnum, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -240,6 +240,33 @@ class Friendship(Base):
     )
 
 
+class ActivityReaction(Base):
+    """A single user's like reaction on an activity."""
+
+    __tablename__ = "activity_reactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    activity_id = Column(
+        Integer, ForeignKey("activities.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    kind = Column(String(16), nullable=False, default="like", server_default="like")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    activity = relationship("Activity", foreign_keys=[activity_id])
+    user = relationship("User", foreign_keys=[user_id])
+
+    __table_args__ = (
+        UniqueConstraint("activity_id", "user_id", name="uq_activity_reaction_activity_user"),
+        Index("idx_activity_reactions_activity_created", "activity_id", "created_at"),
+        Index("idx_activity_reactions_user_created", "user_id", "created_at"),
+    )
+
+
 class Notification(Base):
     __tablename__ = "notifications"
 
@@ -247,6 +274,7 @@ class Notification(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     type = Column(String, nullable=False)      # friend_request | friend_accepted | system
     text = Column(String, nullable=False)
+    link = Column(String(500), nullable=True)
     read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 

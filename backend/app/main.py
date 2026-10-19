@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from .database import engine, Base
 from .config import get_settings
 from .rate_limit import limiter
-from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy, upload, duels, clubs, telegram, season
+from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy, upload, duels, clubs, telegram, season, social
 
 Base.metadata.create_all(bind=engine)
 
@@ -140,6 +140,8 @@ try:
             ncols = {c["name"] for c in inspector.get_columns("notifications")}
             if "read" not in ncols:
                 conn.execute(text("ALTER TABLE notifications ADD COLUMN read BOOLEAN DEFAULT FALSE"))
+            if "link" not in ncols:
+                conn.execute(text("ALTER TABLE notifications ADD COLUMN link VARCHAR(500)"))
 
         # ── duels ──
         if "duels" not in tables:
@@ -388,6 +390,7 @@ app.include_router(duels.router)
 app.include_router(clubs.router)
 app.include_router(telegram.router)
 app.include_router(season.router)
+app.include_router(social.router)
 
 @app.on_event("startup")
 async def _init_broker():
