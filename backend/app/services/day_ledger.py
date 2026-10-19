@@ -186,7 +186,11 @@ def build_day_ledger(db: Session, user: User, day: date) -> dict:
         and float(event.amount or 0.0) > 0
     ]
     bonuses = [
-        {"title": event.title or event.event_type, "amount": round(float(event.amount or 0.0), 2)}
+        {
+            "title": event.title or event.event_type,
+            "amount": round(float(event.amount or 0.0), 2),
+            "type": event.event_type,
+        }
         for event in day_events
     ]
 
