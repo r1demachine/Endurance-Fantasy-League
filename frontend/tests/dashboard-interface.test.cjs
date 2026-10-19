@@ -6,6 +6,7 @@ const path = require("node:path");
 const read = (relative) => fs.readFileSync(path.join(__dirname, "..", relative), "utf8");
 const dashboard = read("src/app/dashboard/page.tsx");
 const profile = read("src/app/profile/page.tsx");
+const publicProfile = read("src/app/u/[username]/page.tsx");
 const layout = read("src/app/layout.tsx");
 const globalCss = read("src/app/globals.css");
 const compete = read("src/app/compete/page.tsx");
@@ -18,8 +19,8 @@ const yearChart = read("src/components/dashboard/YearWeeksChart.tsx");
 const questsBoard = read("src/components/dashboard/QuestsBoard.tsx");
 const weekBlock = read("src/components/dashboard/WeekBlock.tsx");
 const activityCard = read("src/components/ActivityCard.tsx");
-const workoutsSection = read("src/components/dashboard/DashboardWorkoutsSection.tsx");
-const workoutsList = read("src/components/dashboard/WorkoutsList.tsx");
+const weekCalendar = read("src/components/dashboard/WeekCalendar.tsx");
+const xpDetails = read("src/components/ActivityXpDetails.tsx");
 const activityUpload = read("src/components/ActivityUpload.tsx");
 const settingsModal = read("src/components/ProfileSettingsModal.tsx");
 const modalComponent = read("src/components/Modal.tsx");
@@ -33,7 +34,7 @@ test("dashboard removes weekly XP events and puts workouts after the complete ac
     dashboard.indexOf("<YearWeeksChart"),
     dashboard.indexOf("<WeekBlock"),
     dashboard.indexOf("<QuestsBoard"),
-    dashboard.indexOf("<DashboardWorkoutsSection"),
+    dashboard.indexOf("<WeekCalendar"),
   ];
   assert.ok(positions.every((position) => position >= 0));
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
@@ -66,11 +67,11 @@ test("year chart and weekly summary share week state without clipped outlines", 
 });
 
 test("sources open through the existing portal settings modal on the current page", () => {
-  assert.doesNotMatch(workoutsList, /\/profile\?settings=sources|href=.*settings=sources/);
-  assert.match(workoutsList, /<button type="button" onClick=\{onOpenSources\}/);
-  assert.match(workoutsSection, /onOpenSources: \(\) => void/);
-  assert.match(workoutsSection, /onOpenSources=\{onOpenSources\}/);
+  assert.match(weekCalendar, /<button[\s\S]*?onClick=\{onOpenSources\}/);
+  assert.match(weekCalendar, /Источники/);
   assert.match(dashboard, /onOpenSources=\{openSourceSettings\}/);
+  assert.match(dashboard, /<WeekCalendar[\s\S]*?weekData=\{weekData\}/);
+  assert.doesNotMatch(dashboard, /WorkoutsList|DashboardWorkoutsSection|weekActivities/);
   assert.match(dashboard, /setSettingsTab\("sources"\)/);
   assert.match(dashboard, /<ProfileSettingsModal[\s\S]*?onActivityUploaded=\{refreshDashboardAfterDataChange\}/);
   assert.match(settingsModal, /<Modal title="Настройки"[^>]*variant="settings"/);
@@ -111,22 +112,23 @@ test("long dashboard explanations are tucked behind accessible HelpTip controls"
   assert.match(weeklyLeague, /<HelpTip label="Как работает Weekly League">/);
   assert.doesNotMatch(weeklyLeague, /Недельный League Score с группировкой по дивизионам\. Пока участников/);
   assert.match(ratingPanel, /<HelpTip label="Как устроен общий рейтинг">/);
-  assert.match(workoutsSection, /<HelpTip label="Как выбрать неделю тренировок">/);
+  assert.match(weekCalendar, /aria-label="Выбрать неделю календаря"/);
 });
 
 test("all visible week selectors use the shared Russian week formatter", () => {
   assert.match(weekBlock, /formatWeekRange\(selectedWeekStart\)/);
   assert.match(weekBlock, /formatWeekRange\(option\.week_start\)/);
-  assert.match(workoutsSection, /formatWeekRange\(week\.week_start\)/);
-  assert.match(workoutsList, /formatWeekRange\(selectedWeekStart\)/);
+  assert.match(weekCalendar, /formatWeekRange\(activeWeek\)/);
+  assert.match(weekCalendar, /weekOptions\.map/);
 });
 
 
 test("activity XP card separates attached achievements from general bonuses", () => {
-  assert.match(activityCard, /Достижения за эту тренировку/);
-  assert.match(activityCard, /activityAwardsTotal/);
-  assert.match(activityCard, /for_this_activity_xp/);
-  assert.doesNotMatch(activityCard, /Общие бонусы дня|Общие бонусы недели|Регулярность \(за день\)|Quality \(за неделю\)|Квесты дня/);
+  assert.match(xpDetails, /Достижения за эту тренировку/);
+  assert.match(xpDetails, /activityAwardsTotal/);
+  assert.match(xpDetails, /for_this_activity_xp/);
+  assert.match(activityCard, /<ActivityXpDetails act=\{act\} enabled=\{open\} \/>/);
+  assert.doesNotMatch(xpDetails, /Общие бонусы дня|Общие бонусы недели|Регулярность \(за день\)|Quality \(за неделю\)|Квесты дня/);
   assert.match(questsBoard, /dailyBonusDays/);
   assert.match(questsBoard, /Дневные бонусы за выбранную неделю/);
 });
@@ -208,8 +210,8 @@ test("XP explanations use viewport portals and achievement descriptions stay hid
   assert.ok(questsBoard.includes("onMouseEnter"));
   assert.equal(questsBoard.includes("group-hover:opacity-100"), false);
   assert.ok(!questsBoard.includes('className="mt-1 text-[9px] font-bold uppercase tracking-widest text-[#666]">{quest.desc}'));
-  assert.ok(activityCard.includes('label="Итого"'));
-  assert.ok(activityCard.includes("Потолок — 300 TSS в день"));
+  assert.ok(xpDetails.includes('label="Итого"'));
+  assert.ok(xpDetails.includes("Потолок — 300 TSS в день"));
   assert.ok(!activityCard.includes('XpTooltip label="Достижения за эту тренировку"'));
 });
 
@@ -220,7 +222,7 @@ test("the obsolete per-workout +12 XP bonus is no longer generated or displayed"
   assert.ok(!xpV6.includes("\nWORKOUT_BONUS_MIN_DURATION_SECONDS ="));
   assert.ok(xpV6.includes("DAILY_WORKOUT_BONUS_XP = 20.0"));
   assert.ok(syncRouter.includes("_is_retired_activity_duration_bonus"));
-  assert.ok(activityCard.includes("activityEvents = (activityAwards?.events ?? []).filter"));
+  assert.ok(xpDetails.includes("activityEvents = (activityAwards?.events ?? []).filter"));
 });
 
 test("global typography grows one point but restores heading and display scales", () => {
@@ -267,4 +269,33 @@ test("timezone is explicitly confirmed before timezone-dependent reminders can r
   assert.match(timezonePrompt, /Intl\.DateTimeFormat\(\)\.resolvedOptions\(\)\.timeZone/);
   assert.match(timezonePrompt, /authApi\.patch\("\/api\/timezone"/);
   assert.match(seasonRouter, /@router\.patch\("\/timezone"\)/);
+});
+
+
+test("week calendar renders seven ledger days and shares the XP breakdown component", () => {
+  assert.match(dashboard, /<WeekCalendar/);
+  assert.match(dashboard, /days: Array\.isArray\(result\.days\)/);
+  assert.match(weekCalendar, /getCalendarWeekDates\(start\)/);
+  assert.ok(weekCalendar.includes("return dates.map"));
+  assert.match(weekCalendar, /lg:grid-cols-7/);
+  assert.match(weekCalendar, /grid-cols-1 gap-3/);
+  assert.match(weekCalendar, /weekData\?\.days/);
+  assert.match(weekCalendar, /weekData\?\.week_bonuses/);
+  assert.match(weekCalendar, /Сон/);
+  assert.match(weekCalendar, /Sleep score/);
+  assert.match(weekCalendar, /HRV/);
+  assert.match(weekCalendar, /Пульс покоя/);
+  assert.match(weekCalendar, /is_deload/);
+  assert.match(weekCalendar, /weekData\?\.paused/);
+  assert.match(weekCalendar, /focus-visible:outline/);
+  assert.match(weekCalendar, /useReducedMotion/);
+  assert.match(xpDetails, /\/api\/activities\/\$\{act\.id\}\/xp/);
+  assert.match(publicProfile, /<ActivityCard act=\{act\} \/>/);
+  assert.match(activityCard, /ActivityXpDetails act=\{act\}/);
+  assert.doesNotMatch(dashboard, /WorkoutsList|DashboardWorkoutsSection/);
+});
+
+test("the retired dashboard list component is no longer referenced or kept", () => {
+  assert.equal(fs.existsSync(path.join(__dirname, "..", "src/components/dashboard/WorkoutsList.tsx")), false);
+  assert.equal(fs.existsSync(path.join(__dirname, "..", "src/components/dashboard/DashboardWorkoutsSection.tsx")), false);
 });
