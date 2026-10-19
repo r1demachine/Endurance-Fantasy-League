@@ -1,12 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { authApi } from "@/lib/auth";
 
-/* 🌸 Сезоны: у каждого свой цветок и его цвет.
-   Пока — демо-ротация каждые 3 сек (0→9).
-   Потом настоящая смена раз в месяц — в useSeason замени тело на:
-     const d = new Date();
-     return SEASONS[(d.getFullYear() * 12 + d.getMonth()) % SEASONS.length]; */
 export const SEASONS = [
   { num: 0, flower: "Rose", color: "#e11d48" },
   { num: 1, flower: "Sunflower", color: "#ca8a04" },
@@ -18,13 +14,59 @@ export const SEASONS = [
   { num: 7, flower: "Marigold", color: "#ea580c" },
   { num: 8, flower: "Hydrangea", color: "#0d9488" },
   { num: 9, flower: "Peony", color: "#db2777" },
-];
+] as const;
 
-export function useSeason() {
-  const [idx, setIdx] = useState(0);
+export type SeasonView = {
+  num: number;
+  flower: string;
+  color: string;
+  start: string;
+  end: string;
+};
+
+// Stable server/client initial state avoids a timezone-dependent hydration mismatch.
+// The API immediately replaces it with the real season for the user's local date.
+const INITIAL_SEASON: SeasonView = {
+  num: 1,
+  flower: SEASONS[1].flower,
+  color: SEASONS[1].color,
+  start: "2026-09-01",
+  end: "2026-09-30",
+};
+
+export function useSeason(): SeasonView {
+  const [season, setSeason] = useState<SeasonView>(INITIAL_SEASON);
+
   useEffect(() => {
-    const t = setInterval(() => setIdx((i) => (i + 1) % SEASONS.length), 3000);
-    return () => clearInterval(t);
+    let cancelled = false;
+    const loadSeason = async () => {
+      const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      try {
+        const response = await authApi.get("/api/season", { params: { timezone_name: timezoneName } });
+        if (cancelled) return;
+        const data = response.data as Partial<SeasonView>;
+        if (typeof data.num === "number" && typeof data.flower === "string" && typeof data.color === "string") {
+          setSeason({
+            num: data.num,
+            flower: data.flower,
+            color: data.color,
+            start: typeof data.start === "string" ? data.start : "",
+            end: typeof data.end === "string" ? data.end : "",
+          });
+        }
+      } catch {
+        // Keep the stable initial state if the API is temporarily unavailable.
+      }
+    };
+
+    const handleTimezoneUpdate = () => { void loadSeason(); };
+    void loadSeason();
+    window.addEventListener("efl:timezone-updated", handleTimezoneUpdate);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("efl:timezone-updated", handleTimezoneUpdate);
+    };
   }, []);
-  return SEASONS[idx];
+
+  return season;
 }
