@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import ActivityXpDetails, { type ActivityXpContext } from "@/components/ActivityXpDetails";
 import ActivitySocial from "@/components/ActivitySocial";
+import ShareButton from "@/components/ShareButton";
 import { EmptyState } from "@/components/ui";
 import { formatWeekRange } from "@/lib/format";
 import { formatActivityDuration, formatSleepDuration, getCalendarWeekDates } from "@/lib/week-calendar";
@@ -55,6 +56,7 @@ type Props = {
   onWeekChange: (weekStart: string) => void;
   onOpenSources: () => void;
   initialActivityId?: number | null;
+  userName?: string;
 };
 
 function dateFromIso(value: string): Date | null {
@@ -94,7 +96,7 @@ function SportIcon({ sport }: { sport: string }) {
   return <Activity aria-hidden="true" size={16} />;
 }
 
-function DayHeading({ day, isToday }: { day: DayLedger; isToday: boolean }) {
+function DayHeading({ day, isToday, userName }: { day: DayLedger; isToday: boolean; userName?: string }) {
   const parsed = dateFromIso(day.date);
   const weekday = parsed
     ? new Intl.DateTimeFormat("ru-RU", { weekday: "short" }).format(parsed)
@@ -105,6 +107,15 @@ function DayHeading({ day, isToday }: { day: DayLedger; isToday: boolean }) {
       <div className="min-w-0">
         <h3 id={`day-${day.date}`} className="truncate text-xs font-black uppercase tracking-widest">{weekday}</h3>
         <p className="text-[10px] font-bold text-[#555]">{day.date}</p>
+        <div className="mt-1">
+          <ShareButton label="День" data={{
+            kind: "day",
+            xp: Number(day.xp?.total) || (day.activities ?? []).reduce((sum, activity) => sum + Number(activity.xp || 0), 0),
+            date: day.date,
+            workoutCount: day.activities?.length ?? 0,
+            userName,
+          }} />
+        </div>
       </div>
       <span
         className={`flex h-8 w-8 shrink-0 items-center justify-center border-2 border-black font-display text-lg ${isToday ? "bg-white" : "bg-white"}`}
@@ -209,11 +220,13 @@ function DayColumn({
   isToday,
   isFuture,
   onOpenActivity,
+  userName,
 }: {
   day: DayLedger;
   isToday: boolean;
   isFuture: boolean;
   onOpenActivity: (activity: DayActivity, trigger: HTMLButtonElement) => void;
+  userName?: string;
 }) {
   const activities = day.activities ?? [];
   return (
@@ -221,7 +234,7 @@ function DayColumn({
       aria-labelledby={`day-${day.date}`}
       className={`flex min-w-0 flex-col border-2 border-black bg-white ${isFuture ? "opacity-45" : ""} ${isToday ? "ring-2 ring-[#5866f2] ring-offset-2" : ""}`}
     >
-      <DayHeading day={day} isToday={isToday} />
+      <DayHeading day={day} isToday={isToday} userName={userName} />
       <div className="min-w-0 flex-1">
         <HealthStrip wellness={day.wellness ?? {}} />
         <div className="space-y-2 p-2">
@@ -255,6 +268,7 @@ export default function WeekCalendar({
   onWeekChange,
   onOpenSources,
   initialActivityId = null,
+  userName,
 }: Props) {
   const [selectedActivity, setSelectedActivity] = useState<DayActivity | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -392,6 +406,7 @@ export default function WeekCalendar({
                 isToday={day.date === today}
                 isFuture={day.date > today}
                 onOpenActivity={openActivity}
+                userName={userName}
               />
             ))}
           </div>
@@ -463,6 +478,19 @@ export default function WeekCalendar({
                   <X aria-hidden="true" size={18} />
                 </button>
               </header>
+              <div className="flex justify-end px-4 pt-3">
+                <ShareButton data={{
+                  kind: "activity",
+                  xp: Number(selectedActivity.xp) || 0,
+                  title: selectedActivity.name,
+                  date: selectedActivity.date,
+                  sport: selectedActivity.sport,
+                  durationMinutes: selectedActivity.moving_time_min,
+                  distanceKm: selectedActivity.distance_km,
+                  tss: selectedActivity.tss,
+                  userName,
+                }} />
+              </div>
               <ActivityXpDetails act={selectedActivity} />
               <div className="px-4 pb-4"><ActivitySocial key={selectedActivity.id} activityId={selectedActivity.id} /></div>
             </motion.div>
