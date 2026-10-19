@@ -21,6 +21,7 @@ from typing import Optional, Literal
 from ..rate_limit import limiter
 from ..services.deload import cooldown_passed, manual_deload_block_reason, suggestion_is_appropriate
 from ..services.league import league_ranking_key
+from ..services.activity_visibility import can_view_activity
 
 router = APIRouter(prefix="/api", tags=["Sync"])
 settings = get_settings()
@@ -2651,15 +2652,11 @@ async def public_activities(
     if not user:
         raise HTTPException(status_code=404, detail="Athlete not found")
 
-    is_owner = viewer.id == user.id
-    is_friend = _is_accepted_friend(db, viewer.id, user.id)
-    if not is_owner:
-        if (user.profile_visibility or "authenticated") == "private":
-            raise HTTPException(status_code=403, detail="Этот профиль скрыт владельцем")
-        if (user.profile_visibility or "authenticated") == "friends" and not is_friend:
-            raise HTTPException(status_code=403, detail="Подробности профиля доступны только друзьям")
-        if (user.activity_visibility or "friends") != "friends" or not is_friend:
-            raise HTTPException(status_code=403, detail="Тренировки доступны только владельцу или друзьям")
+    if not can_view_activity(db, viewer, user):
+        raise HTTPException(
+            status_code=403,
+            detail="Тренировки доступны только владельцу или принятому другу по настройкам приватности",
+        )
 
     query = db.query(Activity).filter(Activity.user_id == user.id)
     total = query.count()

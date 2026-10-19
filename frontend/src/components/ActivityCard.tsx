@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import ActivityXpDetails, { type ActivityXpContext } from "@/components/ActivityXpDetails";
+import ActivitySocial from "@/components/ActivitySocial";
 
 type Act = ActivityXpContext & {
   date: string;
@@ -54,6 +55,7 @@ export default function ActivityCard({ act }: { act: Act }) {
         inert={!open}
       >
         <ActivityXpDetails act={act} enabled={open} />
+        {open && <div className="px-4 pb-4"><ActivitySocial activityId={act.id} /></div>}
       </motion.div>
     </div>
   );

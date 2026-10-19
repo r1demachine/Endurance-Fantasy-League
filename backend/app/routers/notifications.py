@@ -29,6 +29,7 @@ def list_notifications(current: User = Depends(get_current_user), db: Session = 
                 "id": r.id,
                 "type": r.type,
                 "text": r.text,
+                "link": r.link,
                 "read": r.read,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }

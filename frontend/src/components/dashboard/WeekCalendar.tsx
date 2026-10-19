@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Activity,
@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import ActivityXpDetails, { type ActivityXpContext } from "@/components/ActivityXpDetails";
+import ActivitySocial from "@/components/ActivitySocial";
 import { EmptyState } from "@/components/ui";
 import { formatWeekRange } from "@/lib/format";
 import { formatActivityDuration, formatSleepDuration, getCalendarWeekDates } from "@/lib/week-calendar";
@@ -51,6 +52,7 @@ type Props = {
   selectedWeekStart: string;
   onWeekChange: (weekStart: string) => void;
   onOpenSources: () => void;
+  initialActivityId?: number | null;
 };
 
 function dateFromIso(value: string): Date | null {
@@ -247,9 +249,11 @@ export default function WeekCalendar({
   selectedWeekStart,
   onWeekChange,
   onOpenSources,
+  initialActivityId = null,
 }: Props) {
   const [selectedActivity, setSelectedActivity] = useState<DayActivity | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const autoOpenedActivityId = useRef<number | null>(null);
   const reduceMotion = useReducedMotion();
 
   const activeWeek = selectedWeekStart || weekData?.week_start || "";
@@ -275,6 +279,18 @@ export default function WeekCalendar({
       qualifying: false,
     });
   }, [activeWeek, selectedWeekStart, weekData]);
+
+  useEffect(() => {
+    if (!initialActivityId || weekLoading || !weekData) return;
+    if (selectedWeekStart && weekData.week_start !== selectedWeekStart) return;
+    if (autoOpenedActivityId.current === initialActivityId) return;
+    const target = ledgerDays
+      .flatMap((day) => day.activities ?? [])
+      .find((activity) => Number(activity.id) === initialActivityId);
+    if (!target) return;
+    autoOpenedActivityId.current = initialActivityId;
+    setSelectedActivity(target);
+  }, [initialActivityId, weekLoading, weekData, selectedWeekStart, ledgerDays]);
 
   const today = toIsoDate(new Date());
   const hasActivities = ledgerDays.some((day) => (day.activities?.length ?? 0) > 0);
@@ -443,6 +459,7 @@ export default function WeekCalendar({
                 </button>
               </header>
               <ActivityXpDetails act={selectedActivity} />
+              <div className="px-4 pb-4"><ActivitySocial activityId={selectedActivity.id} /></div>
             </motion.div>
           </motion.div>
         )}
