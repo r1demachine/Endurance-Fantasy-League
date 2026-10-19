@@ -54,7 +54,7 @@ export default function ActivityCard({ act }: { act: Act }) {
         inert={!open}
       >
         <ActivityXpDetails act={act} enabled={open} />
-      </motion.div>sence>
+      </motion.div>
     </div>
   );
 }
