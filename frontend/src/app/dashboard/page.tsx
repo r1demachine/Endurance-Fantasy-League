@@ -138,7 +138,8 @@ export default function Dashboard() {
     } finally {
       setWeekLoading(false);
     }
-    await Promise.all([loadQuests(), loadToday()]);
+    await loadQuests();
+    await loadToday();
   }, [selectedWeekStart, loadQuests, loadToday]);
 
   useEffect(() => {
