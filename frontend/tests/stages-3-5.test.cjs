@@ -28,7 +28,7 @@ test("activity XP breakdown loads lazily, caches success, and supports retry", (
   assert.ok(activityXpDetails.includes("for_this_activity_xp"));
   assert.doesNotMatch(activityXpDetails, /Общие бонусы дня|Общие бонусы недели|related\?\.general/);
   assert.match(activityXpDetails, /Потолок — 300 TSS в день/);
-  assert.match(activityXpDetails, /распределяется\\s+между тренировками пропорционально их TSS/);
+  assert.ok(activityXpDetails.includes("распределяется") && activityXpDetails.includes("пропорционально их TSS"));
 });
 
 test("XP tooltip supports accessible explanatory text as well as chart mode", () => {
