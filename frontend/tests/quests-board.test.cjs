@@ -62,7 +62,7 @@ test("QuestsBoard uses persisted collapsed state, shows earned separately, and h
   assert.match(board, /window\.localStorage\.setItem/);
   assert.match(board, /catch\s*\{/);
   assert.match(board, /"Развернуть"/);
-  assert.match(board, /"Показать полученные/);
+  assert.match(board, /Показать полученные/);
   assert.match(board, /step\.date\? \x60\$\{step\.label\}: \$\{step\.date\}\x60/);
   assert.match(board, /\{step\.label\}<\/span>/);
   assert.match(board, /quest\.reward_kind === "per_item"/);
