@@ -4,7 +4,7 @@ export type LifetimeAchievementSummaryItem = {
   status: "earned" | "open" | "unavailable";
 };
 
-export function getLifetimeAchievementModel(quests: LifetimeAchievementSummaryItem[]) {
+export function getLifetimeAchievementModel<T extends LifetimeAchievementSummaryItem>(quests: T[]) {
   const all = quests.filter((quest) => quest.kind !== "weekly");
   const available = all.filter((quest) => quest.status !== "unavailable");
   const earned = available.filter((quest) => quest.status === "earned");
