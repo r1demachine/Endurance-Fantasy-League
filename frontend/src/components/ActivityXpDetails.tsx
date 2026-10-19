@@ -120,7 +120,11 @@ export default function ActivityXpDetails({ act, enabled = true }: { act: Activi
   }, [act.id]);
 
   useEffect(() => {
-    if (enabled && !breakdown && !loading && !error) void loadBreakdown();
+    if (!enabled || breakdown || loading || error) return;
+    const request = window.setTimeout(() => {
+      void loadBreakdown();
+    }, 0);
+    return () => window.clearTimeout(request);
   }, [enabled, breakdown, loading, error, loadBreakdown]);
 
   const effort = breakdown?.effort;
