@@ -1443,11 +1443,17 @@ async def get_user_profile(
     week_seconds = sum(a.moving_time or 0 for a in all_activities if (a.start_date_local or a.start_date) and week_start((a.start_date_local or a.start_date).date()) == this_week)
     week_hours = round(week_seconds / 3600, 1)
     
-    season_year = today.year if today.month >= 9 else today.year - 1
-    SEASON_START = datetime(season_year, 9, 1)
-    season_acts = [a for a in all_activities if (a.start_date_local or a.start_date) and (a.start_date_local or a.start_date) >= SEASON_START]
+    from ..services.seasons import season_for_date
+    season = season_for_date(today)
+    season_start_dt = datetime.combine(season.start, datetime.min.time())
+    season_end_dt = datetime.combine(season.next_start, datetime.min.time())
+    season_acts = [
+        activity for activity in all_activities
+        if (activity.start_date_local or activity.start_date)
+        and season_start_dt <= (activity.start_date_local or activity.start_date) < season_end_dt
+    ]
     season_stats = {
-        "season_start": SEASON_START.strftime("%d.%m.%Y"),
+        "season_start": season.start.strftime("%d.%m.%Y"),
         "total_km": round(sum(a.distance or 0 for a in season_acts) / 1000, 1),
         "total_hours": round(sum(a.moving_time or 0 for a in season_acts) / 3600, 1),
         "total_elevation": int(round(sum(a.elevation_gain or 0 for a in season_acts))),
@@ -2145,8 +2151,9 @@ def get_season_weeks(current: User = Depends(get_current_user), db: Session = De
     """WeeklySummary timeline for the current September–August season."""
     from ..models import WeeklySummary
     today = _user_local_today(current)
-    season_year = today.year if today.month >= 9 else today.year - 1
-    season_start = _date(season_year, 9, 1)
+    from ..services.seasons import season_for_date
+    season = season_for_date(today)
+    season_start = season.start
     first_week = _monday_for_day(season_start)
     current_week = _monday_for_day(today)
     rows = (
@@ -2310,9 +2317,10 @@ def get_profile_stats(
         start_day = _date(today.year, 1, 1)
         end_day = _date(today.year + 1, 1, 1)
     else:
-        season_year = today.year if today.month >= 9 else today.year - 1
-        start_day = _date(season_year, 9, 1)
-        end_day = today + timedelta(days=1)
+        from ..services.seasons import season_for_date
+        season = season_for_date(today)
+        start_day = season.start
+        end_day = season.next_start
 
     activities = db.query(Activity).filter(Activity.user_id == current.id).all()
     ranged_activities = []
