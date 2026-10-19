@@ -5,6 +5,7 @@ const path = require("node:path");
 
 const read = (relative) => fs.readFileSync(path.join(__dirname, "..", relative), "utf8");
 const activity = read("src/components/ActivityCard.tsx");
+const activityXpDetails = read("src/components/ActivityXpDetails.tsx");
 const tooltip = read("src/components/XpTooltip.tsx");
 const floatingTooltip = read("src/components/ui/FloatingTooltip.tsx");
 const rating = read("src/components/compete/RatingPanel.tsx");
@@ -13,28 +14,28 @@ const compete = read("src/app/compete/page.tsx");
 const profile = read("src/app/profile/page.tsx");
 
 test("activity XP breakdown loads lazily, caches success, and supports retry", () => {
-  assert.match(activity, /authApi\.get\(\`\/api\/activities\/\$\{act\.id\}\/xp\`\)/);
-  assert.match(activity, /if \(breakdown \|\| loading\) return/);
-  assert.match(activity, /if \(next && !breakdown && !loading\) void loadBreakdown\(\)/);
-  assert.match(activity, /<ErrorState message=\{error\} onRetry=\{\(\) => void loadBreakdown\(\)\}/);
+  assert.match(activityXpDetails, /authApi\.get\(\`\/api\/activities\/\$\{act\.id\}\/xp\`\)/);
+  assert.match(activityXpDetails, /if \(enabled && !breakdown && !loading && !error\)/);
+  assert.match(activity, /<ActivityXpDetails act=\{act\} enabled=\{open\} \/>/);
+  assert.match(activityXpDetails, /<ErrorState message=\{error\} onRetry=\{\(\) => void loadBreakdown\(\)\}/);
   for (const label of ["За нагрузку этой тренировки", "Достижения за эту тренировку", "Итого"]) {
-    assert.ok(activity.includes(label), `missing breakdown row: ${label}`);
+    assert.ok(activityXpDetails.includes(label), `missing breakdown row: ${label}`);
   }
   for (const obsoleteLabel of ["Регулярность (за день)", "Quality (за неделю)", "Квесты дня"]) {
-    assert.ok(!activity.includes(obsoleteLabel), `obsolete breakdown label: ${obsoleteLabel}`);
+    assert.ok(!activityXpDetails.includes(obsoleteLabel), `obsolete breakdown label: ${obsoleteLabel}`);
   }
-  assert.ok(activity.includes("activityAwardsTotal"));
-  assert.ok(activity.includes("for_this_activity_xp"));
-  assert.doesNotMatch(activity, /Общие бонусы дня|Общие бонусы недели|related\?\.general/);
-  assert.match(activity, /Потолок — 300 TSS в день/);
-  assert.match(activity, /распределяется между тренировками пропорционально их TSS/);
+  assert.ok(activityXpDetails.includes("activityAwardsTotal"));
+  assert.ok(activityXpDetails.includes("for_this_activity_xp"));
+  assert.doesNotMatch(activityXpDetails, /Общие бонусы дня|Общие бонусы недели|related\?\.general/);
+  assert.match(activityXpDetails, /Потолок — 300 TSS в день/);
+  assert.match(activityXpDetails, /распределяется между тренировками пропорционально их TSS/);
 });
 
 test("XP tooltip supports accessible explanatory text as well as chart mode", () => {
   assert.match(tooltip, /content\?: ReactNode/);
   assert.match(tooltip, /<FloatingTooltip/);
   assert.match(floatingTooltip, /role="tooltip"/);
-  assert.match(activity, /<XpTooltip label=/);
+  assert.match(activityXpDetails, /<XpTooltip label=/);
 });
 
 test("weekly league is its own container before the Global/Friends rating", () => {
