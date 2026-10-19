@@ -2651,17 +2651,20 @@ async def leaderboard(
     today = _user_local_today(current)
     this_ws_d = X6.week_start(today)
     this_ws = datetime.combine(this_ws_d, datetime.min.time())
-    population_rows = (
-        db.query(WeeklySummary, User)
-        .join(User, User.id == WeeklySummary.user_id)
-        .filter(WeeklySummary.week_start == this_ws)
-        .all()
+    week_end_dt = datetime.combine(this_ws_d + timedelta(days=7), datetime.min.time())
+    active_population_filter = ~and_(
+        User.pause_set_at.isnot(None),
+        User.paused_until.isnot(None),
+        User.pause_set_at < week_end_dt,
+        User.paused_until >= week_end_dt,
     )
-    active_population = [
-        (summary, user) for summary, user in population_rows
-        if not _is_paused_week(user, this_ws_d)
-    ]
-    participant_count = len(active_population)
+    participant_count = int(
+        db.query(func.count(WeeklySummary.id))
+        .join(User, User.id == WeeklySummary.user_id)
+        .filter(WeeklySummary.week_start == this_ws, active_population_filter)
+        .scalar()
+        or 0
+    )
     beta_league = participant_count < X6.BETA_SINGLE_LEAGUE_UNTIL_USERS
     formed = participant_count >= X6.MIN_LEAGUE_SIZE
 
@@ -2669,13 +2672,16 @@ async def leaderboard(
         visible_rows = (
             db.query(WeeklySummary, User)
             .join(User, User.id == WeeklySummary.user_id)
-            .filter(WeeklySummary.week_start == this_ws, visible_filter)
+            .filter(WeeklySummary.week_start == this_ws, visible_filter, active_population_filter)
+            .order_by(
+                func.coalesce(WeeklySummary.league_score, 0.0).desc(),
+                func.coalesce(WeeklySummary.total_xp, 0.0).desc(),
+                func.coalesce(WeeklySummary.actual_load, 0.0).desc(),
+                User.id.asc(),
+            )
+            .limit(limit)
             .all()
         )
-        visible_rows = [
-            (summary, user) for summary, user in visible_rows
-            if not _is_paused_week(user, this_ws_d)
-        ]
         divisions_by_user = _user_divisions_for_week(
             db, [user.id for _summary, user in visible_rows], this_ws_d
         )
@@ -2721,6 +2727,35 @@ async def leaderboard(
 
         your_rank = next((entry["rank"] for entry in entries if entry["is_you"]), None)
         if beta_league:
+            # The displayed rows are limited in SQL; count the exact position
+            # separately so a beta participant outside the top ten still sees their rank.
+            current_summary = (
+                db.query(WeeklySummary)
+                .filter(WeeklySummary.user_id == current.id, WeeklySummary.week_start == this_ws)
+                .first()
+            )
+            if current_summary is not None and not _is_paused_week(current, this_ws_d):
+                score_expr = func.coalesce(WeeklySummary.league_score, 0.0)
+                xp_expr = func.coalesce(WeeklySummary.total_xp, 0.0)
+                load_expr = func.coalesce(WeeklySummary.actual_load, 0.0)
+                current_score = float(current_summary.league_score or 0.0)
+                current_xp = float(current_summary.total_xp or 0.0)
+                current_load = float(current_summary.actual_load or 0.0)
+                ahead_count = db.query(func.count(WeeklySummary.id)).join(
+                    User, User.id == WeeklySummary.user_id
+                ).filter(
+                    WeeklySummary.week_start == this_ws,
+                    visible_filter,
+                    active_population_filter,
+                    or_(
+                        score_expr > current_score,
+                        and_(score_expr == current_score, xp_expr > current_xp),
+                        and_(score_expr == current_score, xp_expr == current_xp, load_expr > current_load),
+                        and_(score_expr == current_score, xp_expr == current_xp, load_expr == current_load, User.id < current.id),
+                    ),
+                ).scalar()
+                your_rank = int(ahead_count or 0) + 1
+        if beta_league:
             entries = entries[:limit]
         else:
             # Select the top ten by the shared tie-break first, then keep division
@@ -2765,11 +2800,7 @@ async def leaderboard(
         your_rank = _rank_before_user(visible_filter)
     else:
         if not friend_ids:
-            return {
-                "scope": scope, "entries": [], "your_rank": None,
-                "formed": formed, "beta": beta_league,
-                "participants": participant_count, "min_size": X6.MIN_LEAGUE_SIZE,
-            }
+            return {"scope": scope, "entries": [], "your_rank": None}
         friend_scope_filter = and_(
             visible_filter,
             User.id.in_(visible_ids),
@@ -2786,10 +2817,6 @@ async def leaderboard(
     return {
         "scope": scope,
         "your_rank": your_rank,
-        "formed": formed,
-        "beta": beta_league,
-        "participants": participant_count,
-        "min_size": X6.MIN_LEAGUE_SIZE,
         "entries": [
             {
                 "rank": i + 1,
