@@ -19,6 +19,8 @@ type LeaderboardEntry = {
 type LeaderboardPayload = {
   entries?: LeaderboardEntry[];
   your_rank?: number | null;
+  beta?: boolean;
+  participants?: number;
 };
 
 const scopeTabs: { value: Scope; label: string }[] = [
@@ -85,6 +87,7 @@ export default function RatingPanel() {
       <div className="border-b-2 border-black bg-[#f4f4f0] p-4 md:p-6">
         <div className="flex items-center gap-2">
           <h2 id="rating-heading" className="font-display text-2xl uppercase">Рейтинг</h2>
+          {board?.beta && <span className="border-2 border-black bg-[#ffd500] px-2 py-1 text-[10px] font-black tracking-widest">БЕТА</span>}
           <HelpTip label="Как устроен общий рейтинг">
             Общий и друзья показывают общий XP без недельных дивизионов. В таблице отображаются первые 10 участников и твоё место, если оно ниже десятого.
           </HelpTip>
