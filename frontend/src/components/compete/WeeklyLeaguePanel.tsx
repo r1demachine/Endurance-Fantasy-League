@@ -27,6 +27,11 @@ type Payload = {
   week?: string;
 };
 
+type ClubInvite = {
+  name: string;
+  invite_code: string;
+};
+
 const DIVISION_LABELS: Record<string, string> = {
   Foundation: "Основа",
   Builder: "Развитие",
@@ -56,6 +61,7 @@ export default function WeeklyLeaguePanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
+  const [clubInvite, setClubInvite] = useState<ClubInvite | null>(null);
 
   const loadWeekly = useCallback(async () => {
     setLoading(true);
@@ -82,15 +88,42 @@ export default function WeeklyLeaguePanel() {
   const yourRank = typeof board?.your_rank === "number" ? board.your_rank : null;
   const isSoloBeta = Boolean(board?.beta && (board.participants ?? entries.length) === 1);
 
+  useEffect(() => {
+    if (!isSoloBeta) {
+      setClubInvite(null);
+      return;
+    }
+    let cancelled = false;
+    authApi.get("/api/clubs/mine").then((response) => {
+      if (cancelled) return;
+      const clubs = Array.isArray(response.data?.clubs) ? response.data.clubs : [];
+      const inviteClub = clubs.find((club: { name?: unknown; invite_code?: unknown }) =>
+        typeof club.invite_code === "string" && club.invite_code.length > 0
+      );
+      setClubInvite(inviteClub ? {
+        name: typeof inviteClub.name === "string" ? inviteClub.name : "клуба",
+        invite_code: inviteClub.invite_code,
+      } : null);
+    }).catch(() => {
+      if (!cancelled) setClubInvite(null);
+    });
+    return () => { cancelled = true; };
+  }, [isSoloBeta]);
+
   const copyInviteLink = useCallback(async () => {
     const inviteLink = `${window.location.origin}/`;
+    const inviteText = clubInvite
+      ? `Endurance Fantasy League: ${inviteLink}\\nКод клуба «${clubInvite.name}»: ${clubInvite.invite_code}`
+      : inviteLink;
     try {
-      await navigator.clipboard.writeText(inviteLink);
-      setCopyMessage("Ссылка скопирована. Позови друзей в лигу!");
+      await navigator.clipboard.writeText(inviteText);
+      setCopyMessage(clubInvite
+        ? "Ссылка и код клуба скопированы. Позови друзей!"
+        : "Ссылка скопирована. Позови друзей в лигу!");
     } catch {
-      setCopyMessage(`Скопируй ссылку вручную: ${inviteLink}`);
+      setCopyMessage(`Скопируй вручную: ${inviteText}`);
     }
-  }, []);
+  }, [clubInvite]);
 
   return (
     <section className="border-2 border-black bg-white" aria-labelledby="weekly-league-heading">
@@ -123,7 +156,7 @@ export default function WeeklyLeaguePanel() {
                 <p className="font-display text-xl uppercase">Ты первый, позови друзей</p>
                 <p className="mt-1 text-sm text-[#555]">Скопируй ссылку на Endurance Fantasy League и пригласи друзей соревноваться вместе.</p>
                 <button type="button" onClick={() => void copyInviteLink()} className="mt-3 border-2 border-black bg-[#ffd500] px-4 py-3 text-xs font-bold uppercase tracking-wide hover:bg-black hover:text-white">
-                  <span aria-hidden="true">↗ </span>Скопировать ссылку
+                  <span aria-hidden="true">↗ </span>{clubInvite ? "Скопировать ссылку и код клуба" : "Скопировать ссылку"}
                 </button>
                 {copyMessage && <p role="status" className="mt-2 text-xs font-semibold text-[#333]">{copyMessage}</p>}
               </div>
