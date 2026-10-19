@@ -200,7 +200,7 @@ export default function QuestsBoard({ quests, loading, error, onRetry }: Props) 
   const allAvailableEarned = lifetimeModel.allAvailableEarned;
   const visibleLifetimeQuests = allAvailableEarned
     ? (expandedLifetime ? lifetimeModel.all : [])
-    : (showEarnedLifetime ? lifetimeModel.all : lifetimeModel.unearned);
+    : lifetimeModel.unearned;
   const weekStart = weeklyQuests.find((quest) => quest.week_start)?.week_start;
 
   const renderCards = (items: Quest[]) => (
@@ -346,6 +346,7 @@ export default function QuestsBoard({ quests, loading, error, onRetry }: Props) 
                       </button>
                     </div>
                   )}
+                  {showEarnedLifetime && renderCards(lifetimeModel.earned)}
                 </>
               )}
             </section>
