@@ -127,7 +127,7 @@ test("activity XP card separates attached achievements from general bonuses", ()
   assert.match(xpDetails, /Достижения за эту тренировку/);
   assert.match(xpDetails, /activityAwardsTotal/);
   assert.match(xpDetails, /for_this_activity_xp/);
-  assert.match(activityCard, /<ActivityXpDetails act=\{act\} \/>/);
+  assert.match(activityCard, /<ActivityXpDetails act=\{act\} enabled=\{open\} \/>/);
   assert.doesNotMatch(xpDetails, /Общие бонусы дня|Общие бонусы недели|Регулярность \(за день\)|Quality \(за неделю\)|Квесты дня/);
   assert.match(questsBoard, /dailyBonusDays/);
   assert.match(questsBoard, /Дневные бонусы за выбранную неделю/);
