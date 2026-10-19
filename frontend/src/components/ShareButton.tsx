@@ -38,11 +38,6 @@ export default function ShareButton({ data, label = "Поделиться" }: Pr
     if (!open) return;
     let cancelled = false;
     let url = "";
-    setBusy(true);
-    setError("");
-    setBlob(null);
-    setPreviewUrl("");
-    setCanShareFiles(false);
 
     renderShareImage(imageInput, {
       square,
@@ -73,6 +68,19 @@ export default function ShareButton({ data, label = "Поделиться" }: Pr
       if (url) URL.revokeObjectURL(url);
     };
   }, [open, imageInput, square, textTheme, includeName, includeLeagueRank]);
+
+  const resetPreviewForRender = () => {
+    setBusy(true);
+    setError("");
+    setBlob(null);
+    setPreviewUrl("");
+    setCanShareFiles(false);
+  };
+
+  const openDialog = () => {
+    resetPreviewForRender();
+    setOpen(true);
+  };
 
   const download = () => {
     if (!blob) return;
@@ -106,7 +114,7 @@ export default function ShareButton({ data, label = "Поделиться" }: Pr
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={openDialog}
         className="inline-flex items-center justify-center gap-2 border-2 border-black bg-white px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors hover:bg-[#ffd500] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5866f2]"
       >
         <span aria-hidden="true">↗</span>{label}
@@ -148,24 +156,24 @@ export default function ShareButton({ data, label = "Поделиться" }: Pr
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <label className="flex items-center gap-2 border-2 border-black bg-white p-2 text-xs font-bold">
-                  <input type="checkbox" checked={square} onChange={(event) => setSquare(event.target.checked)} />
+                  <input type="checkbox" checked={square} onChange={(event) => { resetPreviewForRender(); setSquare(event.target.checked); }} />
                   Квадрат 1080×1080
                 </label>
                 <label className="flex items-center gap-2 border-2 border-black bg-white p-2 text-xs font-bold">
-                  <input type="checkbox" checked={includeName} onChange={(event) => setIncludeName(event.target.checked)} disabled={!data.userName} />
+                  <input type="checkbox" checked={includeName} onChange={(event) => { resetPreviewForRender(); setIncludeName(event.target.checked); }} disabled={!data.userName} />
                   Добавить имя
                 </label>
                 {data.leagueRank != null && data.kind === "week" && (
                   <label className="col-span-2 flex items-center gap-2 border-2 border-black bg-white p-2 text-xs font-bold">
-                    <input type="checkbox" checked={includeLeagueRank} onChange={(event) => setIncludeLeagueRank(event.target.checked)} />
+                    <input type="checkbox" checked={includeLeagueRank} onChange={(event) => { resetPreviewForRender(); setIncludeLeagueRank(event.target.checked); }} />
                     Добавить место в лиге
                   </label>
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="mr-1 text-[10px] font-bold uppercase tracking-widest text-[#666]">Текст</span>
-                <button type="button" aria-pressed={textTheme === "light"} onClick={() => setTextTheme("light")} className={`border-2 border-black px-3 py-2 text-xs font-bold ${textTheme === "light" ? "bg-black text-white" : "bg-white"}`}>Светлый</button>
-                <button type="button" aria-pressed={textTheme === "dark"} onClick={() => setTextTheme("dark")} className={`border-2 border-black px-3 py-2 text-xs font-bold ${textTheme === "dark" ? "bg-black text-white" : "bg-white"}`}>Тёмный</button>
+                <button type="button" aria-pressed={textTheme === "light"} onClick={() => { resetPreviewForRender(); setTextTheme("light"); }} className={`border-2 border-black px-3 py-2 text-xs font-bold ${textTheme === "light" ? "bg-black text-white" : "bg-white"}`}>Светлый</button>
+                <button type="button" aria-pressed={textTheme === "dark"} onClick={() => { resetPreviewForRender(); setTextTheme("dark"); }} className={`border-2 border-black px-3 py-2 text-xs font-bold ${textTheme === "dark" ? "bg-black text-white" : "bg-white"}`}>Тёмный</button>
               </div>
               {error && <p role="alert" className="text-sm font-bold text-[#b91c1c]">{error}</p>}
               <div className="flex flex-wrap gap-2">
