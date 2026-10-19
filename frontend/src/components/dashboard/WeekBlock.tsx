@@ -1,9 +1,10 @@
 import { formatWeekRange } from "@/lib/format";
 import { HelpTip } from "@/components/ui";
+import ShareButton from "@/components/ShareButton";
 
 export default function WeekBlock({
   weekData, weekOptions, selectedWeekStart, onWeekChange, onPreviousWeek, onNextWeek,
-  canGoPrevious, canGoNext, onPauseClick, onDeloadAction, deloadBusy, deloadError,
+  canGoPrevious, canGoNext, onPauseClick, onDeloadAction, deloadBusy, deloadError, userName,
 }: {
   weekData: any;
   weekOptions: { week_start: string; label: string }[];
@@ -17,6 +18,7 @@ export default function WeekBlock({
   onDeloadAction: (enable: boolean) => void;
   deloadBusy: boolean;
   deloadError: string;
+  userName?: string;
 }) {
   if (!weekData) return null;
   const pct = Math.min(Math.max(weekData.completion_ratio || 0, 0), 150);
@@ -156,7 +158,18 @@ export default function WeekBlock({
             «Нагрузка» — XP за нагрузку тренировок. «Цель» — награда за выполнение недельной цели, максимум до 120%. «Регулярность» — награда за 5 тренировочных дней и дневные бонусы +20 XP (до 7 дней). «Качество» — за высокую интенсивность и длинные тренировки. «Восстановление» — награда за 5 хороших ночей и бонусы сна. «Квесты и бонусы» — остальные достижения, станок и +12 XP за каждую не ручную тренировку от 45 минут.
           </HelpTip>
         </div>
-        <span className="font-display text-2xl text-[#ff4b26]">+{Math.round(Number(weekData.total_xp) || 0)}</span>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <span className="font-display text-2xl text-[#ff4b26]">+{Math.round(Number(weekData.total_xp) || 0)}</span>
+          <ShareButton data={{
+            kind: "week",
+            xp: Number(weekData.total_xp) || 0,
+            weekStart: selectedWeekStart,
+            goalPercent: pct,
+            trainingDays: Number(weekData.training_days) || 0,
+            leagueRank: weekData.league_rank ?? null,
+            userName,
+          }} />
+        </div>
       </div>
 
       {/* Разбивка XP */}
