@@ -23,7 +23,7 @@ from app.dependencies import get_current_user
 from app.models import Activity, ActivityCheckIn, MorningCheckIn, User, Wellness
 from app.routers import personal_analysis
 from app.rate_limit import limiter
-from app.services.personal_interpretation import PersonalInterpretation
+from app.services.personal_interpretation import PersonalInterpretation, PersonalInterpretationError
 from app.services.personal_trends import activity_local_date, build_personal_trends
 
 TEST_ENGINE = create_engine(
@@ -433,6 +433,56 @@ class PersonalTrendApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 503)
         self.assertIn("GROQ_API_KEY", response.json()["detail"])
+
+    @patch("app.routers.personal_analysis.generate_personal_interpretation")
+    def test_interpretation_skips_groq_when_data_is_insufficient(self, generate):
+        with TestSession() as db:
+            db.query(MorningCheckIn).delete()
+            db.commit()
+
+        with patch("app.routers.personal_analysis.local_today", return_value=TODAY):
+            response = self.client.post("/api/personal-analysis/interpretation")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "insufficient_data")
+        self.assertIsNone(body["analysis"])
+        self.assertIn("message", body)
+        generate.assert_not_called()
+
+    @patch("app.routers.personal_analysis.get_settings")
+    @patch("app.routers.personal_analysis.generate_personal_interpretation")
+    def test_provider_errors_are_sanitized(self, generate, get_settings):
+        get_settings.return_value = SimpleNamespace(
+            GROQ_API_KEY="test-key",
+            GROQ_MODEL="openai/gpt-oss-20b",
+            GROQ_TIMEOUT_SECONDS=20,
+        )
+        generate.side_effect = PersonalInterpretationError("provider raw response and secret")
+        with patch("app.routers.personal_analysis.local_today", return_value=TODAY):
+            response = self.client.post("/api/personal-analysis/interpretation")
+
+        self.assertEqual(response.status_code, 502)
+        self.assertNotIn("provider raw response", response.text)
+        self.assertNotIn("secret", response.text)
+        self.assertIn("не удалось получить корректный ответ", response.json()["detail"].lower())
+
+    def test_interpretation_requires_authentication(self):
+        app = FastAPI()
+        app.state.limiter = limiter
+        app.include_router(personal_analysis.router)
+
+        def override_db():
+            db = TestSession()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_db
+        with TestClient(app) as client:
+            response = client.post("/api/personal-analysis/interpretation")
+        self.assertEqual(response.status_code, 401)
 
     def test_interpretation_days_query_is_bounded(self):
         response = self.client.post("/api/personal-analysis/interpretation?days=100")
