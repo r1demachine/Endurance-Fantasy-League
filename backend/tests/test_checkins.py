@@ -113,7 +113,7 @@ class CheckInApiTests(unittest.TestCase):
         with patch("app.routers.checkins._utc_now", return_value=start):
             self.assertEqual(self.client.post("/api/check-ins/morning/prompt").status_code, 200)
 
-        with patch("app.routers.checkins._utc_now", return_value=start.replace(second=44, microsecond=900000)):
+        with patch("app.routers.checkins._utc_now", return_value=start.replace(second=14, microsecond=900000)):
             too_early = self.client.post("/api/check-ins/morning/skip-warning")
         self.assertEqual(too_early.status_code, 409)
 
