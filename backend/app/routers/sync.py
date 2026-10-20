@@ -2496,7 +2496,7 @@ async def delete_training_data_source(
     db.query(LeagueMembership).filter(LeagueMembership.user_id == current.id).delete(synchronize_session=False)
     db.query(NotificationLog).filter(NotificationLog.user_id == current.id).delete(synchronize_session=False)
     db.query(LeagueRankSnapshot).filter(LeagueRankSnapshot.user_id == current.id).delete(synchronize_session=False)
-    db.query(StreakRestDay).filter(StreakRestDay.user_id == current.id).delete(synchronize_session=False)
+
 
     if xp_engine == "v6":
         # First pass rebuilds weekly summaries/events; second pass evaluates
