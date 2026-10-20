@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: Optional[str] = None
     GROQ_MODEL: str = "openai/gpt-oss-20b"
     GROQ_TIMEOUT_SECONDS: int = Field(default=20, ge=1, le=60)
+    PERSONAL_ANALYSIS_AI_ENABLED: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",
