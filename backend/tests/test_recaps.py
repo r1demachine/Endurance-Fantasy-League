@@ -21,6 +21,7 @@ from app.models import (
 )
 from app.routers import season as season_router
 from app.routers import recaps as recaps_router
+from app.routers.duels import _serialize as serialize_duel
 from app.services.seasons import current_season, longest_consecutive_streak
 
 
@@ -261,6 +262,47 @@ class RecapTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["is_final"])
         self.assertEqual(response.json()["season"]["start"], previous_month.isoformat())
+
+    def test_finished_duel_compares_all_six_xp_aspects(self):
+        monday = self.last_completed_monday()
+        self.add_week(
+            self.owner, monday, total_xp=300,
+            effort_xp=80, goal_xp=20, consistency_xp=30,
+            quality_xp=25, recovery_xp=15, quest_xp=40,
+        )
+        self.add_week(
+            self.other, monday, total_xp=280,
+            effort_xp=60, goal_xp=20, consistency_xp=40,
+            quality_xp=10, recovery_xp=20, quest_xp=35,
+        )
+        week_dt = datetime.combine(monday, datetime.min.time())
+        duel = Duel(
+            challenger_id=self.owner.id,
+            opponent_id=self.other.id,
+            week_start=week_dt,
+            status=DuelStatus.FINISHED.value,
+            challenger_xp=300,
+            opponent_xp=280,
+            winner_id=self.owner.id,
+            pair_low_id=min(self.owner.id, self.other.id),
+            pair_high_id=max(self.owner.id, self.other.id),
+            finished_at=week_dt + timedelta(days=7),
+        )
+        self.db.add(duel)
+        self.db.commit()
+
+        payload = serialize_duel(duel, self.owner.id, self.db)
+        aspects = payload["aspects"]
+        self.assertEqual(
+            set(aspects),
+            {"effort", "goal", "consistency", "quality", "recovery", "quests"},
+        )
+        self.assertEqual(aspects["effort"]["winner"], "me")
+        self.assertEqual(aspects["goal"]["winner"], "draw")
+        self.assertEqual(aspects["consistency"]["winner"], "other")
+        self.assertEqual(aspects["quality"]["winner"], "me")
+        self.assertEqual(aspects["recovery"]["winner"], "other")
+        self.assertEqual(aspects["quests"]["winner"], "me")
 
     def test_longest_consecutive_streak_uses_unique_calendar_days(self):
         self.assertEqual(
