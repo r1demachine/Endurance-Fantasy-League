@@ -4,6 +4,7 @@ Only aggregate trends are sent to the provider. No account identifiers, raw acti
 per-day dates, or check-in records are included in the model input.
 """
 import json
+import logging
 from typing import Annotated, Any
 
 import httpx
@@ -11,10 +12,22 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions"
+logger = logging.getLogger(__name__)
 
 
 class PersonalInterpretationError(RuntimeError):
-    """Raised when Groq is unavailable or returns an invalid response."""
+    """Sanitized provider failure details safe for server logs and UI messages."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        category: str = "unknown",
+        upstream_status: int | None = None,
+    ):
+        super().__init__(message)
+        self.category = category
+        self.upstream_status = upstream_status
 
 
 class PersonalInterpretation(BaseModel):
@@ -145,12 +158,40 @@ def generate_personal_interpretation(
             timeout=timeout_seconds,
         )
         response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        # Keep only the HTTP status. Never log the response body or authorization header.
+        raise PersonalInterpretationError(
+            "Groq rejected the request",
+            category="upstream_http_error",
+            upstream_status=exc.response.status_code,
+        ) from exc
+    except httpx.TimeoutException as exc:
+        raise PersonalInterpretationError(
+            "Groq request timed out",
+            category="timeout",
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise PersonalInterpretationError(
+            "Groq connection failed",
+            category="connection_error",
+        ) from exc
+
+    try:
         body = response.json()
         content = body["choices"][0]["message"]["content"]
         if not isinstance(content, str) or not content.strip():
             raise ValueError("Groq returned an empty message")
         decoded = json.loads(content)
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise PersonalInterpretationError(
+            "Groq returned an invalid response",
+            category="invalid_response",
+        ) from exc
+
+    try:
         return PersonalInterpretation.model_validate(decoded)
-    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError, ValidationError) as exc:
-        # Do not forward or log the provider body: it can contain internal request details.
-        raise PersonalInterpretationError("Groq failed or returned invalid JSON") from exc
+    except ValidationError as exc:
+        raise PersonalInterpretationError(
+            "Groq returned an unexpected JSON schema",
+            category="invalid_schema",
+        ) from exc
