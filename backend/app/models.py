@@ -567,3 +567,45 @@ class ClubJoinRequest(Base):
     __table_args__ = (
         Index("uq_club_join_pending", "club_id", "user_id", unique=True),
     )
+
+
+class MorningCheckIn(Base):
+    """One private morning check-in state per user and their local calendar day."""
+    __tablename__ = "morning_checkins"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    local_date = Column(Date, nullable=False)
+    status = Column(String(16), nullable=False, default="pending", server_default="pending")
+    prompted_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    skip_warning_at = Column(DateTime, nullable=True)
+    readiness = Column(Integer, nullable=True)
+    fatigue = Column(Integer, nullable=True)
+    soreness = Column(Integer, nullable=True)
+    wellbeing = Column(Integer, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "local_date", name="uq_morning_checkins_user_date"),
+        Index("idx_morning_checkins_user_date", "user_id", "local_date"),
+    )
+
+
+class ActivityCheckIn(Base):
+    """Private subjective effort and comfort entry for one owned activity."""
+    __tablename__ = "activity_checkins"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    activity_id = Column(Integer, ForeignKey("activities.id", ondelete="CASCADE"), nullable=False)
+    rpe = Column(Integer, nullable=False)
+    load_expectation = Column(String(20), nullable=True)
+    discomfort = Column(String(20), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("activity_id", name="uq_activity_checkins_activity"),
+        Index("idx_activity_checkins_user_updated", "user_id", "updated_at"),
+    )

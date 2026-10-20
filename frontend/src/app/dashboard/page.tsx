@@ -20,6 +20,7 @@ import TodayCard from "@/components/dashboard/TodayCard";
 import ProfileSettingsModal, { type SettingsTab } from "@/components/ProfileSettingsModal";
 import { useSeason } from "@/lib/seasons";
 import { PreviousWeekRecapBanner, SeasonRecapCard, WeekRecapCard } from "@/components/dashboard/RecapCards";
+import CheckInsPanel from "@/components/CheckInsPanel";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -389,6 +390,14 @@ export default function Dashboard() {
               error={todayError}
               onRetry={() => void loadToday()}
               onOpenSources={openSourceSettings}
+            />
+          </motion.div>
+        )}
+
+        {isAuthed && !isEmpty && (
+          <motion.div variants={sectionItemVariants} custom={transitionDirection}>
+            <CheckInsPanel
+              recentActivities={Array.isArray(data.recent_activities) ? data.recent_activities : []}
             />
           </motion.div>
         )}
