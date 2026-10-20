@@ -350,7 +350,7 @@ export default function Dashboard() {
           </Link>
         </motion.header>
 
-        {isAuthed && !isEmpty && <motion.div variants={sectionItemVariants} custom={transitionDirection}><PreviousWeekRecapBanner /></motion.div>}
+        {isAuthed && !isEmpty && <motion.div variants={sectionItemVariants} custom={transitionDirection}><PreviousWeekRecapBanner userName={typeof data.user?.name === "string" ? data.user.name : undefined} /></motion.div>}
 
         {dashboardError && <motion.div variants={sectionItemVariants} custom={transitionDirection}><ErrorState message={dashboardError} onRetry={() => window.location.reload()} /></motion.div>}
 
