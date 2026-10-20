@@ -39,11 +39,16 @@ function PreviousDuelRecapBanner({ duel }: { duel: Duel }) {
   useEffect(() => {
     const day = new Date().getDay();
     if (day !== 1 && day !== 2) return;
-    try {
-      setVisible(window.localStorage.getItem(key) !== "1");
-    } catch {
-      setVisible(true);
-    }
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      try {
+        setVisible(window.localStorage.getItem(key) !== "1");
+      } catch {
+        setVisible(true);
+      }
+    });
+    return () => { cancelled = true; };
   }, [key]);
 
   const dismiss = () => {
