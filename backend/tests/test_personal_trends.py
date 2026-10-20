@@ -22,6 +22,8 @@ from app.database import Base, get_db
 from app.dependencies import get_current_user
 from app.models import Activity, ActivityCheckIn, MorningCheckIn, User, Wellness
 from app.routers import personal_analysis
+from app.rate_limit import limiter
+from app.services.personal_interpretation import PersonalInterpretation
 from app.services.personal_trends import activity_local_date, build_personal_trends
 
 TEST_ENGINE = create_engine(
@@ -336,6 +338,7 @@ class PersonalTrendApiTests(unittest.TestCase):
 
         self.current_user = SimpleNamespace(id=self.owner_id, timezone_name="UTC")
         self.app = FastAPI()
+        self.app.state.limiter = limiter
         self.app.include_router(personal_analysis.router)
 
         def override_db():
@@ -384,3 +387,53 @@ class PersonalTrendApiTests(unittest.TestCase):
         with TestClient(app) as client:
             response = client.get("/api/personal-analysis/trends")
         self.assertEqual(response.status_code, 401)
+
+
+    @patch("app.routers.personal_analysis.get_settings")
+    @patch("app.routers.personal_analysis.generate_personal_interpretation")
+    def test_interpretation_endpoint_returns_validated_private_analysis(self, generate, get_settings):
+        get_settings.return_value = SimpleNamespace(
+            GROQ_API_KEY="test-key",
+            GROQ_MODEL="openai/gpt-oss-20b",
+            GROQ_TIMEOUT_SECONDS=20,
+        )
+        generate.return_value = PersonalInterpretation(
+            headline="Покрытие уже позволяет сравнение",
+            summary="В доступных утренних отметках средняя готовность в текущем окне выше предыдущего.",
+            positive_signals=["В обоих окнах есть несколько завершённых утренних чек-инов."],
+            caution_signals=[],
+            practical_next_steps=["Продолжай заполнять чек-ин для более устойчивых сравнений."],
+            data_limitations=["Доступны только записи, сохранённые в EFL."],
+        )
+
+        with patch("app.routers.personal_analysis.local_today", return_value=TODAY):
+            response = self.client.post("/api/personal-analysis/interpretation")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "ready")
+        self.assertEqual(body["provider"], "groq")
+        self.assertEqual(body["model"], "openai/gpt-oss-20b")
+        self.assertEqual(body["analysis"]["headline"], "Покрытие уже позволяет сравнение")
+        self.assertIn("data_quality", body)
+        trends = generate.call_args.args[0]
+        self.assertNotIn("user_id", trends)
+        self.assertEqual(trends["period"]["days"], 28)
+
+    @patch("app.routers.personal_analysis.get_settings")
+    def test_interpretation_requires_server_groq_key(self, get_settings):
+        get_settings.return_value = SimpleNamespace(
+            GROQ_API_KEY=None,
+            GROQ_MODEL="openai/gpt-oss-20b",
+            GROQ_TIMEOUT_SECONDS=20,
+        )
+
+        with patch("app.routers.personal_analysis.local_today", return_value=TODAY):
+            response = self.client.post("/api/personal-analysis/interpretation")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("GROQ_API_KEY", response.json()["detail"])
+
+    def test_interpretation_days_query_is_bounded(self):
+        response = self.client.post("/api/personal-analysis/interpretation?days=100")
+        self.assertEqual(response.status_code, 422)
