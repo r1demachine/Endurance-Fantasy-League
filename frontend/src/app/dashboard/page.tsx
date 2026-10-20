@@ -376,6 +376,7 @@ export default function Dashboard() {
             </motion.div>
 
             <WeekRecapCard
+              key={selectedWeekStart || weekData?.week_start || ""}
               weekStart={selectedWeekStart || weekData?.week_start || ""}
               userName={typeof data.user?.name === "string" ? data.user.name : undefined}
             />
