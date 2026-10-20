@@ -201,7 +201,7 @@ async def notify_tick(
         overtaken_events.append((entry["user"], entry, text))
 
     # Overtakes are attempted first so they win the one-message-per-day budget.
-    from .notifications import notify_user
+    from ..services.notifications import notify_user
 
     for user, entry, message in overtaken_events:
         await notify_user(db, user.id, "league_overtaken", message, link="/compete", send_telegram=False)
