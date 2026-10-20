@@ -124,15 +124,10 @@ export function calculateShareLayout(square = false): ShareTextLayout {
 }
 
 function resolveLocalFontFamily(): string {
-  const probe = document.createElement("span");
-  probe.className = "font-display";
-  probe.textContent = "fantasy.";
-  probe.style.position = "absolute";
-  probe.style.visibility = "hidden";
-  document.body.appendChild(probe);
-  const family = window.getComputedStyle(probe).fontFamily || window.getComputedStyle(document.body).fontFamily || "sans-serif";
-  probe.remove();
-  return family;
+  // The body uses next/font's self-hosted Inter asset. Do not use .font-display here:
+  // that typeface is imported from Google Fonts and may trigger a cross-origin request.
+  const family = window.getComputedStyle(document.body).fontFamily || "sans-serif";
+  return family.split(",")[0].trim() || "sans-serif";
 }
 
 function wrapMeasuredText(
