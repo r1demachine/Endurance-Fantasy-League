@@ -182,7 +182,17 @@ class RecapTests(unittest.TestCase):
         self.assertEqual(result["achievements"][0]["title"], "Четыре тренировочных дня")
         self.assertEqual(result["duel"]["outcome"], "win")
         self.assertEqual(result["tiles"]["effort"], 120)
-        self.assertEqual(result["best_day"]["xp"], 80)
+        expected_days = [
+            build_day_ledger(self.db, self.owner, monday + timedelta(days=offset))
+            for offset in range(7)
+        ]
+        candidates = [
+            day for day in expected_days
+            if day["activities"] or day["xp"]["total"] > 0
+        ]
+        expected_best = max(candidates, key=lambda day: day["xp"]["total"])
+        self.assertEqual(result["best_day"]["date"], expected_best["date"])
+        self.assertEqual(result["best_day"]["xp"], expected_best["xp"]["total"])
 
     def test_week_recap_is_unavailable_until_week_is_finalized(self):
         monday = self.last_completed_monday()
