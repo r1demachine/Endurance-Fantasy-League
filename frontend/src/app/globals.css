@@ -255,3 +255,45 @@ body {
 [class~="text-[14px]"] { font-size: calc(14px + 2pt); }
 [class~="text-[15px]"] { font-size: calc(15px + 2pt); }
 [class~="text-[16px]"] { font-size: calc(16px + 2pt); }
+
+/* Responsive containment: adapt layout to the viewport, never resize individual text nodes with JS. */
+:where(main, section, article, aside, nav, header, footer, form, fieldset) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+:where(.flex, .grid) > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+:where(h1, h2, h3, h4, h5, h6, p, span, small, strong, em, button, a, label, td, th, [role="button"]) {
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+}
+
+/* Below wide desktop, allow long labels to wrap instead of forcing tiny text or overflowing cards. */
+@media (max-width: 1535px) {
+  :where(.flex, .grid) > * {
+    min-width: 0;
+  }
+
+  [class~="whitespace-nowrap"] {
+    white-space: normal;
+  }
+}
+
+/* Tablet and mobile controls must stay inside their available column width. */
+@media (max-width: 1023px) {
+  :where(button, a, [role="button"], input, select, textarea) {
+    max-width: 100%;
+  }
+}
+

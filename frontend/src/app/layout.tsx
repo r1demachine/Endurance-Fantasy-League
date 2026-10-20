@@ -7,7 +7,6 @@ import DataWarmup from "@/components/DataWarmup";
 import DreamDust from "@/components/DreamDust";
 import ThemeInit from "@/components/ThemeInit";
 import GuidedTour from "@/components/GuidedTour";
-import GlobalAutoFitText from "@/components/GlobalAutoFitText";
 import "./globals.css";
 
 const inter = Inter({
@@ -29,7 +28,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${inter.className} bg-[#171a38] text-white antialiased`}>
         <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 bg-gradient-to-br from-[#171a38] via-[#2a2f6b] to-[#5866f2]" />
         <ThemeInit />
-        <GlobalAutoFitText />
         <Header />
         <TimezoneConfirmation />
         <DreamDust />
