@@ -9,7 +9,7 @@ from ..auth import decrypt_secret, decode_access_token_claims
 from ..database import get_db, SessionLocal
 from ..models import (
     User, Activity, Wellness, Friendship, FriendshipStatus, WeeklySummary, XPEvent,
-    LeagueWeek, LeagueMembership, SyncProgress, NotificationLog, LeagueRankSnapshot,
+    LeagueWeek, LeagueMembership, SyncProgress, NotificationLog, LeagueRankSnapshot, StreakRestDay,
 )
 import asyncio
 from collections import defaultdict
@@ -23,6 +23,7 @@ from typing import Optional, Literal
 
 from ..rate_limit import limiter
 from ..services.deload import cooldown_passed, manual_deload_block_reason, suggestion_is_appropriate
+from ..services.streak import rest_day_decision
 from ..services.league import league_ranking_key
 from ..services.activity_visibility import can_view_activity
 
@@ -1662,6 +1663,7 @@ def _get_current_deload_state(
     baseline = X6.weekly_baseline(prior_loads)
     current_load = week_load.get(current_week_start, 0.0)
     previous_starts = [
+        current_week_start - timedelta(weeks=3),
         current_week_start - timedelta(weeks=2),
         current_week_start - timedelta(weeks=1),
     ]
@@ -1705,7 +1707,7 @@ def _get_current_deload_state(
             current_week_start=current_week_start,
             current_load=current_load,
             baseline=baseline,
-            previous_two_loads=previous_loads,
+            previous_three_loads=previous_loads,
             last_deload_week_start=last_deload_week_start,
             paused=paused,
             manual_decision=manual_decision,
@@ -1716,7 +1718,7 @@ def _get_current_deload_state(
         current_week_start=current_week_start,
         current_load=current_load,
         baseline=baseline,
-        previous_two_loads=previous_loads,
+        previous_three_loads=previous_loads,
         current_day_index=today.weekday(),
         last_deload_week_start=last_deload_week_start,
         paused=paused,
@@ -2086,6 +2088,19 @@ def get_weekly_summary(
             day_ledgers.append(empty_day_ledger(calendar_day))
         else:
             day_ledgers.append(build_day_ledger(db, current, calendar_day))
+    selected_rest_dates = {
+        row.local_date
+        for row in db.query(StreakRestDay.local_date).filter(
+            StreakRestDay.user_id == current.id,
+            StreakRestDay.local_date >= selected_start,
+            StreakRestDay.local_date < selected_start + timedelta(days=7),
+        ).all()
+    }
+    selected_rest_iso = {day.isoformat() for day in selected_rest_dates}
+    for ledger in day_ledgers:
+        ledger["rest_day"] = ledger["date"] in selected_rest_iso
+
+    rest_state = _rest_day_status(db, current, today)
     weekly_bonuses = (
         build_week_bonuses(db, current, selected_start)
         if selected_start <= current_start else []
@@ -2099,7 +2114,76 @@ def get_weekly_summary(
         "is_current_week": selected_start == current_start,
         "days": day_ledgers,
         "week_bonuses": weekly_bonuses,
+        "streak_rest_day": rest_state,
     }
+
+
+def _rest_day_status(db: Session, user: User, today: _date) -> dict:
+    """One explicit rest credit per local calendar week, usable only after a qualifying day."""
+    from ..services.day_ledger import build_day_ledger
+
+    week_start = _monday_for_day(today)
+    rest_dates = {
+        row.local_date
+        for row in db.query(StreakRestDay.local_date).filter(
+            StreakRestDay.user_id == user.id,
+            StreakRestDay.local_date >= week_start,
+            StreakRestDay.local_date < week_start + timedelta(days=7),
+        ).all()
+    }
+    today_ledger = build_day_ledger(db, user, today)
+    yesterday = today - timedelta(days=1)
+    yesterday_ledger = build_day_ledger(db, user, yesterday)
+    yesterday_rest = db.query(StreakRestDay.id).filter(
+        StreakRestDay.user_id == user.id,
+        StreakRestDay.local_date == yesterday,
+    ).first() is not None
+    available, reason = rest_day_decision(
+        today=today,
+        used_dates=rest_dates,
+        has_activity_today=bool(today_ledger.get("activities")),
+        previous_day_credited=bool(yesterday_ledger.get("qualifying") or yesterday_rest),
+    )
+    return {
+        "today": today.isoformat(),
+        "used_this_week": bool(rest_dates),
+        "available": available,
+        "reason": reason,
+    }
+
+
+@router.post("/streak/rest-day")
+@limiter.limit("5/hour")
+async def use_streak_rest_day(
+    request: Request,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Spend one explicit rest-day credit this local week; no XP is granted."""
+    today = _user_local_today(current)
+    state = _rest_day_status(db, current, today)
+    existing_today = db.query(StreakRestDay).filter(
+        StreakRestDay.user_id == current.id,
+        StreakRestDay.local_date == today,
+    ).first()
+    if existing_today is not None:
+        return {"message": "День отдыха уже использован; серия сохранена.", **state}
+    if not state["available"]:
+        raise HTTPException(status_code=409, detail=state["reason"] or "Сейчас нельзя использовать день отдыха.")
+    db.add(StreakRestDay(user_id=current.id, local_date=today))
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        # Repeated concurrent clicks are idempotent when the date was just inserted.
+        existing_today = db.query(StreakRestDay).filter(
+            StreakRestDay.user_id == current.id,
+            StreakRestDay.local_date == today,
+        ).first()
+        if existing_today is None:
+            raise
+    updated = _rest_day_status(db, current, today)
+    return {"message": "День отдыха использован. Серия сохранена, XP за отдых не начисляется.", **updated}
 
 
 @router.get("/today")
@@ -2412,6 +2496,7 @@ async def delete_training_data_source(
     db.query(LeagueMembership).filter(LeagueMembership.user_id == current.id).delete(synchronize_session=False)
     db.query(NotificationLog).filter(NotificationLog.user_id == current.id).delete(synchronize_session=False)
     db.query(LeagueRankSnapshot).filter(LeagueRankSnapshot.user_id == current.id).delete(synchronize_session=False)
+    db.query(StreakRestDay).filter(StreakRestDay.user_id == current.id).delete(synchronize_session=False)
 
     if xp_engine == "v6":
         # First pass rebuilds weekly summaries/events; second pass evaluates
@@ -2457,6 +2542,7 @@ async def reset_all_data(
     db.query(LeagueMembership).filter(LeagueMembership.user_id == current.id).delete(synchronize_session=False)
     db.query(NotificationLog).filter(NotificationLog.user_id == current.id).delete(synchronize_session=False)
     db.query(LeagueRankSnapshot).filter(LeagueRankSnapshot.user_id == current.id).delete(synchronize_session=False)
+    db.query(StreakRestDay).filter(StreakRestDay.user_id == current.id).delete(synchronize_session=False)
     current.legacy_xp_offset = 0.0
     current.xp_migrated_at = None
     current.division_current = None

@@ -41,6 +41,7 @@ class User(Base):
     intervals_id = Column(String, unique=True, index=True, nullable=True)
     api_key_encrypted = Column(String(500), nullable=True)  # шифруется Fernet
     last_full_sync_at = Column(DateTime, nullable=True)  # полный импорт: не чаще раза в час
+    last_auto_sync_at = Column(DateTime, nullable=True)  # последняя попытка фоновой синхронизации
     lthr = Column(Integer, nullable=True)  # пользовательский лактатный порог ЧСС
     max_hr = Column(Integer, nullable=True)  # максимальный пульс пользователя
     resting_hr = Column(Integer, nullable=True)  # пульс в покое для HRSS/TRIMP
@@ -73,6 +74,21 @@ class User(Base):
     
     __table_args__ = (
         Index('idx_users_total_xp', 'total_xp'),
+    )
+
+
+class StreakRestDay(Base):
+    """A user-confirmed rest day that preserves a qualifying-day streak without XP."""
+    __tablename__ = "streak_rest_days"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    local_date = Column(Date, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "local_date", name="uq_streak_rest_day_user_date"),
+        Index("idx_streak_rest_day_user_date", "user_id", "local_date"),
     )
 
 
