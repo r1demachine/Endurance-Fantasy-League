@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from collections import defaultdict
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, or_
@@ -86,24 +85,37 @@ def get_week_recap(
         .all()
     )
 
-    xp_by_day: dict[date, float] = defaultdict(float)
     activity_days: set[date] = set()
     for activity in activities:
         stamp = activity.start_date_local or activity.start_date
         if stamp is not None:
             activity_days.add(stamp.date())
-            xp_by_day[stamp.date()] += float(activity.xp_earned or 0.0)
-    for event in events:
-        if event.date is not None:
-            xp_by_day[event.date.date()] += float(event.amount or 0.0)
 
-    best_day_date = max(xp_by_day, key=xp_by_day.get) if xp_by_day else None
+    # Reuse the dashboard's canonical daily ledger. Weekly-only awards must not be
+    # arbitrarily attributed to the date stored on their XPEvent row.
+    from ..services.day_ledger import build_day_ledger
+
+    day_totals: dict[date, float] = {}
+    best_day_candidates = set(activity_days)
+    for offset in range(7):
+        day = selected_week + timedelta(days=offset)
+        ledger = build_day_ledger(db, current, day)
+        day_total = float((ledger.get("xp") or {}).get("total") or 0.0)
+        day_totals[day] = day_total
+        if day_total > 0:
+            best_day_candidates.add(day)
+
+    best_day_date = (
+        max(best_day_candidates, key=lambda day: day_totals.get(day, 0.0))
+        if best_day_candidates
+        else None
+    )
     best_day = None
     if best_day_date is not None:
         best_day = {
             "date": best_day_date.isoformat(),
             "label": best_day_date.strftime("%d.%m"),
-            "xp": round(xp_by_day[best_day_date], 1),
+            "xp": round(day_totals.get(best_day_date, 0.0), 1),
         }
 
     achievements = [
