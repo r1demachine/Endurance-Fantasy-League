@@ -97,6 +97,8 @@ class PersonalInterpretationServiceTests(unittest.TestCase):
         self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer test-secret")
         request_body = post.call_args.kwargs["json"]
         self.assertEqual(request_body["response_format"], {"type": "json_object"})
+        self.assertEqual(request_body["max_completion_tokens"], 900)
+        self.assertEqual(request_body["temperature"], 0.2)
         user_content = json.loads(request_body["messages"][1]["content"])
         serialized = json.dumps(user_content, ensure_ascii=False)
         self.assertNotIn("private-user", serialized)
