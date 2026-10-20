@@ -83,6 +83,8 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN telegram_link_expires TIMESTAMP"))
             if "telegram_last_notified_week" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN telegram_last_notified_week DATE"))
+            if "notify_prefs" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN notify_prefs TEXT NOT NULL DEFAULT '{}'"))
             if "last_deload_week_start" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN last_deload_week_start DATE"))
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram_chat_id ON users(telegram_chat_id)"))

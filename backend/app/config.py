@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_WEBHOOK_SECRET: Optional[str] = None
     TELEGRAM_BOT_USERNAME: Optional[str] = None
+    # Shared secret for the scheduled internal notification tick.
+    CRON_SECRET: Optional[str] = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -53,6 +55,15 @@ class Settings(BaseSettings):
         if len(v) < 32:
             raise ValueError("JWT_SECRET должен быть не короче 32 символов")
         return v
+
+    @field_validator("CRON_SECRET")
+    @classmethod
+    def _valid_cron_secret(cls, value: Optional[str]) -> Optional[str]:
+        if value is None or value == "":
+            return None
+        if len(value) < 32:
+            raise ValueError("CRON_SECRET должен содержать не менее 32 символов")
+        return value
 
     @field_validator("TELEGRAM_WEBHOOK_SECRET")
     @classmethod
