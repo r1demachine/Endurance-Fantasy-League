@@ -525,12 +525,16 @@ class PersonalAnalysisApiScenarioTests(unittest.TestCase):
         generate.assert_not_called()
 
     @patch("app.routers.personal_analysis.get_settings")
+    @patch("app.routers.personal_analysis.generate_personal_interpretation")
     @patch("app.routers.personal_analysis.local_today", return_value=TODAY)
-    def test_missing_api_key_returns_503_without_provider_call(self, _today, get_settings):
+    def test_missing_api_key_returns_503_without_provider_call(
+        self, _today, generate, get_settings
+    ):
         get_settings.return_value = self.settings(key=None)
         response = self.client.post("/api/personal-analysis/interpretation")
         self.assertEqual(response.status_code, 503)
         self.assertIn("GROQ_API_KEY", response.json()["detail"])
+        generate.assert_not_called()
 
     @patch("app.routers.personal_analysis.get_settings")
     @patch("app.routers.personal_analysis.generate_personal_interpretation")
