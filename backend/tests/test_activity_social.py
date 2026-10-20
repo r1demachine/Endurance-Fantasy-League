@@ -249,7 +249,7 @@ class ActivitySocialTests(unittest.TestCase):
     def test_comment_is_trimmed_and_notifies_with_activity_link(self):
         self.accept_friendship(self.owner, self.viewer)
         with patch("app.services.notifications.publish", new_callable=AsyncMock), patch(
-            "app.services.telegram.notify_telegram_user", new_callable=AsyncMock
+            "app.services.proactive.send_proactive", new_callable=AsyncMock
         ) as proactive_notify:
             response = self.client.post(
                 f"/api/activities/{self.activity.id}/comments",
@@ -360,7 +360,7 @@ class ActivitySocialTests(unittest.TestCase):
     def test_own_activity_comment_creates_no_notification(self):
         self.viewer = self.owner
         with patch("app.services.notifications.publish", new_callable=AsyncMock), patch(
-            "app.services.telegram.notify_telegram_user", new_callable=AsyncMock
+            "app.services.proactive.send_proactive", new_callable=AsyncMock
         ) as proactive_notify:
             response = self.client.post(
                 f"/api/activities/{self.activity.id}/comments",
@@ -408,7 +408,7 @@ class ActivitySocialTests(unittest.TestCase):
     def test_activity_comment_notifications_roll_up_and_reach_telegram(self):
         link = f"/dashboard?activity_id={self.activity.id}&week_start=2026-10-12"
         with patch("app.services.notifications.publish", new_callable=AsyncMock), patch(
-            "app.services.telegram.notify_telegram_user", new_callable=AsyncMock
+            "app.services.proactive.send_proactive", new_callable=AsyncMock
         ) as proactive_notify:
             for name in ("Иван", "Мария", "Пётр"):
                 asyncio.run(notify_user(
