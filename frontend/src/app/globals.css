@@ -224,23 +224,34 @@ b, strong, .font-bold, .font-extrabold, .font-black {
   }
 }
 
-/* Stable typography across viewport sizes. Layout adapts; the type scale does not. */
-:root { font-size: 16px; }
-
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
+/* Global +2pt typography scale, preserving each component's original layout. */
+:root {
+  --text-xs: calc(0.75rem + 2pt);
+  --text-sm: calc(0.875rem + 2pt);
+  --text-base: calc(1rem + 2pt);
+  --text-lg: calc(1.125rem + 2pt);
+  --text-xl: calc(1.25rem + 2pt);
+  --text-2xl: calc(1.5rem + 2pt);
+  --text-3xl: calc(1.875rem + 2pt);
+  --text-4xl: calc(2.25rem + 2pt);
+  --text-5xl: calc(3rem + 2pt);
+  --text-6xl: calc(3.75rem + 2pt);
+  --text-7xl: calc(4.5rem + 2pt);
+  --text-8xl: calc(6rem + 2pt);
+  --text-9xl: calc(8rem + 2pt);
 }
 
-img,
-svg,
-video,
-canvas {
-  max-width: 100%;
+body {
+  font-size: calc(1rem + 2pt);
 }
 
-:where(p, h1, h2, h3, h4, h5, h6) {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
+/* Tailwind arbitrary pixel text sizes also receive the global increase. */
+[class~="text-[8px]"] { font-size: calc(8px + 2pt); }
+[class~="text-[9px]"] { font-size: calc(9px + 2pt); }
+[class~="text-[10px]"] { font-size: calc(10px + 2pt); }
+[class~="text-[11px]"] { font-size: calc(11px + 2pt); }
+[class~="text-[12px]"] { font-size: calc(12px + 2pt); }
+[class~="text-[13px]"] { font-size: calc(13px + 2pt); }
+[class~="text-[14px]"] { font-size: calc(14px + 2pt); }
+[class~="text-[15px]"] { font-size: calc(15px + 2pt); }
+[class~="text-[16px]"] { font-size: calc(16px + 2pt); }

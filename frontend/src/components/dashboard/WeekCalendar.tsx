@@ -441,7 +441,7 @@ export default function WeekCalendar({
               </button>
             </div>
           )}
-          <div className="grid min-w-0 grid-cols-1 gap-3 p-3 xl:grid-cols-7 xl:gap-2 xl:p-2">
+          <div className="grid min-w-0 grid-cols-1 gap-3 p-3 lg:grid-cols-7 lg:gap-2 lg:p-2">
             {ledgerDays.map((day) => (
               <DayColumn
                 key={day.date}

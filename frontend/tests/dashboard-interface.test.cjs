@@ -228,14 +228,17 @@ test("the obsolete per-workout +12 XP bonus is no longer generated or displayed"
   assert.ok(xpDetails.includes("activityEvents = (activityAwards?.events ?? []).filter"));
 });
 
-test("typography keeps a stable scale and long text stays within its container", () => {
+test("typography increases the global scale by two points and fits overflowing labels", () => {
   const css = read("src/app/globals.css");
-  assert.ok(css.includes(":root { font-size: 16px; }"));
-  assert.ok(css.includes("box-sizing: border-box"));
-  assert.ok(css.includes("overflow-wrap: anywhere"));
-  assert.ok(css.includes("max-width: 100%"));
-  assert.equal(css.includes("font-size: calc(1rem + 1pt)"), false);
-  assert.equal(css.includes("font-size: calc(10px + 1pt)"), false);
+  const fit = read("src/components/GlobalAutoFitText.tsx");
+  assert.ok(css.includes("--text-base: calc(1rem + 2pt)"));
+  assert.ok(css.includes("--text-sm: calc(0.875rem + 2pt)"));
+  assert.ok(css.includes("font-size: calc(10px + 2pt)"));
+  assert.ok(fit.includes("MutationObserver"));
+  assert.ok(fit.includes("scrollWidth"));
+  assert.ok(fit.includes("whiteSpace = \"nowrap\""));
+  assert.ok(fit.includes("MIN_FONT_SIZE_PX"));
+  assert.equal(css.includes("overflow-wrap: anywhere"), false);
   assert.ok(css.includes("prefers-reduced-motion: reduce"));
 });
 
@@ -333,6 +336,17 @@ test("manual rest-day token is represented in calendar and cooperative streak re
 
 test("calendar uses seven columns only once sufficient horizontal space is available", () => {
   const calendar = read("src/components/dashboard/WeekCalendar.tsx");
-  assert.ok(calendar.includes("xl:grid-cols-7"));
-  assert.equal(calendar.includes("lg:grid-cols-7"), false);
+  assert.ok(calendar.includes("lg:grid-cols-7"));
+  assert.equal(calendar.includes("xl:grid-cols-7"), false);
+});
+
+
+test("global autofit is mounted once at the root and restores styles on teardown", () => {
+  const layout = read("src/app/layout.tsx");
+  const fit = read("src/components/GlobalAutoFitText.tsx");
+  assert.ok(layout.includes("<GlobalAutoFitText />"));
+  assert.ok(fit.includes("ResizeObserver") === false);
+  assert.ok(fit.includes("window.addEventListener(\"resize\""));
+  assert.ok(fit.includes("window.cancelAnimationFrame"));
+  assert.ok(fit.includes("overflowWrap"));
 });
