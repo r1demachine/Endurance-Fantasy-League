@@ -29,7 +29,7 @@ export default function Header() {
       {/* ── ДЕСКТОП: шапка сверху ── */}
       {!isHome && (
         <>
-          <header className="hidden md:block fixed top-0 left-0 right-0 z-[60] w-full isolate text-[#111] pointer-events-none">
+          <header className="hidden lg:block fixed top-0 left-0 right-0 z-[60] w-full isolate text-[#111] pointer-events-none">
             <Star className="absolute w-4 h-4 text-white/70 top-2 left-[3%] animate-pulse pointer-events-none" />
             <Star className="absolute w-3 h-3 text-[#ffd500] bottom-1 right-[4%] animate-pulse pointer-events-none" />
 
@@ -73,11 +73,11 @@ export default function Header() {
               </div>
             </div>
           </header>
-          <div className="hidden md:block h-[72px] lg:h-[88px]" aria-hidden="true" />
+          <div className="hidden lg:block h-[72px] lg:h-[88px]" aria-hidden="true" />
         </>
       )}
 
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[60] bg-[#f4f4f0] text-[#111] border-t-2 border-black flex items-stretch pb-[env(safe-area-inset-bottom)]">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-[60] bg-[#f4f4f0] text-[#111] border-t-2 border-black flex items-stretch pb-[env(safe-area-inset-bottom)]">
         {links.map((link) => {
           const isActive = isLinkActive(link.href);
           return (

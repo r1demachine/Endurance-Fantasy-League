@@ -228,18 +228,16 @@ test("the obsolete per-workout +12 XP bonus is no longer generated or displayed"
   assert.ok(xpDetails.includes("activityEvents = (activityAwards?.events ?? []).filter"));
 });
 
-test("typography uses CSS-authored sizes and viewport-aware containment instead of per-element autofit", () => {
+test("typography uses original Tailwind sizes with wrapping and bounded display headings", () => {
   const css = read("src/app/globals.css");
-  const layout = read("src/app/layout.tsx");
-  assert.ok(css.includes("--text-base: calc(1rem + 2pt)"));
-  assert.ok(css.includes("--text-sm: calc(0.875rem + 2pt)"));
-  assert.ok(css.includes("font-size: calc(10px + 2pt)"));
-  assert.ok(css.includes("@media (max-width: 1535px)"));
-  assert.ok(css.includes('[class~="whitespace-nowrap"] {\n    white-space: normal;'));
+  assert.equal(css.includes("font-size: calc(1rem + 1pt)"), false);
+  assert.equal(css.includes("font-size: calc(1rem + 2pt)"), false);
+  assert.ok(css.includes(".font-display {\n  overflow-wrap: anywhere;"));
+  assert.ok(css.includes("font-size: clamp(1.75rem, 4vw + 0.75rem, 3.75rem) !important"));
   assert.ok(css.includes(":where(.flex, .grid) > *"));
-  assert.ok(css.includes("overflow-wrap: break-word"));
-  assert.equal(css.includes("overflow-wrap: anywhere"), false);
-  assert.equal(layout.includes("GlobalAutoFitText"), false);
+  assert.ok(css.includes("hyphens: auto"));
+  assert.ok(css.includes("white-space: normal"));
+  assert.equal(css.includes("overflow-x: hidden;"), true);
 });
 
 
@@ -350,4 +348,12 @@ test("viewport-aware text containment does not use a global DOM resizer", () => 
   assert.ok(css.includes("@media (max-width: 1535px)"));
   assert.ok(css.includes("@media (max-width: 1023px)"));
   assert.ok(css.includes("overflow-wrap: break-word"));
+});
+
+test("header switches to mobile navigation at the lg breakpoint", () => {
+  const header = read("src/components/Header.tsx");
+  assert.ok(header.includes("hidden lg:block fixed top-0"));
+  assert.ok(header.includes("lg:hidden fixed bottom-0"));
+  assert.ok(header.includes("hidden lg:block h-[72px]"));
+  assert.equal(header.includes("md:hidden fixed bottom-0"), false);
 });

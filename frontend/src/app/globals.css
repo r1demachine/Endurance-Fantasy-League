@@ -21,6 +21,7 @@ html,
 body {
   /* Убираем любой gradient, оставляем только плоский цвет подложки */
   background-color: #171a38;
+
   color: white;
   /* Запрещаем горизонтальный скролл, чтобы фон не растягивался */
   overflow-x: hidden; 
@@ -224,76 +225,71 @@ b, strong, .font-bold, .font-extrabold, .font-black {
   }
 }
 
-/* Global +2pt typography scale, preserving each component's original layout. */
+/* Increase ordinary UI text by one point; display headings keep their original scale. */
 :root {
-  --text-xs: calc(0.75rem + 2pt);
-  --text-sm: calc(0.875rem + 2pt);
-  --text-base: calc(1rem + 2pt);
-  --text-lg: calc(1.125rem + 2pt);
-  --text-xl: calc(1.25rem + 2pt);
-  --text-2xl: calc(1.5rem + 2pt);
-  --text-3xl: calc(1.875rem + 2pt);
-  --text-4xl: calc(2.25rem + 2pt);
-  --text-5xl: calc(3rem + 2pt);
-  --text-6xl: calc(3.75rem + 2pt);
-  --text-7xl: calc(4.5rem + 2pt);
-  --text-8xl: calc(6rem + 2pt);
-  --text-9xl: calc(8rem + 2pt);
+  --text-xs: calc(0.75rem + 1pt);
+  --text-sm: calc(0.875rem + 1pt);
+  --text-base: calc(1rem + 1pt);
+  --text-lg: calc(1.125rem + 1pt);
+  --text-xl: calc(1.25rem + 1pt);
+  --text-2xl: calc(1.5rem + 1pt);
+  --text-3xl: calc(1.875rem + 1pt);
+  --text-4xl: calc(2.25rem + 1pt);
+  --text-5xl: calc(3rem + 1pt);
+  --text-6xl: calc(3.75rem + 1pt);
+  --text-7xl: calc(4.5rem + 1pt);
+  --text-8xl: calc(6rem + 1pt);
+  --text-9xl: calc(8rem + 1pt);
 }
 
-body {
-  font-size: calc(1rem + 2pt);
+:where(h1, h2, h3, h4, h5, h6) {
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+  --text-5xl: 3rem;
+  --text-6xl: 3.75rem;
+  --text-7xl: 4.5rem;
+  --text-8xl: 6rem;
+  --text-9xl: 8rem;
 }
 
-/* Tailwind arbitrary pixel text sizes also receive the global increase. */
-[class~="text-[8px]"] { font-size: calc(8px + 2pt); }
-[class~="text-[9px]"] { font-size: calc(9px + 2pt); }
-[class~="text-[10px]"] { font-size: calc(10px + 2pt); }
-[class~="text-[11px]"] { font-size: calc(11px + 2pt); }
-[class~="text-[12px]"] { font-size: calc(12px + 2pt); }
-[class~="text-[13px]"] { font-size: calc(13px + 2pt); }
-[class~="text-[14px]"] { font-size: calc(14px + 2pt); }
-[class~="text-[15px]"] { font-size: calc(15px + 2pt); }
-[class~="text-[16px]"] { font-size: calc(16px + 2pt); }
-
-/* Responsive containment: adapt layout to the viewport, never resize individual text nodes with JS. */
-:where(main, section, article, aside, nav, header, footer, form, fieldset) {
-  min-width: 0;
-  max-width: 100%;
-}
-
+/* Keep text inside flex/grid layouts without globally clipping shadows or badges. */
 :where(.flex, .grid) > * {
   min-width: 0;
-  max-width: 100%;
 }
 
-:where(h1, h2, h3, h4, h5, h6, p, span, small, strong, em, button, a, label, td, th, [role="button"]) {
-  max-width: 100%;
+.font-display {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.font-display.text-5xl,
+.font-display.text-6xl,
+.font-display.text-7xl {
+  font-size: clamp(1.75rem, 4vw + 0.75rem, 3.75rem) !important;
+  line-height: 1.05;
+}
+
+:where(h1, h2, h3, h4, h5, h6, p, a, button, label, span, strong, em) {
   overflow-wrap: break-word;
 }
 
-img,
-video,
-canvas,
-svg {
-  max-width: 100%;
+html {
+  hyphens: auto;
 }
 
-/* Below wide desktop, allow long labels to wrap instead of forcing tiny text or overflowing cards. */
-@media (max-width: 1535px) {
-  :where(.flex, .grid) > * {
-    min-width: 0;
-  }
-
+/* At narrow widths, let utility labels wrap instead of overflowing a card. */
+@media (max-width: 1023px) {
   [class~="whitespace-nowrap"] {
     white-space: normal;
   }
-}
 
-/* Tablet and mobile controls must stay inside their available column width. */
-@media (max-width: 1023px) {
-  :where(button, a, [role="button"], input, select, textarea) {
-    max-width: 100%;
+  .tracking-widest {
+    letter-spacing: 0.08em;
   }
 }
-
