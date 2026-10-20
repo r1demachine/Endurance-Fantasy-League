@@ -106,7 +106,7 @@ def get_week_recap(
             best_day_candidates.add(day)
 
     best_day_date = (
-        max(best_day_candidates, key=lambda day: day_totals.get(day, 0.0))
+        max(best_day_candidates, key=lambda day: (day_totals.get(day, 0.0), day))
         if best_day_candidates
         else None
     )
