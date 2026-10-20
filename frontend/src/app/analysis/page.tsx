@@ -106,12 +106,60 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isTrendResponse(value: unknown): value is TrendsResponse {
+function isDailyStats(value: unknown): value is DailyStats {
   return isRecord(value)
+    && (value.mean === null || (typeof value.mean === "number" && Number.isFinite(value.mean)))
+    && typeof value.days_with_data === "number"
+    && Number.isInteger(value.days_with_data)
+    && value.days_with_data >= 0
+    && typeof value.samples === "number"
+    && Number.isInteger(value.samples)
+    && value.samples >= 0;
+}
+
+function isTrendMetric(value: unknown): value is TrendMetric {
+  return isRecord(value)
+    && typeof value.key === "string"
+    && typeof value.label === "string"
+    && typeof value.source === "string"
+    && typeof value.unit === "string"
     && typeof value.status === "string"
-    && isRecord(value.period)
-    && Array.isArray(value.observations)
-    && Array.isArray(value.data_gaps);
+    && typeof value.trend === "string"
+    && isDailyStats(value.current)
+    && isDailyStats(value.previous)
+    && (value.change === null || (typeof value.change === "number" && Number.isFinite(value.change)))
+    && typeof value.minimum_days_required_per_period === "number";
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isTrendResponse(value: unknown): value is TrendsResponse {
+  if (!isRecord(value)) return false;
+  const period = value.period;
+  const windows = value.comparison_windows;
+  const current = isRecord(windows) ? windows.current : null;
+  const previous = isRecord(windows) ? windows.previous : null;
+  const observations = value.observations;
+  return typeof value.status === "string"
+    && isRecord(period)
+    && typeof period.start === "string"
+    && typeof period.end === "string"
+    && typeof period.days === "number"
+    && isRecord(current)
+    && typeof current.start === "string"
+    && typeof current.end === "string"
+    && isRecord(previous)
+    && typeof previous.start === "string"
+    && typeof previous.end === "string"
+    && Array.isArray(observations)
+    && observations.every(isTrendMetric)
+    && isRecord(value.coverage)
+    && isRecord(value.training_load_relationship)
+    && isStringArray(value.data_gaps)
+    && isStringArray(value.methodology)
+    && typeof value.disclaimer === "string";
 }
 
 function isInterpretation(value: unknown): value is Interpretation {
