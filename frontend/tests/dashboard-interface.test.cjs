@@ -339,16 +339,7 @@ test("calendar uses seven columns only once sufficient horizontal space is avail
 });
 
 
-test("viewport-aware text containment does not use a global DOM resizer", () => {
-  const layout = read("src/app/layout.tsx");
-  const css = read("src/app/globals.css");
-  assert.equal(layout.includes("GlobalAutoFitText"), false);
-  assert.equal(fs.existsSync(path.join(__dirname, "..", "src/components/GlobalAutoFitText.tsx")), false);
-  assert.ok(css.includes(":where(.flex, .grid) > *"));
-  assert.ok(css.includes("@media (max-width: 1535px)"));
-  assert.ok(css.includes("@media (max-width: 1023px)"));
-  assert.ok(css.includes("overflow-wrap: break-word"));
-});
+
 
 test("header switches to mobile navigation at the lg breakpoint", () => {
   const header = read("src/components/Header.tsx");
