@@ -299,6 +299,7 @@ class TelegramSecurityTestCase(unittest.TestCase):
         db.commit()
         with patch("app.services.telegram_week.get_settings", return_value=self.settings), \
              patch("app.services.proactive.get_settings", return_value=self.settings), \
+             patch("app.services.proactive.user_local_datetime", return_value=datetime(2026, 10, 20, 12, 0)), \
              patch("app.services.proactive.send_message", new_callable=AsyncMock) as send:
             sent_first = notify_week_results(db, last_week)
             marker_after_first = db.get(User, user_id).telegram_last_notified_week
