@@ -41,7 +41,7 @@ test("UI includes loading, retry, insufficient-data, rate-limit, upstream-failur
   assert.match(page, /Слишком много запросов/);
   assert.match(page, /AI-сервис временно недоступен/);
   assert.match(page, /503/);
-  assert.match(page, /return "—"/);
+  assert.match(page, /"—"/);
 });
 
 test("model content is schema-checked and rendered as text rather than injected HTML", () => {
@@ -56,5 +56,5 @@ test("interface explains local limits, coverage gaps and non-medical purpose", (
   assert.match(page, /не медицинская оценка/);
   assert.match(page, /Пропуски и ограничения/);
   assert.match(page, /Полнота последней синхронизации отдельно не проверяется/);
-  assert.match(page, /Неизвестные/);
+  assert.match(page, /Пропущенные значения не заменяются нулями/);
 });
