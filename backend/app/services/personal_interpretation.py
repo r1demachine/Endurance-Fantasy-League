@@ -5,6 +5,7 @@ per-day dates, or check-in records are included in the model input.
 """
 import json
 import logging
+import re
 from typing import Annotated, Any
 
 import httpx
