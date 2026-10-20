@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from .database import engine, Base
 from .config import get_settings
 from .rate_limit import limiter
-from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy, upload, duels, clubs, telegram, season, social, recaps
+from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy, upload, duels, clubs, telegram, season, social, recaps, internal_notify
 
 Base.metadata.create_all(bind=engine)
 
@@ -83,6 +83,8 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN telegram_link_expires TIMESTAMP"))
             if "telegram_last_notified_week" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN telegram_last_notified_week DATE"))
+            if "notify_prefs" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN notify_prefs TEXT NOT NULL DEFAULT '{}'"))
             if "last_deload_week_start" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN last_deload_week_start DATE"))
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram_chat_id ON users(telegram_chat_id)"))
@@ -392,6 +394,7 @@ app.include_router(telegram.router)
 app.include_router(season.router)
 app.include_router(social.router)
 app.include_router(recaps.router)
+app.include_router(internal_notify.router)
 
 @app.on_event("startup")
 async def _init_broker():

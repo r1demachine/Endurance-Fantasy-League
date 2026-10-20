@@ -91,6 +91,7 @@ class TelegramLateSummaryTests(unittest.TestCase):
         week_start = latest_completed_week_start() - timedelta(days=7)
         summary = SimpleNamespace(total_xp=125.5, training_days=3, league_score=42.25)
         user = SimpleNamespace(
+            id=42,
             telegram_chat_id="12345",
             telegram_notify=True,
             telegram_last_notified_week=None,
@@ -100,17 +101,27 @@ class TelegramLateSummaryTests(unittest.TestCase):
         query.join.return_value = query
         query.filter.return_value = query
         query.all.return_value = [(summary, user)]
-        send_message = AsyncMock(return_value=True)
 
-        with patch("app.services.telegram_week.get_settings", return_value=SimpleNamespace(TELEGRAM_BOT_TOKEN="token")):
-            with patch("app.services.telegram_week.send_message", send_message):
-                delivered = notify_week_results(db, week_start)
+        delivery_db = MagicMock()
+        delivery_db.get.return_value = user
+        session_context = MagicMock()
+        session_context.__enter__.return_value = delivery_db
+        factory = MagicMock(return_value=session_context)
+        proactive_send = AsyncMock(return_value=True)
+
+        with (
+            patch("app.services.telegram_week.get_settings", return_value=SimpleNamespace(TELEGRAM_BOT_TOKEN="token")),
+            patch("app.services.telegram_week.sessionmaker", return_value=factory),
+            patch("app.services.telegram_week.send_proactive", proactive_send),
+        ):
+            delivered = notify_week_results(db, week_start)
 
         self.assertEqual(delivered, 1)
         self.assertEqual(user.telegram_last_notified_week, week_start)
-        db.commit.assert_called_once()
-        send_message.assert_awaited_once()
-        self.assertIn(week_start.isoformat(), send_message.await_args.args[1])
+        delivery_db.commit.assert_called_once()
+        proactive_send.assert_awaited_once()
+        self.assertEqual(proactive_send.await_args.args[2], "weekly_results")
+        self.assertIn(week_start.isoformat(), proactive_send.await_args.args[3])
 
 
 if __name__ == "__main__":

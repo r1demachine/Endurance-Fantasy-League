@@ -16,7 +16,7 @@ os.environ.setdefault("REDIS_URL", "")
 from app.routers import sync
 from app.routers.intervals_key import disconnect_key
 from app.services.activity_dedupe import UPLOAD_SOURCES
-from app.models import Activity, Wellness, XPEvent, WeeklySummary, LeagueMembership
+from app.models import Activity, Wellness, XPEvent, WeeklySummary, LeagueMembership, NotificationLog, LeagueRankSnapshot
 
 
 def _unwrapped(function):
@@ -72,6 +72,8 @@ class TrainingDataDeletionTests(unittest.IsolatedAsyncioTestCase):
             XPEvent: 5,
             WeeklySummary: 6,
             LeagueMembership: 2,
+            NotificationLog: 3,
+            LeagueRankSnapshot: 4,
         }
 
         def make_query(model):
@@ -108,6 +110,10 @@ class TrainingDataDeletionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("INTERVALS", compiled_params)
         self.assertEqual(response["deleted_activities"], 3)
         self.assertEqual(response["deleted_wellness"], 4)
+        self.assertIn(NotificationLog, self.queries)
+        self.assertIn(LeagueRankSnapshot, self.queries)
+        self.queries[NotificationLog].delete.assert_called_once_with(synchronize_session=False)
+        self.queries[LeagueRankSnapshot].delete.assert_called_once_with(synchronize_session=False)
         self.assertEqual(recalculate.call_count, 2)
         recalculate_legacy.assert_not_called()
         self.db.commit.assert_called_once_with()
@@ -124,6 +130,8 @@ class TrainingDataDeletionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(tuple(value) == UPLOAD_SOURCES for value in compiled_values if isinstance(value, (tuple, list))))
         self.assertEqual(response["deleted_activities"], 3)
         self.assertEqual(response["deleted_wellness"], 0)
+        self.queries[NotificationLog].delete.assert_called_once_with(synchronize_session=False)
+        self.queries[LeagueRankSnapshot].delete.assert_called_once_with(synchronize_session=False)
         self.assertEqual(recalculate.call_count, 2)
         recalculate_legacy.assert_not_called()
 

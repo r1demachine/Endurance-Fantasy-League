@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, BigInteger, String, Float, DateTime, Date, ForeignKey, Index, Boolean, Enum as SAEnum, UniqueConstraint, text
+from sqlalchemy import Column, Integer, BigInteger, String, Text, Float, DateTime, Date, ForeignKey, Index, Boolean, Enum as SAEnum, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -31,6 +31,7 @@ class User(Base):
     # Telegram-бот
     telegram_chat_id = Column(String(32), unique=True, nullable=True, index=True)
     telegram_notify = Column(Boolean, nullable=False, default=False, server_default="false")
+    notify_prefs = Column(Text, nullable=False, default="{}", server_default=text("'{}'"))
     telegram_link_code = Column(String(64), nullable=True, index=True)  # SHA-256 хеш одноразового кода
     telegram_link_expires = Column(DateTime, nullable=True)
     telegram_last_notified_week = Column(Date, nullable=True)
@@ -306,6 +307,38 @@ class Notification(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", backref="notifications")
+
+
+class NotificationLog(Base):
+    """Idempotency and rolling rate-limit ledger for proactive Telegram messages."""
+    __tablename__ = "notification_logs"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    kind = Column(String(64), nullable=False)
+    local_date = Column(Date, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "kind", "local_date", name="uq_notification_log_user_kind_date"),
+        Index("idx_notification_log_user_date", "user_id", "local_date"),
+    )
+
+
+class LeagueRankSnapshot(Base):
+    """Most recent weekly league rank per user, used to detect overtakes."""
+    __tablename__ = "league_rank_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    week_start = Column(Date, nullable=False)
+    rank = Column(Integer, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "week_start", name="uq_league_rank_snapshot_user_week"),
+        Index("idx_league_rank_snapshot_week", "week_start", "rank"),
+    )
 
 
 

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from ..models import Notification
+from ..models import Notification, User
 from ..broker import publish
 
 
@@ -100,7 +100,13 @@ async def notify_user(
 
     if send_telegram:
         try:
-            from .telegram import notify_telegram_user
-            await notify_telegram_user(db, user_id, text)
+            if ntype in {"activity_like", "activity_comment"}:
+                from .proactive import send_proactive
+                recipient = db.get(User, user_id)
+                if recipient is not None:
+                    await send_proactive(db, recipient, "activity_social", text)
+            else:
+                from .telegram import notify_telegram_user
+                await notify_telegram_user(db, user_id, text)
         except Exception as exc:  # noqa: BLE001
             print(f"Telegram notify failed: {type(exc).__name__}: {exc}")

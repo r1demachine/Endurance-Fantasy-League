@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import logging
+import json
 import re
 import secrets
 from datetime import date, datetime, timedelta, timezone
@@ -28,6 +29,7 @@ from ..services.telegram import (
     send_message,
 )
 from ..services.activity_upload import create_activity_from_upload
+from ..services.proactive import DEFAULT_NOTIFY_PREFS, get_notify_prefs
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/telegram", tags=["Telegram"])
@@ -50,6 +52,13 @@ HELP_TEXT = (
 
 class NotifyToggleIn(BaseModel):
     enabled: bool
+
+
+class NotifyPrefsUpdate(BaseModel):
+    daily_bonus_reminder: bool | None = None
+    league_overtaken: bool | None = None
+    weekly_results: bool | None = None
+    activity_social: bool | None = None
 
 
 def _unlink_user(user: User) -> None:
@@ -166,6 +175,7 @@ def telegram_status(current: User = Depends(get_current_user)):
         "bot_username": settings.TELEGRAM_BOT_USERNAME,
         "linked": bool(current.telegram_chat_id),
         "notify": bool(current.telegram_notify),
+        "notify_prefs": get_notify_prefs(current),
         "has_pending_code": bool(
             current.telegram_link_code
             and current.telegram_link_expires
@@ -186,6 +196,29 @@ def set_notify(
     current.telegram_notify = bool(data.enabled)
     db.commit()
     return {"notify": current.telegram_notify}
+
+
+@router.patch("/preferences")
+@limiter.limit("30/minute")
+def update_notification_preferences(
+    request: Request,
+    data: NotifyPrefsUpdate,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not current.telegram_chat_id:
+        raise HTTPException(status_code=400, detail="Сначала привяжи Telegram")
+    updates = {
+        key: value
+        for key, value in data.model_dump(exclude_unset=True).items()
+        if value is not None
+    }
+    if not updates:
+        raise HTTPException(status_code=422, detail="Не переданы настройки уведомлений")
+    prefs = {**DEFAULT_NOTIFY_PREFS, **get_notify_prefs(current), **updates}
+    current.notify_prefs = json.dumps(prefs, ensure_ascii=False, separators=(",", ":"))
+    db.commit()
+    return {"notify_prefs": get_notify_prefs(current)}
 
 
 @router.post("/unlink")

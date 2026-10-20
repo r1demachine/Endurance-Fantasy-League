@@ -1,12 +1,11 @@
-"""Idempotent asynchronous Telegram summary delivery for the last completed league week."""
+"""Idempotent weekly summary delivery through the proactive notification gate."""
 import asyncio
 from datetime import date, datetime, timedelta
-
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from ..config import get_settings
 from ..models import User, WeeklySummary
-from .telegram import send_message
+from .proactive import send_proactive
 
 
 def latest_completed_week_start(today: date | None = None) -> date:
@@ -15,20 +14,29 @@ def latest_completed_week_start(today: date | None = None) -> date:
     return current_week_start - timedelta(days=7)
 
 
-async def _deliver(messages: list[tuple[str, str]]) -> None:
-    for chat_id, message in messages:
-        await send_message(chat_id, message)
+async def _deliver(bind, messages: list[tuple[int, date, str]]) -> int:
+    factory = sessionmaker(bind=bind, expire_on_commit=False)
+    delivered = 0
+    with factory() as db:
+        for user_id, week_start, message in messages:
+            user = db.get(User, user_id)
+            if user is None or not user.telegram_chat_id or not user.telegram_notify:
+                continue
+            if user.telegram_last_notified_week is not None and user.telegram_last_notified_week >= week_start:
+                continue
+            if await send_proactive(db, user, "weekly_results", message):
+                user.telegram_last_notified_week = week_start
+                db.commit()
+                delivered += 1
+    return delivered
 
 
 def notify_week_results(db: Session, week_start_d: date) -> int:
-    """Persist notification markers before enqueueing async Telegram delivery."""
+    """Queue finalized weekly summaries; a skipped delivery remains eligible for the next cron tick."""
     if not get_settings().TELEGRAM_BOT_TOKEN:
         return 0
 
     last_completed = latest_completed_week_start()
-    # A user's weekly summary may be finalized after the league row already
-    # exists. Permit delivery for any completed week, not just the most recent
-    # one; the per-user marker below keeps sequential backfills idempotent.
     if week_start_d > last_completed:
         return 0
 
@@ -44,7 +52,7 @@ def notify_week_results(db: Session, week_start_d: date) -> int:
         )
         .all()
     )
-    messages: list[tuple[str, str]] = []
+    messages = []
     for summary, user in rows:
         if user.telegram_last_notified_week is not None and user.telegram_last_notified_week >= week_start_d:
             continue
@@ -55,17 +63,14 @@ def notify_week_results(db: Session, week_start_d: date) -> int:
         ]
         if summary.league_score is not None:
             parts.append(f"League score: {round(float(summary.league_score), 1)}")
-        messages.append((str(user.telegram_chat_id), "\n".join(parts)))
-        user.telegram_last_notified_week = week_start_d
+        messages.append((user.id, week_start_d, "\n".join(parts)))
 
     if not messages:
         return 0
-    db.commit()
-
+    bind = db.get_bind()
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        asyncio.run(_deliver(messages))
-    else:
-        loop.create_task(_deliver(messages))
+        return asyncio.run(_deliver(bind, messages))
+    loop.create_task(_deliver(bind, messages))
     return len(messages)
