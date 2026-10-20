@@ -210,7 +210,7 @@ export async function renderShareImage(
   ctx.fillText(shortenToFit(ctx, title, layout.width - layout.marginX * 2), layout.width / 2, layout.titleY);
 
   ctx.font = `800 ${layout.xpSize}px ${fontFamily}`;
-  ctx.fillText(`+${Math.round(Number(data.xp) || 0)} XP`, layout.width / 2, layout.xpY);
+  ctx.fillText(`+${Math.round(Number(data.xp) || 0)} XP`, layout.width / 2, layout.xpY, layout.width - layout.marginX * 2);
 
   const lines = formatShareLines(data, options);
   let bodySize = layout.bodySize;
