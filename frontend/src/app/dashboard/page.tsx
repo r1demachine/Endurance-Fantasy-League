@@ -19,6 +19,7 @@ import WeekCalendar from "@/components/dashboard/WeekCalendar";
 import TodayCard from "@/components/dashboard/TodayCard";
 import ProfileSettingsModal, { type SettingsTab } from "@/components/ProfileSettingsModal";
 import { useSeason } from "@/lib/seasons";
+import { PreviousWeekRecapBanner, SeasonRecapCard, WeekRecapCard } from "@/components/dashboard/RecapCards";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -349,6 +350,8 @@ export default function Dashboard() {
           </Link>
         </motion.header>
 
+        {isAuthed && !isEmpty && <motion.div variants={sectionItemVariants} custom={transitionDirection}><PreviousWeekRecapBanner userName={typeof data.user?.name === "string" ? data.user.name : undefined} /></motion.div>}
+
         {dashboardError && <motion.div variants={sectionItemVariants} custom={transitionDirection}><ErrorState message={dashboardError} onRetry={() => window.location.reload()} /></motion.div>}
 
         {isAuthed && !isEmpty && (
@@ -372,6 +375,12 @@ export default function Dashboard() {
             />
             </motion.div>
 
+            <WeekRecapCard
+              key={selectedWeekStart || weekData?.week_start || ""}
+              weekStart={selectedWeekStart || weekData?.week_start || ""}
+              userName={typeof data.user?.name === "string" ? data.user.name : undefined}
+            />
+
             <motion.div data-tour="dashboard-week-summary" variants={sectionItemVariants} custom={transitionDirection}>
             {weekLoading ? (
               <section className="border-b-2 border-black bg-white p-5 md:p-6"><Skeleton label="Загружаем недельную сводку" rows={4} /></section>
@@ -389,6 +398,7 @@ export default function Dashboard() {
                 onDeloadAction={handleDeloadAction}
                 deloadBusy={deloadBusy}
                 deloadError={deloadError}
+                userName={typeof data.user?.name === "string" ? data.user.name : undefined}
               />
             )}
             </motion.div>
@@ -401,6 +411,7 @@ export default function Dashboard() {
               onRetry={() => void loadQuests()}
             />
             </motion.div>
+            <SeasonRecapCard userName={typeof data.user?.name === "string" ? data.user.name : undefined} />
             <motion.div data-tour="dashboard-workouts" variants={sectionItemVariants} custom={transitionDirection}>
             <WeekCalendar
               weekLoading={weekLoading}
@@ -410,6 +421,7 @@ export default function Dashboard() {
               onWeekChange={setSelectedWeekStart}
               onOpenSources={openSourceSettings}
               initialActivityId={deepLinkActivityId}
+              userName={typeof data.user?.name === "string" ? data.user.name : undefined}
             />
             </motion.div>
           </>

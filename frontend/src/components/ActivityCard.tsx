@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import ActivityXpDetails, { type ActivityXpContext } from "@/components/ActivityXpDetails";
 import ActivitySocial from "@/components/ActivitySocial";
+import ShareButton from "@/components/ShareButton";
 
 type Act = ActivityXpContext & {
   date: string;
@@ -54,6 +55,18 @@ export default function ActivityCard({ act }: { act: Act }) {
         aria-hidden={!open}
         inert={!open}
       >
+        <div className="flex justify-end px-4 pt-3">
+          <ShareButton data={{
+            kind: "activity",
+            xp: Number(act.xp) || 0,
+            title: act.name,
+            date: act.date,
+            sport: act.sport,
+            durationMinutes: act.moving_time_min,
+            distanceKm: act.distance_km,
+            tss: act.tss,
+          }} />
+        </div>
         <ActivityXpDetails act={act} enabled={open} />
         {open && <div className="px-4 pb-4"><ActivitySocial key={act.id} activityId={act.id} /></div>}
       </motion.div>

@@ -116,6 +116,35 @@ def _serialize(duel: Duel, me_id: int, db: Session) -> dict:
         live_me = round(float(my_summary.total_xp or 0), 2) if my_summary else 0.0
         live_other = round(float(other_summary.total_xp or 0), 2) if other_summary else 0.0
 
+    # Compare aspects only after the duel is finished; active-duel cards show the
+    # current total XP and do not need an extra comparison query per item.
+    aspects = {}
+    if duel.status == DuelStatus.FINISHED.value and other is not None:
+        comparisons = (
+            db.query(WeeklySummary)
+            .filter(
+                WeeklySummary.user_id.in_([me_id, other.id]),
+                WeeklySummary.week_start == duel.week_start,
+            )
+            .all()
+        )
+        by_user_id = {row.user_id: row for row in comparisons}
+        compare_me = by_user_id.get(me_id)
+        compare_other = by_user_id.get(other.id)
+        aspect_fields = (
+            ("effort", "Нагрузка", "effort_xp"),
+            ("goal", "Цель", "goal_xp"),
+            ("consistency", "Регулярность", "consistency_xp"),
+            ("quality", "Качество", "quality_xp"),
+            ("recovery", "Восстановление", "recovery_xp"),
+            ("quests", "Квесты и бонусы", "quest_xp"),
+        )
+        for key, label, field in aspect_fields:
+            mine = round(float(getattr(compare_me, field, 0.0) or 0.0), 1)
+            theirs = round(float(getattr(compare_other, field, 0.0) or 0.0), 1)
+            winner_side = "draw" if mine == theirs else ("me" if mine > theirs else "other")
+            aspects[key] = {"label": label, "mine": mine, "other": theirs, "winner": winner_side}
+
     return {
         "id": duel.id,
         "week_start": duel.week_start.date().isoformat() if duel.week_start else None,
@@ -137,6 +166,7 @@ def _serialize(duel: Duel, me_id: int, db: Session) -> dict:
         "is_draw": duel.status == DuelStatus.FINISHED.value and duel.winner_id is None,
         "is_no_activity_draw": bool(duel.is_no_activity_draw),
         "i_won": duel.winner_id == me_id if duel.status == DuelStatus.FINISHED.value else None,
+        "aspects": aspects,
         "created_at": duel.created_at.isoformat() if duel.created_at else None,
         "finished_at": duel.finished_at.isoformat() if duel.finished_at else None,
     }
