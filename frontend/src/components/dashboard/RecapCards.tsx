@@ -64,7 +64,7 @@ function persistDismissed(key: string) {
   }
 }
 
-export function PreviousWeekRecapBanner() {
+export function PreviousWeekRecapBanner({ userName }: { userName?: string }) {
   const [recap, setRecap] = useState<WeekRecap | null>(null);
   const [visible, setVisible] = useState(false);
   const [expanded, setExpanded] = useState(true);
@@ -118,6 +118,7 @@ export function PreviousWeekRecapBanner() {
             goalPercent: recap.goal_percent,
             trainingDays: recap.workout_days,
             leagueRank: recap.league_rank,
+            userName,
           }} />
         </div>
       )}
