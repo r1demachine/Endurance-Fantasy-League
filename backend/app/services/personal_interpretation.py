@@ -130,7 +130,8 @@ def generate_personal_interpretation(
             },
         ],
         "response_format": {"type": "json_object"},
-        "max_tokens": 900,
+        "max_completion_tokens": 900,
+        "temperature": 0.2,
     }
 
     try:
