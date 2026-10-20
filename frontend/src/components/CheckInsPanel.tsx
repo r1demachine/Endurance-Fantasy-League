@@ -124,11 +124,14 @@ export default function CheckInsPanel({ recentActivities }: { recentActivities: 
   const [activityBusy, setActivityBusy] = useState(false);
   const [activityError, setActivityError] = useState("");
   const [now, setNow] = useState(() => Date.now());
+  const [serverOffsetMs, setServerOffsetMs] = useState(0);
 
   const loadMorning = useCallback(async () => {
     setMorningError("");
     try {
       const response = await authApi.post("/api/check-ins/morning/prompt");
+      const serverNow = Date.parse(String(response.data?.server_now ?? ""));
+      if (Number.isFinite(serverNow)) setServerOffsetMs(serverNow - Date.now());
       const value = response.data?.checkin as MorningCheckIn;
       setMorning(value);
       setSleep((response.data?.sleep ?? null) as SleepData);
@@ -185,12 +188,13 @@ export default function CheckInsPanel({ recentActivities }: { recentActivities: 
   }, [activityIds]);
 
   const promptedAt = morning?.prompted_at ? Date.parse(morning.prompted_at) : NaN;
+  const effectiveNow = now + serverOffsetMs;
   const skipRemaining = Number.isFinite(promptedAt)
-    ? Math.max(0, Math.ceil((promptedAt + 15000 - now) / 1000))
+    ? Math.max(0, Math.ceil((promptedAt + 15000 - effectiveNow) / 1000))
     : 15;
   const warningAt = morning?.skip_warning_at ? Date.parse(morning.skip_warning_at) : NaN;
   const warningRemaining = Number.isFinite(warningAt)
-    ? Math.max(0, Math.ceil((warningAt + 5000 - now) / 1000))
+    ? Math.max(0, Math.ceil((warningAt + 5000 - effectiveNow) / 1000))
     : 5;
 
   const updateAnswer = (key: keyof MorningAnswers, value: number | null) => {
@@ -212,7 +216,12 @@ export default function CheckInsPanel({ recentActivities }: { recentActivities: 
   const closeMorning = () => {
     if (stage === "warning" && morning?.status === "pending" && morning.skip_warning_at) {
       void authApi.post("/api/check-ins/morning/skip-warning/cancel")
-        .then((response) => setMorning(response.data?.checkin ?? morning));
+        .then((response) => {
+          const serverNow = Date.parse(String(response.data?.server_now ?? ""));
+          if (Number.isFinite(serverNow)) setServerOffsetMs(serverNow - Date.now());
+          setMorning(response.data?.checkin ?? morning);
+        })
+        .catch(() => setMorningError("Не удалось отменить пропуск. Повтори запрос перед подтверждением."));
       setStage("form");
     }
     setMorningOpen(false);
@@ -228,6 +237,8 @@ export default function CheckInsPanel({ recentActivities }: { recentActivities: 
     setMorningError("");
     try {
       const response = await authApi.post("/api/check-ins/morning", answers);
+      const serverNow = Date.parse(String(response.data?.server_now ?? ""));
+      if (Number.isFinite(serverNow)) setServerOffsetMs(serverNow - Date.now());
       setMorning(response.data?.checkin ?? null);
       setSleep((response.data?.sleep ?? null) as SleepData);
       setMorningOpen(false);
@@ -243,6 +254,8 @@ export default function CheckInsPanel({ recentActivities }: { recentActivities: 
     setMorningError("");
     try {
       const response = await authApi.post("/api/check-ins/morning/skip-warning");
+      const serverNow = Date.parse(String(response.data?.server_now ?? ""));
+      if (Number.isFinite(serverNow)) setServerOffsetMs(serverNow - Date.now());
       const value = response.data?.checkin as MorningCheckIn;
       setMorning(value);
       setStage("warning");
@@ -258,6 +271,8 @@ export default function CheckInsPanel({ recentActivities }: { recentActivities: 
     setMorningError("");
     try {
       const response = await authApi.post("/api/check-ins/morning/skip");
+      const serverNow = Date.parse(String(response.data?.server_now ?? ""));
+      if (Number.isFinite(serverNow)) setServerOffsetMs(serverNow - Date.now());
       setMorning(response.data?.checkin ?? null);
       setMorningOpen(false);
       setStage("form");
