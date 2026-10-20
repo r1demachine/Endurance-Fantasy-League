@@ -116,36 +116,34 @@ def _serialize(duel: Duel, me_id: int, db: Session) -> dict:
         live_me = round(float(my_summary.total_xp or 0), 2) if my_summary else 0.0
         live_other = round(float(other_summary.total_xp or 0), 2) if other_summary else 0.0
 
-    # Compare the same six XP buckets for both participants. These are presentation
-    # values only; the duel winner remains based on the persisted total XP.
-    compare_me = (
-        db.query(WeeklySummary)
-        .filter(WeeklySummary.user_id == me_id, WeeklySummary.week_start == duel.week_start)
-        .first()
-    )
-    compare_other_id = other.id if other else None
-    compare_other = (
-        db.query(WeeklySummary)
-        .filter(
-            WeeklySummary.user_id == compare_other_id,
-            WeeklySummary.week_start == duel.week_start,
-        ).first()
-        if compare_other_id else None
-    )
-    aspect_fields = (
-        ("effort", "Нагрузка", "effort_xp"),
-        ("goal", "Цель", "goal_xp"),
-        ("consistency", "Регулярность", "consistency_xp"),
-        ("quality", "Качество", "quality_xp"),
-        ("recovery", "Восстановление", "recovery_xp"),
-        ("quests", "Квесты и бонусы", "quest_xp"),
-    )
+    # Compare aspects only after the duel is finished; active-duel cards show the
+    # current total XP and do not need an extra comparison query per item.
     aspects = {}
-    for key, label, field in aspect_fields:
-        mine = round(float(getattr(compare_me, field, 0.0) or 0.0), 1)
-        theirs = round(float(getattr(compare_other, field, 0.0) or 0.0), 1)
-        winner_side = "draw" if mine == theirs else ("me" if mine > theirs else "other")
-        aspects[key] = {"label": label, "mine": mine, "other": theirs, "winner": winner_side}
+    if duel.status == DuelStatus.FINISHED.value and other is not None:
+        comparisons = (
+            db.query(WeeklySummary)
+            .filter(
+                WeeklySummary.user_id.in_([me_id, other.id]),
+                WeeklySummary.week_start == duel.week_start,
+            )
+            .all()
+        )
+        by_user_id = {row.user_id: row for row in comparisons}
+        compare_me = by_user_id.get(me_id)
+        compare_other = by_user_id.get(other.id)
+        aspect_fields = (
+            ("effort", "Нагрузка", "effort_xp"),
+            ("goal", "Цель", "goal_xp"),
+            ("consistency", "Регулярность", "consistency_xp"),
+            ("quality", "Качество", "quality_xp"),
+            ("recovery", "Восстановление", "recovery_xp"),
+            ("quests", "Квесты и бонусы", "quest_xp"),
+        )
+        for key, label, field in aspect_fields:
+            mine = round(float(getattr(compare_me, field, 0.0) or 0.0), 1)
+            theirs = round(float(getattr(compare_other, field, 0.0) or 0.0), 1)
+            winner_side = "draw" if mine == theirs else ("me" if mine > theirs else "other")
+            aspects[key] = {"label": label, "mine": mine, "other": theirs, "winner": winner_side}
 
     return {
         "id": duel.id,
