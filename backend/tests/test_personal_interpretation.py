@@ -133,6 +133,28 @@ class PersonalInterpretationServiceTests(unittest.TestCase):
             generate_personal_interpretation(sample_trends(), api_key="test-secret")
 
     @patch("app.services.personal_interpretation.httpx.post")
+    def test_upstream_http_status_is_preserved_without_provider_body(self, post):
+        response = Mock()
+        response.status_code = 401
+        response.text = "private upstream response containing secret"
+        error = httpx.HTTPStatusError(
+            "401 Unauthorized",
+            request=Mock(),
+            response=response,
+        )
+        mocked_response = Mock()
+        mocked_response.raise_for_status.side_effect = error
+        post.return_value = mocked_response
+
+        with self.assertRaises(PersonalInterpretationError) as raised:
+            generate_personal_interpretation(sample_trends(), api_key="test-secret")
+
+        self.assertEqual(raised.exception.category, "upstream_http_error")
+        self.assertEqual(raised.exception.upstream_status, 401)
+        self.assertNotIn("private upstream response", str(raised.exception))
+        self.assertNotIn("test-secret", str(raised.exception))
+
+    @patch("app.services.personal_interpretation.httpx.post")
     def test_empty_api_key_never_calls_provider(self, post):
         with self.assertRaises(PersonalInterpretationError):
             generate_personal_interpretation(sample_trends(), api_key=" ")
