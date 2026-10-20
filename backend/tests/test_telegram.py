@@ -298,7 +298,8 @@ class TelegramSecurityTestCase(unittest.TestCase):
         ))
         db.commit()
         with patch("app.services.telegram_week.get_settings", return_value=self.settings), \
-             patch("app.services.telegram_week.send_message", new_callable=AsyncMock) as send:
+             patch("app.services.proactive.get_settings", return_value=self.settings), \
+             patch("app.services.proactive.send_message", new_callable=AsyncMock) as send:
             sent_first = notify_week_results(db, last_week)
             marker_after_first = db.get(User, user_id).telegram_last_notified_week
             sent_second = notify_week_results(db, last_week)
@@ -328,7 +329,8 @@ class TelegramSecurityTestCase(unittest.TestCase):
                 ))
         db.commit()
         with patch("app.services.telegram_week.get_settings", return_value=self.settings), \
-             patch("app.services.telegram_week.send_message", new_callable=AsyncMock) as send:
+             patch("app.services.proactive.get_settings", return_value=self.settings), \
+             patch("app.services.proactive.send_message", new_callable=AsyncMock) as send:
             for week_start in weeks:
                 _close_league_week(db, week_start, allow_week_notifications=False)
             self.assertEqual(send.await_count, 0)
