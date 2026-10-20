@@ -44,6 +44,7 @@ export default function TrainingGlossary() {
   const [showReminder, setShowReminder] = useState(false);
   const [reminderKey, setReminderKey] = useState("");
   const [highlightedKey, setHighlightedKey] = useState<GlossaryTermKey>("TSS");
+  const [focusedOnly, setFocusedOnly] = useState(false);
 
   useEffect(() => {
     const key = currentWeekReminderKey();
@@ -66,11 +67,12 @@ export default function TrainingGlossary() {
 
   const entries = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("ru-RU");
+    if (focusedOnly) return ENTRIES.filter((entry) => entry.key === highlightedKey);
     if (!needle) return ENTRIES;
     return ENTRIES.filter((entry) => [
       entry.term, ...entry.aliases, entry.description, entry.example,
     ].join(" ").toLocaleLowerCase("ru-RU").includes(needle));
-  }, [query]);
+  }, [focusedOnly, highlightedKey, query]);
 
   const markReminderDismissed = () => {
     setShowReminder(false);
@@ -83,11 +85,13 @@ export default function TrainingGlossary() {
 
   const openGlossary = (key?: GlossaryTermKey) => {
     if (key) {
+      setFocusedOnly(true);
       setHighlightedKey(key);
       const initialQuery = ENTRIES.find((entry) => entry.key === key)?.term.split(" — ")[0] ?? key;
       setQuery(initialQuery);
       markReminderDismissed();
     } else {
+      setFocusedOnly(false);
       setQuery("");
       setHighlightedKey("TSS");
     }
@@ -133,7 +137,10 @@ export default function TrainingGlossary() {
               <label htmlFor="training-glossary-search" className="sr-only">Поиск по словам и объяснениям</label>
               <div className="flex min-w-0 items-center gap-2 border-2 border-black bg-white px-3">
                 <Search aria-hidden="true" size={17} className="shrink-0 text-[#666]" />
-                <input id="training-glossary-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ищи TSS, коэффициент, нагрузку…" className="min-w-0 flex-1 py-3 text-sm text-[#111] outline-none placeholder:text-[#777]" autoFocus />
+                <input id="training-glossary-search" type="search" value={query} onChange={(event) => {
+                    setFocusedOnly(false);
+                    setQuery(event.target.value);
+                  }} placeholder="Ищи TSS, коэффициент, нагрузку…" className="min-w-0 flex-1 py-3 text-sm text-[#111] outline-none placeholder:text-[#777]" autoFocus />
                 {query && <button type="button" onClick={() => setQuery("")} aria-label="Очистить поиск" className="shrink-0 p-1 text-[#666] hover:text-[#111]"><X aria-hidden="true" size={15} /></button>}
               </div>
               <p className="mt-2 text-[11px] text-[#666]">Поиск проверяет название, альтернативные слова и полный текст пояснения.</p>

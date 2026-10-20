@@ -344,7 +344,7 @@ export default function WeekCalendar({
     setSelectedActivity(target);
   }, [initialActivityId, weekLoading, weekData, selectedWeekStart, ledgerDays]);
 
-  const today = toIsoDate(new Date());
+  const today = restDayState?.today ?? toIsoDate(new Date());
   const hasActivities = ledgerDays.some((day) => (day.activities?.length ?? 0) > 0);
   const weekBonuses: WeekBonus[] = Array.isArray(weekData?.week_bonuses) ? weekData.week_bonuses : [];
 
