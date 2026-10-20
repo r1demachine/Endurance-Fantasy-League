@@ -29,10 +29,14 @@ export default function ShareButton({ data, label = "Поделиться" }: Pr
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const imageInput = useMemo(() => ({
-    ...data,
-    userName: includeName ? data.userName : undefined,
-  }), [data, includeName]);
+  const dataSignature = JSON.stringify(data);
+  const imageInput = useMemo(() => {
+    const stableData = JSON.parse(dataSignature) as ShareImageInput;
+    return {
+      ...stableData,
+      userName: includeName ? stableData.userName : undefined,
+    };
+  }, [dataSignature, includeName]);
 
   useEffect(() => {
     if (!open) return;
@@ -172,8 +176,8 @@ export default function ShareButton({ data, label = "Поделиться" }: Pr
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="mr-1 text-[10px] font-bold uppercase tracking-widest text-[#666]">Текст</span>
-                <button type="button" aria-pressed={textTheme === "light"} onClick={() => { resetPreviewForRender(); setTextTheme("light"); }} className={`border-2 border-black px-3 py-2 text-xs font-bold ${textTheme === "light" ? "bg-black text-white" : "bg-white"}`}>Светлый</button>
-                <button type="button" aria-pressed={textTheme === "dark"} onClick={() => { resetPreviewForRender(); setTextTheme("dark"); }} className={`border-2 border-black px-3 py-2 text-xs font-bold ${textTheme === "dark" ? "bg-black text-white" : "bg-white"}`}>Тёмный</button>
+                <button type="button" aria-pressed={textTheme === "light"} onClick={() => { if (textTheme !== "light") { resetPreviewForRender(); setTextTheme("light"); } }} className={`border-2 border-black px-3 py-2 text-xs font-bold ${textTheme === "light" ? "bg-black text-white" : "bg-white"}`}>Светлый</button>
+                <button type="button" aria-pressed={textTheme === "dark"} onClick={() => { if (textTheme !== "dark") { resetPreviewForRender(); setTextTheme("dark"); } }} className={`border-2 border-black px-3 py-2 text-xs font-bold ${textTheme === "dark" ? "bg-black text-white" : "bg-white"}`}>Тёмный</button>
               </div>
               {error && <p role="alert" className="text-sm font-bold text-[#b91c1c]">{error}</p>}
               <div className="flex flex-wrap gap-2">
