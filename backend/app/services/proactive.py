@@ -141,7 +141,7 @@ def _has_daily_bonus(db: Session, user: User, day: date) -> bool:
 
 
 def reminder_decay_active(db: Session, user: User, today: date) -> bool:
-    """Keep suppressing reminders after three consecutive reminder days until a workout occurs."""
+    """Suppress further reminders after three consecutive reminder days until a workout occurs."""
     reminders = (
         db.query(NotificationLog)
         .filter(
@@ -157,18 +157,16 @@ def reminder_decay_active(db: Session, user: User, today: date) -> bool:
     if len(reminder_dates) < REMINDER_DECAY_COUNT:
         return False
 
-    # A consecutive three-day run can remain in the ledger while reminders are
-    # suppressed. Do not require a reminder yesterday: the user stays suppressed
-    # until a subsequent workout resets the fatigue guard.
-    candidate_ends = sorted(reminder_dates, reverse=True)
-    for last_day in candidate_ends:
-        run_dates = {
+    # The streak remains in the log while reminders are suppressed. The user
+    # remains suppressed even after the first 24 hours until any workout occurs.
+    for last_day in sorted(reminder_dates, reverse=True):
+        streak_dates = {
             last_day - timedelta(days=offset)
             for offset in range(REMINDER_DECAY_COUNT)
         }
-        if not run_dates.issubset(reminder_dates):
+        if not streak_dates.issubset(reminder_dates):
             continue
-        earliest_day = min(run_dates)
+        earliest_day = min(streak_dates)
         start_dt = datetime.combine(earliest_day, time.min)
         end_dt = datetime.combine(today + timedelta(days=1), time.min)
         had_activity = (
@@ -183,26 +181,6 @@ def reminder_decay_active(db: Session, user: User, today: date) -> bool:
         )
         if not had_activity:
             return True
-        # A qualifying or non-qualifying workout since this reminder streak resets
-        # decay; older runs before that workout are irrelevant.
-        later_activity_day = (
-            db.query(func.max(func.date(func.coalesce(Activity.start_date_local, Activity.start_date))))
-            .filter(
-                Activity.user_id == user.id,
-                func.coalesce(Activity.start_date_local, Activity.start_date) >= start_dt,
-                func.coalesce(Activity.start_date_local, Activity.start_date) < end_dt,
-            )
-            .scalar()
-        )
-        if later_activity_day:
-            activity_day_value = later_activity_day
-            if isinstance(activity_day_value, str):
-                try:
-                    activity_day_value = date.fromisoformat(activity_day_value[:10])
-                except ValueError:
-                    activity_day_value = None
-            if isinstance(activity_day_value, date):
-                candidate_ends = [candidate for candidate in candidate_ends if candidate > activity_day_value]
     return False
 
 def daily_reminder_context(db: Session, user: User, now: datetime | None = None) -> tuple[date, int] | None:
