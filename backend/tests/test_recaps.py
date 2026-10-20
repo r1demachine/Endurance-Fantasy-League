@@ -193,7 +193,7 @@ class RecapTests(unittest.TestCase):
         ]
         expected_best = max(candidates, key=lambda day: day["xp"]["total"])
         self.assertEqual(result["best_day"]["date"], expected_best["date"])
-        self.assertEqual(result["best_day"]["xp"], expected_best["xp"]["total"])
+        self.assertEqual(result["best_day"]["xp"], round(expected_best["xp"]["total"], 1))
 
     def test_week_recap_is_unavailable_until_week_is_finalized(self):
         monday = self.last_completed_monday()
