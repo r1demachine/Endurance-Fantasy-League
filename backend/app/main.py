@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from .database import engine, Base
 from .config import get_settings
 from .rate_limit import limiter
-from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy, upload, duels, clubs, telegram, season, social, recaps
+from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy, upload, duels, clubs, telegram, season, social, recaps, internal_notify
 
 Base.metadata.create_all(bind=engine)
 
@@ -394,6 +394,7 @@ app.include_router(telegram.router)
 app.include_router(season.router)
 app.include_router(social.router)
 app.include_router(recaps.router)
+app.include_router(internal_notify.router)
 
 @app.on_event("startup")
 async def _init_broker():
