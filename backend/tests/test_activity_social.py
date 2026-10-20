@@ -250,7 +250,7 @@ class ActivitySocialTests(unittest.TestCase):
         self.accept_friendship(self.owner, self.viewer)
         with patch("app.services.notifications.publish", new_callable=AsyncMock), patch(
             "app.services.telegram.notify_telegram_user", new_callable=AsyncMock
-        ) as telegram_notify:
+        ) as proactive_notify:
             response = self.client.post(
                 f"/api/activities/{self.activity.id}/comments",
                 json={"body": "  Хорошая тренировка!  "},
@@ -261,7 +261,7 @@ class ActivitySocialTests(unittest.TestCase):
         self.assertEqual(payload["comment"]["body"], "Хорошая тренировка!")
         self.assertEqual(payload["comments_count"], 1)
         self.assertTrue(payload["comment"]["can_delete"])
-        self.assertEqual(telegram_notify.await_count, 1)
+        self.assertEqual(proactive_notify.await_count, 1)
 
         notification = self.db.query(Notification).filter(
             Notification.user_id == self.owner.id,
@@ -361,7 +361,7 @@ class ActivitySocialTests(unittest.TestCase):
         self.viewer = self.owner
         with patch("app.services.notifications.publish", new_callable=AsyncMock), patch(
             "app.services.telegram.notify_telegram_user", new_callable=AsyncMock
-        ) as telegram_notify:
+        ) as proactive_notify:
             response = self.client.post(
                 f"/api/activities/{self.activity.id}/comments",
                 json={"body": "Self comment"},
@@ -369,7 +369,7 @@ class ActivitySocialTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.db.query(Notification).count(), 0)
-        telegram_notify.assert_not_awaited()
+        proactive_notify.assert_not_awaited()
 
     def test_comment_rows_cascade_on_activity_and_account_deletion(self):
         comment = ActivityComment(
@@ -409,7 +409,7 @@ class ActivitySocialTests(unittest.TestCase):
         link = f"/dashboard?activity_id={self.activity.id}&week_start=2026-10-12"
         with patch("app.services.notifications.publish", new_callable=AsyncMock), patch(
             "app.services.telegram.notify_telegram_user", new_callable=AsyncMock
-        ) as telegram_notify:
+        ) as proactive_notify:
             for name in ("Иван", "Мария", "Пётр"):
                 asyncio.run(notify_user(
                     self.db,
@@ -429,7 +429,7 @@ class ActivitySocialTests(unittest.TestCase):
             rows[0].text,
             "Иван и ещё 2 оставили комментарии к твоей тренировке",
         )
-        self.assertEqual(telegram_notify.await_count, 3)
+        self.assertEqual(proactive_notify.await_count, 3)
 
     def test_social_summary_includes_comment_count_and_recent_comments(self):
         self.accept_friendship(self.owner, self.viewer)
