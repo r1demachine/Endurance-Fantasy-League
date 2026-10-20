@@ -87,6 +87,9 @@ export default function TrainingGlossary() {
       const initialQuery = ENTRIES.find((entry) => entry.key === key)?.term.split(" — ")[0] ?? key;
       setQuery(initialQuery);
       markReminderDismissed();
+    } else {
+      setQuery("");
+      setHighlightedKey("TSS");
     }
     setIsOpen(true);
   };

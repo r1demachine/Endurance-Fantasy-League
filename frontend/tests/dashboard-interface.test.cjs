@@ -306,31 +306,33 @@ test("the retired dashboard list component is no longer referenced or kept", () 
 });
 
 
+
 test("calendar glossary explains load terms and searches definitions", () => {
   const glossary = read("src/components/dashboard/TrainingGlossary.tsx");
   const calendar = read("src/components/dashboard/WeekCalendar.tsx");
-  assert.match(calendar, /<TrainingGlossary \/>/);
-  assert.match(glossary, /TSS — Training Stress Score/);
-  assert.match(glossary, /EST — оценочная нагрузка/);
-  assert.match(glossary, /Квалифицирующий день/);
-  assert.match(glossary, /entry\\.description/);
-  assert.match(glossary, /localStorage/);
-  assert.match(glossary, /Помнишь, что такое TSS/);
+  assert.ok(calendar.includes("<TrainingGlossary />"));
+  assert.ok(glossary.includes("TSS — Training Stress Score"));
+  assert.ok(glossary.includes("EST — оценочная нагрузка"));
+  assert.ok(glossary.includes("Квалифицирующий день"));
+  assert.ok(glossary.includes("entry.description"));
+  assert.ok(glossary.includes("localStorage"));
+  assert.ok(glossary.includes("Помнишь, что такое TSS"));
 });
 
 test("manual rest-day token is represented in calendar and cooperative streak remains a nonfunctional placeholder", () => {
   const calendar = read("src/components/dashboard/WeekCalendar.tsx");
   const dashboard = read("src/app/dashboard/page.tsx");
   const todayCard = read("src/components/dashboard/TodayCard.tsx");
-  assert.match(calendar, /Использовать день отдыха/);
-  assert.match(calendar, /День отдыха — стрик сохранён/);
-  assert.match(dashboard, /authApi\\.post\\("\\/api\\/streak\\/rest-day"/);
-  assert.match(todayCard, /Кооперативный стрик/);
-  assert.match(todayCard, /disabled[\\s\\S]*?Совместные серии появятся позже/);
+  assert.ok(calendar.includes("Использовать день отдыха"));
+  assert.ok(calendar.includes("День отдыха — стрик сохранён"));
+  assert.ok(dashboard.includes('authApi.post("/api/streak/rest-day")'));
+  assert.ok(todayCard.includes("Кооперативный стрик"));
+  assert.ok(todayCard.includes("disabled"));
+  assert.ok(todayCard.includes("Совместные серии появятся позже"));
 });
 
 test("calendar uses seven columns only once sufficient horizontal space is available", () => {
   const calendar = read("src/components/dashboard/WeekCalendar.tsx");
-  assert.match(calendar, /xl:grid-cols-7/);
+  assert.ok(calendar.includes("xl:grid-cols-7"));
   assert.equal(calendar.includes("lg:grid-cols-7"), false);
 });

@@ -92,7 +92,7 @@ export default function Dashboard() {
       signal: controller.signal,
     }).then((response) => {
       const result = response.data;
-      setWeekData(result.week ? { ...result.week, days: Array.isArray(result.days) ? result.days : [], week_bonuses: Array.isArray(result.week_bonuses) ? result.week_bonuses : [], is_current_week: Boolean(result.is_current_week) } : null);
+      setWeekData(result.week ? { ...result.week, days: Array.isArray(result.days) ? result.days : [], week_bonuses: Array.isArray(result.week_bonuses) ? result.week_bonuses : [], is_current_week: Boolean(result.is_current_week), streak_rest_day: result.streak_rest_day } : null);
       setWeekOptions(result.week_options || []);
       if (!selectedWeekStart && result.week?.week_start) {
         setSelectedWeekStart(result.week.week_start);
@@ -146,7 +146,7 @@ export default function Dashboard() {
         params: selectedWeekStart ? { week_start: selectedWeekStart } : {},
       });
       const result = response.data;
-      setWeekData(result.week ? { ...result.week, days: Array.isArray(result.days) ? result.days : [], week_bonuses: Array.isArray(result.week_bonuses) ? result.week_bonuses : [], is_current_week: Boolean(result.is_current_week) } : null);
+      setWeekData(result.week ? { ...result.week, days: Array.isArray(result.days) ? result.days : [], week_bonuses: Array.isArray(result.week_bonuses) ? result.week_bonuses : [], is_current_week: Boolean(result.is_current_week), streak_rest_day: result.streak_rest_day } : null);
       setWeekOptions(Array.isArray(result.week_options) ? result.week_options : []);
       if (!selectedWeekStart && result.week?.week_start) {
         setSelectedWeekStart(result.week.week_start);
@@ -259,7 +259,7 @@ export default function Dashboard() {
         const response = await authApi.get("/api/weekly-summary", {
           params: selectedWeekStart ? { week_start: selectedWeekStart } : {},
         });
-        setWeekData(response.data.week ? { ...response.data.week, days: Array.isArray(response.data.days) ? response.data.days : [], week_bonuses: Array.isArray(response.data.week_bonuses) ? response.data.week_bonuses : [], is_current_week: Boolean(response.data.is_current_week) } : null);
+        setWeekData(response.data.week ? { ...response.data.week, days: Array.isArray(response.data.days) ? response.data.days : [], week_bonuses: Array.isArray(response.data.week_bonuses) ? response.data.week_bonuses : [], is_current_week: Boolean(response.data.is_current_week), streak_rest_day: response.data.streak_rest_day } : null);
       } catch {
         // Keep the latest usable week snapshot if the refresh also fails.
       }
@@ -283,7 +283,7 @@ export default function Dashboard() {
         const response = await authApi.get("/api/weekly-summary", {
           params: selectedWeekStart ? { week_start: selectedWeekStart } : {},
         });
-        setWeekData(response.data.week ? { ...response.data.week, days: Array.isArray(response.data.days) ? response.data.days : [], week_bonuses: Array.isArray(response.data.week_bonuses) ? response.data.week_bonuses : [], is_current_week: Boolean(response.data.is_current_week) } : null);
+        setWeekData(response.data.week ? { ...response.data.week, days: Array.isArray(response.data.days) ? response.data.days : [], week_bonuses: Array.isArray(response.data.week_bonuses) ? response.data.week_bonuses : [], is_current_week: Boolean(response.data.is_current_week), streak_rest_day: response.data.streak_rest_day } : null);
       } catch {
         // Keep the latest usable calendar if a status refresh also fails.
       }
