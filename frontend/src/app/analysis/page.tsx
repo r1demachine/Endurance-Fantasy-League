@@ -175,8 +175,10 @@ function errorMessage(error: unknown, fallback: string): string {
   if (!isRecord(error)) return fallback;
   const response = isRecord(error.response) ? error.response : null;
   const status = response && typeof response.status === "number" ? response.status : null;
+  const responseData = response && isRecord(response.data) ? response.data : null;
+  const serverDetail = responseData && typeof responseData.detail === "string" ? responseData.detail : "";
   if (status === 429) return "Слишком много запросов. Подожди немного и повтори.";
-  if (status === 502) return "AI-сервис временно недоступен или вернул некорректный ответ. Тенденции не изменены — попробуй ещё раз.";
+  if (status === 502) return serverDetail || "AI-сервис временно недоступен или вернул некорректный ответ. Тенденции не изменены — попробуй ещё раз.";
   if (status === 503) return "AI-анализ пока не настроен на сервере. Обычные расчёты тенденций доступны.";
   if (status === 401) return "Сессия истекла. Войди снова.";
   if (status !== null && status >= 500) return "Сервер временно недоступен. Попробуй ещё раз позже.";
