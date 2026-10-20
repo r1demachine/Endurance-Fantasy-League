@@ -128,6 +128,12 @@ _MISSINGNESS_TERMS = re.compile(
     r"отсутств|не хватает|ограниченн|без\s+(?:полных?\s+)?данных",
     re.IGNORECASE,
 )
+_GAP_DENIAL_TERMS = re.compile(
+    r"пропуск\w*\s+нет|нет\s+(?:никаких\s+)?пропуск\w*|"
+    r"отсутствуют?\s+(?:любые\s+)?пропуск\w*|"
+    r"(?:данные|покрытие)\s+(?:полностью\s+)?(?:полны|достаточны)",
+    re.IGNORECASE,
+)
 _METRIC_TERMS = re.compile(
     r"сон|нагрузк|готовност|усталост|самочувств|восстановлен|"
     r"\bRPE\b|\bTSS\b",
@@ -164,7 +170,7 @@ def _response_text(analysis: PersonalInterpretation) -> str:
         analysis.data_limitations,
     ):
         values.extend(field)
-    return "\\n".join(values)
+    return "\n".join(values)
 
 
 def _validate_interpretation_claims(
@@ -193,17 +199,20 @@ def _validate_interpretation_claims(
         )
 
     # The response must not silently present a complete picture when source gaps exist.
-    relevant_context = "\\n".join(
+    relevant_context = "\n".join(
         [analysis.summary, *analysis.caution_signals, *analysis.data_limitations]
     )
-    if trends.get("data_gaps") and not _MISSINGNESS_TERMS.search(relevant_context):
+    if trends.get("data_gaps") and (
+        _GAP_DENIAL_TERMS.search(relevant_context)
+        or not _MISSINGNESS_TERMS.search(relevant_context)
+    ):
         raise PersonalInterpretationError(
             "Groq ignored source data gaps",
             category="unsupported_claim",
         )
 
     # Check individual statements so a disclaimer elsewhere cannot excuse a causal claim.
-    for statement in re.split(r"[.!?;\\n]+", text):
+    for statement in re.split(r"[.!?;\n]+", text):
         if _CAUSAL_TERMS.search(statement) and _METRIC_TERMS.search(statement):
             raise PersonalInterpretationError(
                 "Groq returned an unsupported causal assertion",
