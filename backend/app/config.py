@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_USERNAME: Optional[str] = None
     # Shared secret for the scheduled internal notification tick.
     CRON_SECRET: Optional[str] = None
+    # Groq: optional AI interpretation of aggregate personal trends only.
+    GROQ_API_KEY: Optional[str] = None
+    GROQ_MODEL: str = "openai/gpt-oss-20b"
+    GROQ_TIMEOUT_SECONDS: int = 20
 
     model_config = SettingsConfigDict(
         env_file=".env",
