@@ -24,6 +24,7 @@ type Activity = {
   distance_km?: number;
   moving_time_min?: number;
   date?: string;
+  checkin: ActivityCheckIn | null;
 };
 type ActivityCheckIn = {
   activity_id: number;
@@ -105,7 +106,7 @@ function importedSleepText(sleep: SleepData): string {
     : "Запись сна из Intervals.icu есть, но в ней нет длительности или Sleep Score.";
 }
 
-export default function CheckInsPanel({ recentActivities }: { recentActivities: Activity[] }) {
+export default function CheckInsPanel() {
   const [morning, setMorning] = useState<MorningCheckIn | null>(null);
   const [sleep, setSleep] = useState<SleepData>(null);
   const [morningOpen, setMorningOpen] = useState(false);
@@ -113,7 +114,10 @@ export default function CheckInsPanel({ recentActivities }: { recentActivities: 
   const [answers, setAnswers] = useState<MorningAnswers>(emptyAnswers);
   const [morningBusy, setMorningBusy] = useState(false);
   const [morningError, setMorningError] = useState("");
-  const [activityCheckins, setActivityCheckins] = useState<Record<number, ActivityCheckIn>>({});
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [nextActivityOffset, setNextActivityOffset] = useState<number | null>(0);
+  const [visibleActivityCount, setVisibleActivityCount] = useState(5);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
   const [activitiesError, setActivitiesError] = useState("");
   const [editingActivityId, setEditingActivityId] = useState<number | null>(null);
   const [activityAnswers, setActivityAnswers] = useState<ActivityAnswers>({
@@ -161,31 +165,35 @@ export default function CheckInsPanel({ recentActivities }: { recentActivities: 
     return () => window.clearInterval(timer);
   }, []);
 
-  const activityIds = recentActivities.slice(0, 5).map((activity) => activity.id).join(",");
-  useEffect(() => {
-    let active = true;
-    if (!activityIds) {
-      setActivityCheckins({});
-      setActivitiesError("");
-      return () => { active = false; };
-    }
-    authApi.get("/api/check-ins/activities")
-      .then((response) => {
-        if (!active) return;
-        const next: Record<number, ActivityCheckIn> = {};
-        const rows = Array.isArray(response.data?.checkins) ? response.data.checkins : [];
-        for (const row of rows) {
-          const key = Number(row.activity_id);
-          if (Number.isSafeInteger(key) && key > 0) next[key] = row as ActivityCheckIn;
-        }
-        setActivityCheckins(next);
-        setActivitiesError("");
-      })
-      .catch(() => {
-        if (active) setActivitiesError("Не удалось загрузить послетренировочные чек-ины.");
+  const loadActivities = useCallback(async (offset = 0, append = false) => {
+    setActivitiesLoading(true);
+    setActivitiesError("");
+    try {
+      const response = await authApi.get("/api/check-ins/history/activities", {
+        params: { offset, limit: 20 },
       });
-    return () => { active = false; };
-  }, [activityIds]);
+      const rows = Array.isArray(response.data?.activities) ? response.data.activities as Activity[] : [];
+      setActivities((current) => {
+        if (!append) return rows;
+        const currentIds = new Set(current.map((activity) => activity.id));
+        return [...current, ...rows.filter((activity) => !currentIds.has(activity.id))];
+      });
+      setNextActivityOffset(
+        response.data?.next_offset === null || response.data?.next_offset === undefined
+          ? null
+          : Number(response.data.next_offset),
+      );
+      if (!append) setVisibleActivityCount(5);
+    } catch {
+      setActivitiesError("Не удалось загрузить историю тренировок и чек-инов.");
+    } finally {
+      setActivitiesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadActivities();
+  }, [loadActivities]);
 
   const promptedAt = morning?.prompted_at ? Date.parse(morning.prompted_at) : NaN;
   const effectiveNow = now + serverOffsetMs;
@@ -284,7 +292,7 @@ export default function CheckInsPanel({ recentActivities }: { recentActivities: 
   };
 
   const startActivityEdit = (activity: Activity) => {
-    const existing = activityCheckins[activity.id];
+    const existing = activity.checkin;
     setEditingActivityId(activity.id);
     setActivityAnswers({
       rpe: existing ? String(existing.rpe) : "",
@@ -309,7 +317,7 @@ export default function CheckInsPanel({ recentActivities }: { recentActivities: 
         discomfort: activityAnswers.discomfort || null,
       });
       const saved = response.data?.checkin as ActivityCheckIn;
-      setActivityCheckins((current) => ({ ...current, [activityId]: saved }));
+      setActivities((current) => current.map((activity) => activity.id === activityId ? { ...activity, checkin: saved } : activity));
       setEditingActivityId(null);
     } catch {
       setActivityError("Не удалось сохранить чек-ин тренировки. Проверь соединение и повтори.");
@@ -318,7 +326,39 @@ export default function CheckInsPanel({ recentActivities }: { recentActivities: 
     }
   };
 
-  const visibleActivities = recentActivities.slice(0, 5);
+  const visibleActivities = activities.slice(0, visibleActivityCount);
+
+  const loadMoreActivities = async () => {
+    if (visibleActivityCount < activities.length) {
+      setVisibleActivityCount(Math.min(activities.length, visibleActivityCount + 15));
+      return;
+    }
+    if (nextActivityOffset === null || activitiesLoading) return;
+    const offset = nextActivityOffset;
+    setActivitiesLoading(true);
+    setActivitiesError("");
+    try {
+      const response = await authApi.get("/api/check-ins/history/activities", {
+        params: { offset, limit: 20 },
+      });
+      const rows = Array.isArray(response.data?.activities) ? response.data.activities as Activity[] : [];
+      setActivities((current) => {
+        const currentIds = new Set(current.map((activity) => activity.id));
+        const fresh = rows.filter((activity) => !currentIds.has(activity.id));
+        setVisibleActivityCount(current.length + fresh.length);
+        return [...current, ...fresh];
+      });
+      setNextActivityOffset(
+        response.data?.next_offset === null || response.data?.next_offset === undefined
+          ? null
+          : Number(response.data.next_offset),
+      );
+    } catch {
+      setActivitiesError("Не удалось загрузить предыдущие тренировки. Попробуй ещё раз.");
+    } finally {
+      setActivitiesLoading(false);
+    }
+  };
 
   return (
     <section className="border-b-2 border-black bg-[#f4f4f0]" aria-labelledby="check-ins-title">
@@ -356,7 +396,9 @@ export default function CheckInsPanel({ recentActivities }: { recentActivities: 
           <h3 className="font-display text-xl uppercase">После тренировки</h3>
           <p className="mt-2 text-sm text-[#555]">Оцени субъективную тяжесть каждого занятия после его появления в EFL. Пропущенную запись можно добавить позже.</p>
           {activitiesError && <p role="alert" className="mt-2 text-xs font-bold text-[#b42318]">{activitiesError}</p>}
-          {visibleActivities.length === 0 ? (
+          {activitiesLoading && activities.length === 0 ? (
+            <p role="status" className="mt-3 border-t border-black/15 pt-3 text-xs text-[#666]">Загружаем историю тренировок…</p>
+          ) : visibleActivities.length === 0 ? (
             <p className="mt-3 border-t border-black/15 pt-3 text-xs text-[#666]">Тренировок пока нет. После синхронизации они появятся здесь.</p>
           ) : (
             <ul className="mt-3 divide-y divide-black/15 border-t border-black/15">
@@ -430,6 +472,20 @@ export default function CheckInsPanel({ recentActivities }: { recentActivities: 
                 );
               })}
             </ul>
+          )}
+          {(visibleActivityCount < activities.length || nextActivityOffset !== null) && (
+            <button
+              type="button"
+              onClick={() => void loadMoreActivities()}
+              disabled={activitiesLoading}
+              className="mt-3 w-full border-2 border-black bg-[#ffd500] px-3 py-3 text-xs font-black uppercase tracking-wide disabled:opacity-50 motion-reduce:transition-none"
+            >
+              {activitiesLoading
+                ? "Загружаем…"
+                : visibleActivityCount < activities.length
+                  ? "Показать более ранние тренировки"
+                  : "Загрузить предыдущие тренировки"}
+            </button>
           )}
         </div>
       </div>

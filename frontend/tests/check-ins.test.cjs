@@ -44,12 +44,22 @@ test("post-workout form is linked to activity IDs, supports edits, and validates
 
 test("check-ins are included in the authenticated dashboard only, not public activity output", () => {
   assert.match(dashboard, /<CheckInsPanel/);
-  assert.match(dashboard, /recentActivities=/);
+  assert.match(component, /\/api\/check-ins\/history\/activities/);
+  assert.match(component, /Загрузить предыдущие тренировки/);
+  assert.match(router, /@router.get\("\/history\/activities"\)/);
+  assert.match(dashboard, /<CheckInsPanel \/>/);
   assert.match(router, /Depends\(get_current_user\)/);
   assert.match(router, /ActivityCheckIn\.user_id == current\.id/);
   assert.match(component, /Ответы видны только тебе/);
   assert.doesNotMatch(read("../backend/app/routers/sync.py"), /ActivityCheckIn|MorningCheckIn/);
   assert.doesNotMatch(read("../backend/app/routers/social.py"), /ActivityCheckIn|MorningCheckIn/);
+});
+
+test("missed post-workout check-ins remain reachable through paginated private history", () => {
+  assert.match(router, /offset: int = Query\(default=0, ge=0\)/);
+  assert.match(router, /"next_offset": next_offset if next_offset < total else None/);
+  assert.match(component, /setVisibleActivityCount\(Math\.min\(activities\.length, visibleActivityCount \+ 15\)\)/);
+  assert.match(component, /setNextActivityOffset/);
 });
 
 test("automatic sleep data is labeled as imported and missing sleep is not replaced", () => {

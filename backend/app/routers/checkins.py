@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -259,6 +259,57 @@ def list_activity_checkins(
         .all()
     )
     return {"checkins": [_activity_payload(row) for row in rows]}
+
+
+@router.get("/history/activities")
+def list_activity_history(
+    limit: int = Query(default=20, ge=1, le=40),
+    offset: int = Query(default=0, ge=0),
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Paginated private activity history with check-ins for later completion or editing."""
+    query = db.query(Activity).filter(Activity.user_id == current.id)
+    total = query.count()
+    activities = (
+        query.order_by(Activity.start_date.desc(), Activity.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    activity_ids = [activity.id for activity in activities]
+    checkins_by_activity: dict[int, ActivityCheckIn] = {}
+    if activity_ids:
+        checkin_rows = (
+            db.query(ActivityCheckIn)
+            .filter(
+                ActivityCheckIn.user_id == current.id,
+                ActivityCheckIn.activity_id.in_(activity_ids),
+            )
+            .all()
+        )
+        checkins_by_activity = {row.activity_id: row for row in checkin_rows}
+
+    items = []
+    for activity in activities:
+        stamp = activity.start_date_local or activity.start_date
+        row = checkins_by_activity.get(activity.id)
+        items.append({
+            "id": activity.id,
+            "name": activity.name,
+            "sport": activity.sport_type,
+            "distance_km": round((activity.distance or 0) / 1000, 2),
+            "moving_time_min": (activity.moving_time or 0) // 60,
+            "date": stamp.strftime("%d.%m.%Y") if stamp else "Неизвестно",
+            "checkin": _activity_payload(row) if row else None,
+        })
+
+    next_offset = offset + len(activities)
+    return {
+        "activities": items,
+        "total": total,
+        "next_offset": next_offset if next_offset < total else None,
+    }
 
 
 @router.get("/activities/{activity_id}")

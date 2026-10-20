@@ -194,6 +194,58 @@ class CheckInApiTests(unittest.TestCase):
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(len(listed.json()["checkins"]), 1)
 
+    def test_activity_history_includes_checkins_and_only_owned_activities(self):
+        saved = self.client.post(
+            "/api/check-ins/activities/" + str(self.activity_id),
+            json={"rpe": 6, "load_expectation": "as_expected", "discomfort": "none"},
+        )
+        response = self.client.get("/api/check-ins/history/activities")
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(len(payload["activities"]), 1)
+        activity = payload["activities"][0]
+        self.assertEqual(activity["id"], self.activity_id)
+        self.assertEqual(activity["checkin"]["rpe"], 6)
+        self.assertIsNone(payload["next_offset"])
+        self.assertNotIn(self.other_activity_id, [item["id"] for item in payload["activities"]])
+
+    def test_activity_history_paginates_older_activities_without_duplicates(self):
+        with TestSession() as db:
+            db.add_all([
+                Activity(
+                    user_id=self.user_id,
+                    intervals_activity_id="older-workout-1",
+                    name="Older workout 1",
+                    sport_type="Ride",
+                    moving_time=1800,
+                    start_date=datetime(2026, 10, 18, 10, 0),
+                ),
+                Activity(
+                    user_id=self.user_id,
+                    intervals_activity_id="older-workout-2",
+                    name="Older workout 2",
+                    sport_type="Ride",
+                    moving_time=2400,
+                    start_date=datetime(2026, 10, 17, 10, 0),
+                ),
+            ])
+            db.commit()
+
+        first = self.client.get("/api/check-ins/history/activities?limit=2&offset=0")
+        second = self.client.get("/api/check-ins/history/activities?limit=2&offset=2")
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        first_ids = [item["id"] for item in first.json()["activities"]]
+        second_ids = [item["id"] for item in second.json()["activities"]]
+        self.assertEqual(len(first_ids), 2)
+        self.assertEqual(len(second_ids), 1)
+        self.assertTrue(set(first_ids).isdisjoint(second_ids))
+        self.assertEqual(first.json()["next_offset"], 2)
+        self.assertIsNone(second.json()["next_offset"])
+        self.assertEqual(first.json()["total"], 3)
+
     def test_activity_checkin_cannot_read_or_change_another_users_activity(self):
         response = self.client.post(
             "/api/check-ins/activities/" + str(self.other_activity_id),

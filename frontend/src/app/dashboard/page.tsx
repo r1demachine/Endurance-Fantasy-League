@@ -396,9 +396,7 @@ export default function Dashboard() {
 
         {isAuthed && !isEmpty && (
           <motion.div variants={sectionItemVariants} custom={transitionDirection}>
-            <CheckInsPanel
-              recentActivities={Array.isArray(data.recent_activities) ? data.recent_activities : []}
-            />
+            <CheckInsPanel />
           </motion.div>
         )}
 
