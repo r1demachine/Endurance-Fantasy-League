@@ -129,8 +129,9 @@ class PersonalInterpretationServiceTests(unittest.TestCase):
     @patch("app.services.personal_interpretation.httpx.post")
     def test_hides_upstream_timeout_details(self, post):
         post.side_effect = httpx.TimeoutException("request timed out with internal details")
-        with self.assertRaisesRegex(PersonalInterpretationError, "Groq failed or returned invalid JSON"):
+        with self.assertRaises(PersonalInterpretationError) as raised:
             generate_personal_interpretation(sample_trends(), api_key="test-secret")
+        self.assertEqual(raised.exception.category, "timeout")
 
     @patch("app.services.personal_interpretation.httpx.post")
     def test_upstream_http_status_is_preserved_without_provider_body(self, post):
