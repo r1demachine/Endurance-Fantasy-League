@@ -2,7 +2,7 @@
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..dependencies import get_current_user, get_optional_current_user
 from ..models import Activity, Duel, DuelStatus, LeagueMembership, User, WeeklySummary, XPEvent
+from ..rate_limit import limiter
 from ..services.seasons import current_season, local_date, longest_consecutive_streak, season_for_date, sum_weekly_xp
 
 router = APIRouter(prefix="/api", tags=["Season and timezone"])
@@ -32,7 +33,9 @@ def get_season(
 
 
 @router.get("/season/recap")
+@limiter.limit("30/minute")
 def get_season_recap(
+    request: Request,
     season_start: date | None = Query(default=None),
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),

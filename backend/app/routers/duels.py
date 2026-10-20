@@ -289,7 +289,8 @@ def current_duel(
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Активная или pending дуэль текущей недели."""
+    """Активная дуэль текущей недели; заодно закрывает просроченные дуэли."""
+    finalize_expired_duels(db, current.id)
     week_start = _monday_dt()
     duel = (
         db.query(Duel)
@@ -309,6 +310,8 @@ def list_duels(
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    # Не ждём следующей синхронизации: открытие экрана дуэлей закрывает прошлые недели.
+    finalize_expired_duels(db, current.id)
     rows = (
         db.query(Duel)
         .filter(or_(Duel.challenger_id == current.id, Duel.opponent_id == current.id))
@@ -424,3 +427,40 @@ def finalize_duels_for_week(db: Session, week_start_d: date) -> int:
         db.rollback()
         logger.exception("Failed to finalize duels for week_start=%s", week_start.date())
         raise
+
+
+
+def finalize_expired_duels(db: Session, user_id: int, today: Optional[date] = None) -> int:
+    """Идемпотентно закрывает прошлые дуэли пользователя без ожидания новой синхронизации.
+
+    Для закрываемой недели помечаем существующие сводки завершёнными: их числа уже
+    посчитаны последней синхронизацией, а завершённая календарная неделя не должна
+    навсегда зависеть от следующего запуска sync.
+    """
+    current_week_dt = _monday_dt(today)
+    expired_weeks = (
+        db.query(Duel.week_start)
+        .filter(
+            Duel.week_start < current_week_dt,
+            Duel.status.in_([DuelStatus.PENDING.value, DuelStatus.ACTIVE.value]),
+            or_(Duel.challenger_id == user_id, Duel.opponent_id == user_id),
+        )
+        .distinct()
+        .order_by(Duel.week_start.asc())
+        .all()
+    )
+
+    finalized_count = 0
+    for (week_start,) in expired_weeks:
+        if week_start is None:
+            continue
+        week_summaries = (
+            db.query(WeeklySummary)
+            .filter(WeeklySummary.week_start == week_start)
+            .all()
+        )
+        for summary in week_summaries:
+            summary.finalized = True
+        db.flush()
+        finalized_count += finalize_duels_for_week(db, week_start.date())
+    return finalized_count

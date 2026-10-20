@@ -1,9 +1,8 @@
 """Completed weekly recaps for the authenticated athlete."""
-from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -18,6 +17,7 @@ from ..models import (
     WeeklySummary,
     XPEvent,
 )
+from ..rate_limit import limiter
 from ..services.seasons import local_date
 
 router = APIRouter(prefix="/api", tags=["Recaps"])
@@ -37,7 +37,9 @@ def _not_available(week_start: date, reason: str) -> dict:
 
 
 @router.get("/week-recap")
+@limiter.limit("30/minute")
 def get_week_recap(
+    request: Request,
     week_start: date | None = Query(default=None),
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -52,6 +54,12 @@ def get_week_recap(
     if selected_week >= current_week:
         return _not_available(selected_week, "week_not_completed")
 
+    # A completed week must not depend on a later manual sync to close duels or
+    # publish recap data. Finalize the viewer's expired duels from persisted totals.
+    from .duels import finalize_expired_duels
+
+    finalize_expired_duels(db, current.id, today)
+
     summary = (
         db.query(WeeklySummary)
         .filter(
@@ -63,7 +71,12 @@ def get_week_recap(
     if summary is None:
         return _not_available(selected_week, "summary_missing")
     if not bool(summary.finalized):
-        return _not_available(selected_week, "week_not_finalized")
+        # This endpoint only allows weeks strictly before the current local week.
+        # Freeze the last persisted summary so a missed sync cannot hide the recap
+        # indefinitely; a subsequent sync can still recompute the row.
+        summary.finalized = True
+        db.commit()
+        db.refresh(summary)
 
     activities = (
         db.query(Activity)

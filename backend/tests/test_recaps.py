@@ -21,6 +21,7 @@ from app.models import (
 )
 from app.routers import season as season_router
 from app.routers import recaps as recaps_router
+from app.routers import duels as duels_router
 from app.routers.duels import _serialize as serialize_duel
 from app.services.seasons import current_season, longest_consecutive_streak
 
@@ -46,6 +47,7 @@ class RecapTests(unittest.TestCase):
         self.app = FastAPI()
         self.app.include_router(recaps_router.router)
         self.app.include_router(season_router.router)
+        self.app.include_router(duels_router.router)
 
         def override_db():
             yield self.db
@@ -196,13 +198,45 @@ class RecapTests(unittest.TestCase):
         self.assertEqual(result["best_day"]["date"], expected_best["date"])
         self.assertEqual(result["best_day"]["xp"], round(expected_best["xp"]["total"], 1))
 
-    def test_week_recap_is_unavailable_until_week_is_finalized(self):
+    def test_week_recap_lazily_finalizes_a_past_week_without_another_sync(self):
         monday = self.last_completed_monday()
-        self.add_week(self.owner, monday, finalized=False, total_xp=77)
+        summary = self.add_week(self.owner, monday, finalized=False, total_xp=77)
         response = self.client.get("/api/week-recap", params={"week_start": monday.isoformat()})
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.json()["available"])
-        self.assertEqual(response.json()["reason"], "week_not_finalized")
+        self.assertTrue(response.json()["available"])
+        self.assertTrue(response.json()["finalized"])
+        self.assertEqual(response.json()["total_xp"], 77)
+        self.db.refresh(summary)
+        self.assertTrue(summary.finalized)
+
+    def test_duel_list_lazily_finishes_an_expired_duel_without_sync(self):
+        monday = self.last_completed_monday()
+        owner_summary = self.add_week(self.owner, monday, finalized=False, total_xp=120)
+        other_summary = self.add_week(self.other, monday, finalized=False, total_xp=80)
+        week_dt = datetime.combine(monday, datetime.min.time())
+        duel = Duel(
+            challenger_id=self.owner.id,
+            opponent_id=self.other.id,
+            week_start=week_dt,
+            status=DuelStatus.ACTIVE.value,
+            pair_low_id=min(self.owner.id, self.other.id),
+            pair_high_id=max(self.owner.id, self.other.id),
+        )
+        self.db.add(duel)
+        self.db.commit()
+
+        response = self.client.get("/api/duels")
+        self.assertEqual(response.status_code, 200)
+        result = response.json()["items"][0]
+        self.assertEqual(result["status"], DuelStatus.FINISHED.value)
+        self.assertEqual(result["my_xp"], 120)
+        self.assertEqual(result["other_xp"], 80)
+        self.assertTrue(result["i_won"])
+
+        self.db.refresh(owner_summary)
+        self.db.refresh(other_summary)
+        self.assertTrue(owner_summary.finalized)
+        self.assertTrue(other_summary.finalized)
 
     def test_week_recap_requires_authentication(self):
         self.app.dependency_overrides.pop(get_current_user, None)
