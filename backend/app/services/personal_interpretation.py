@@ -162,6 +162,32 @@ def _normalise_number(token: str) -> str:
     return format(number, "f")
 
 
+def _source_numbers(value: Any) -> set[str]:
+    """Collect numeric tokens from aggregate values while ignoring ISO date strings."""
+    if isinstance(value, bool) or value is None:
+        return set()
+    if isinstance(value, (int, float)):
+        return {_normalise_number(str(value))}
+    if isinstance(value, str):
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value.strip()):
+            return set()
+        return {
+            _normalise_number(match.group(0))
+            for match in _NUMBER_TOKEN.finditer(value)
+        }
+    if isinstance(value, dict):
+        tokens: set[str] = set()
+        for child in value.values():
+            tokens.update(_source_numbers(child))
+        return tokens
+    if isinstance(value, (list, tuple)):
+        tokens: set[str] = set()
+        for child in value:
+            tokens.update(_source_numbers(child))
+        return tokens
+    return set()
+
+
 def _response_text(analysis: PersonalInterpretation) -> str:
     values = [analysis.headline, analysis.summary]
     for field in (
@@ -184,11 +210,7 @@ def _validate_interpretation_claims(
     checker. The source prompt and the UI disclaimer remain necessary safeguards.
     """
     text = _response_text(analysis)
-    source = json.dumps(_model_input(trends), ensure_ascii=False, sort_keys=True)
-    allowed_numbers = {
-        _normalise_number(match.group(0))
-        for match in _NUMBER_TOKEN.finditer(source)
-    }
+    allowed_numbers = _source_numbers(_model_input(trends))
     unsupported_numbers = {
         _normalise_number(match.group(0))
         for match in _NUMBER_TOKEN.finditer(text)
