@@ -2,7 +2,7 @@ import re
 from functools import lru_cache
 from typing import Optional
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_USERNAME: Optional[str] = None
     # Shared secret for the scheduled internal notification tick.
     CRON_SECRET: Optional[str] = None
+    # Groq: optional AI interpretation of aggregate personal trends only.
+    GROQ_API_KEY: Optional[str] = None
+    GROQ_MODEL: str = "openai/gpt-oss-20b"
+    GROQ_TIMEOUT_SECONDS: int = Field(default=20, ge=1, le=60)
 
     model_config = SettingsConfigDict(
         env_file=".env",
