@@ -1,0 +1,32 @@
+name: Incremental Intervals sync tick
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  intervals-sync-tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Call the protected Intervals sync endpoint
+        shell: bash
+        env:
+          INTERVALS_SYNC_TICK_URL: ${{ secrets.INTERVALS_SYNC_TICK_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$INTERVALS_SYNC_TICK_URL" || -z "$CRON_SECRET" ]]; then
+            echo "Set INTERVALS_SYNC_TICK_URL and CRON_SECRET in GitHub Actions secrets."
+            exit 1
+          fi
+          curl --fail --silent --show-error \
+            --max-time 600 \
+            --retry 2 --retry-all-errors --retry-delay 5 \
+            --request POST \
+            --header "X-Cron-Secret: $CRON_SECRET" \
+            "$INTERVALS_SYNC_TICK_URL"
