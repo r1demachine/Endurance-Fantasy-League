@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.dependencies import get_current_user
+from app.services.day_ledger import build_day_ledger
 from app.models import (
     Activity,
     Duel,
