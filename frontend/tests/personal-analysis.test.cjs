@@ -40,6 +40,7 @@ test("UI includes loading, retry, insufficient-data, rate-limit, upstream-failur
   assert.match(page, /Недостаточно данных/);
   assert.match(page, /Слишком много запросов/);
   assert.match(page, /AI-сервис временно недоступен/);
+  assert.match(page, /serverDetail \|\|/);
   assert.match(page, /503/);
   assert.match(page, /"—"/);
 });

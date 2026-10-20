@@ -459,14 +459,15 @@ class PersonalTrendApiTests(unittest.TestCase):
             GROQ_MODEL="openai/gpt-oss-20b",
             GROQ_TIMEOUT_SECONDS=20,
         )
-        generate.side_effect = PersonalInterpretationError("provider raw response and secret")
+        generate.side_effect = PersonalInterpretationError("provider raw response and secret", category="upstream_http_error", upstream_status=401)
         with patch("app.routers.personal_analysis.local_today", return_value=TODAY):
             response = self.client.post("/api/personal-analysis/interpretation")
 
         self.assertEqual(response.status_code, 502)
         self.assertNotIn("provider raw response", response.text)
         self.assertNotIn("secret", response.text)
-        self.assertIn("не удалось получить корректный ответ", response.json()["detail"].lower())
+        self.assertIn("http 401", response.json()["detail"].lower())
+        self.assertIn("groq_api_key", response.json()["detail"].lower())
 
     def test_interpretation_requires_authentication(self):
         app = FastAPI()

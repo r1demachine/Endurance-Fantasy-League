@@ -1,4 +1,5 @@
 """Private API for deterministic personal training and wellbeing trends."""
+import logging
 from datetime import datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -17,6 +18,7 @@ from ..services.personal_interpretation import (
 )
 
 router = APIRouter(prefix="/api/personal-analysis", tags=["Personal analysis"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/trends")
@@ -135,10 +137,34 @@ def post_personal_interpretation(
             timeout_seconds=settings.GROQ_TIMEOUT_SECONDS,
         )
     except PersonalInterpretationError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail="Не удалось получить корректный ответ AI-сервиса. Данные не изменены; попробуй позже.",
-        ) from exc
+        # Diagnostic fields intentionally exclude the API key, user data, prompt and provider body.
+        logger.warning(
+            "Personal interpretation failed: category=%s upstream_status=%s model=%s",
+            exc.category,
+            exc.upstream_status,
+            settings.GROQ_MODEL,
+        )
+        if exc.category == "timeout":
+            detail = "Groq не ответил за установленное время. Попробуй позже или увеличь GROQ_TIMEOUT_SECONDS."
+        elif exc.category == "connection_error":
+            detail = "Backend не смог подключиться к Groq. Проверь сетевую доступность API."
+        elif exc.upstream_status == 401:
+            detail = "Groq отклонил авторизацию (HTTP 401). Проверь GROQ_API_KEY в Render и перезапусти сервис после сохранения."
+        elif exc.upstream_status == 403:
+            detail = "Groq запретил доступ (HTTP 403). Проверь права проекта, доступность модели и состояние биллинга Groq."
+        elif exc.upstream_status == 400:
+            detail = "Groq отклонил параметры запроса (HTTP 400). Проверь GROQ_MODEL и настройки запроса."
+        elif exc.upstream_status == 404:
+            detail = "Модель Groq не найдена или недоступна (HTTP 404). Проверь значение GROQ_MODEL."
+        elif exc.upstream_status == 429:
+            detail = "Groq вернул лимит запросов или исчерпание квоты (HTTP 429). Проверь лимиты и баланс проекта."
+        elif exc.upstream_status is not None and exc.upstream_status >= 500:
+            detail = f"Groq временно ответил ошибкой HTTP {exc.upstream_status}. Попробуй позже."
+        elif exc.category in {"invalid_response", "invalid_schema"}:
+            detail = "Groq ответил, но формат ответа оказался некорректным. Попробуй ещё раз."
+        else:
+            detail = "Не удалось получить корректный ответ AI-сервиса. Данные не изменены; попробуй позже."
+        raise HTTPException(status_code=502, detail=detail) from exc
 
     return {
         "status": "ready",
