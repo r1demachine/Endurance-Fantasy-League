@@ -51,7 +51,7 @@ export default function ShareButton({ data, label = "Поделиться" }: Pr
       setPreviewUrl(url);
       try {
         const file = new File([rendered], fileName(imageInput), { type: "image/png" });
-        setCanShareFiles(Boolean(navigator.canShare?.({ files: [file] })));
+        setCanShareFiles(Boolean(navigator.share && navigator.canShare?.({ files: [file] })));
       } catch {
         setCanShareFiles(false);
       }
@@ -91,7 +91,7 @@ export default function ShareButton({ data, label = "Поделиться" }: Pr
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const share = async () => {
