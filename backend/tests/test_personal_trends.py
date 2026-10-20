@@ -223,6 +223,28 @@ class PersonalTrendCalculationTests(unittest.TestCase):
         self.assertEqual(relationship["rpe_difference_high_minus_low"], 4.0)
         self.assertIn("не доказательство", relationship["limitations"][0])
 
+    def test_estimated_tss_is_reported_but_not_mixed_with_measured_tss(self):
+        activities = []
+        checkins = []
+        first_day = TODAY - timedelta(days=24)
+        for index in range(8):
+            day = first_day + timedelta(days=index)
+            item = activity(1, 200 + index, day, tss=25 + index, local=True)
+            item.tss_estimated = True
+            activities.append(item)
+            checkins.append(activity_checkin(1, 200 + index, rpe=5))
+
+        result = calculate(activities=activities, activity_checkins=checkins)
+        relationship = result["training_load_relationship"]
+        coverage = result["coverage"]["activities"]
+
+        self.assertEqual(relationship["status"], "insufficient_data")
+        self.assertEqual(relationship["paired_days"], 0)
+        self.assertEqual(relationship["days_excluded_due_to_estimated_tss"], 8)
+        self.assertEqual(coverage["activities_with_estimated_tss"], 8)
+        self.assertEqual(coverage["activities_with_measured_tss"], 0)
+        self.assertTrue(any("оценочный" in gap for gap in result["data_gaps"]))
+
     def test_missing_tss_does_not_become_zero_in_load_relationship(self):
         activities = [
             activity(1, 1, TODAY, tss=None),

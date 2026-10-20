@@ -181,6 +181,7 @@ def _load_rpe_relationship(
 ) -> dict:
     paired_days: list[tuple[date, float, float]] = []
     days_with_missing_tss = 0
+    days_with_estimated_tss = 0
 
     for day in _dates_between(period_start, period_end):
         day_activities = activity_days.get(day, [])
@@ -195,6 +196,10 @@ def _load_rpe_relationship(
         if any(load is None for load in loads):
             days_with_missing_tss += 1
             continue
+        # Never combine model-estimated TSS with source-measured TSS in this comparison.
+        if any(bool(getattr(activity, "tss_estimated", False)) for activity in day_activities):
+            days_with_estimated_tss += 1
+            continue
         paired_days.append((day, sum(loads), mean(rpe_values)))
 
     common = {
@@ -203,6 +208,7 @@ def _load_rpe_relationship(
         "period": {"start": period_start.isoformat(), "end": period_end.isoformat()},
         "paired_days": len(paired_days),
         "days_excluded_due_to_missing_tss": days_with_missing_tss,
+        "days_excluded_due_to_estimated_tss": days_with_estimated_tss,
         "median_daily_tss": None,
         "lower_or_equal_load": {"days": 0, "mean_daily_rpe": None},
         "above_median_load": {"days": 0, "mean_daily_rpe": None},
@@ -217,6 +223,7 @@ def _load_rpe_relationship(
         "limitations": [
             "Это описательная совместная динамика, а не доказательство причинно-следственной связи.",
             "День исключается, если хотя бы у одной сохранённой тренировки этого дня нет корректного TSS.",
+            "Оценочный TSS не смешивается с TSS, помеченным как измеренный.",
             "Полнота последней синхронизации Intervals.icu этим расчётом не проверяется.",
         ],
     }
@@ -439,6 +446,12 @@ def build_personal_trends(
         for activity_id, activity in activity_by_id.items()
         if _nonnegative_number(getattr(activity, "tss", None)) is not None
     }
+    estimated_tss_activity_ids = {
+        activity_id
+        for activity_id in tss_activity_ids
+        if bool(getattr(activity_by_id[activity_id], "tss_estimated", False))
+    }
+    measured_tss_activity_ids = tss_activity_ids - estimated_tss_activity_ids
     no_tss_activity_count = total_activities - len(tss_activity_ids)
     no_rpe_activity_count = total_activities - len(rpe_activity_ids)
     no_expectation_activity_count = total_activities - len(expectation_activity_ids)
@@ -472,6 +485,11 @@ def build_personal_trends(
     if no_tss_activity_count:
         data_gaps.append(
             f"У {no_tss_activity_count} из {total_activities} сохранённых тренировок нет пригодного значения TSS."
+        )
+    if estimated_tss_activity_ids:
+        data_gaps.append(
+            f"TSS помечен как оценочный у {len(estimated_tss_activity_ids)} тренировок; "
+            "они не включаются в сравнение измеренного TSS и RPE."
         )
     if no_rpe_activity_count:
         data_gaps.append(
@@ -529,6 +547,8 @@ def build_personal_trends(
             "activities": {
                 "activities_in_period": total_activities,
                 "activities_with_tss": len(tss_activity_ids),
+                "activities_with_measured_tss": len(measured_tss_activity_ids),
+                "activities_with_estimated_tss": len(estimated_tss_activity_ids),
                 "activities_without_tss": no_tss_activity_count,
                 "activities_with_rpe": len(rpe_activity_ids),
                 "activities_without_rpe": no_rpe_activity_count,
