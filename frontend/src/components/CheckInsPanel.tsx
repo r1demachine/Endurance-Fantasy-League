@@ -115,7 +115,7 @@ export default function CheckInsPanel() {
   const [morningBusy, setMorningBusy] = useState(false);
   const [morningError, setMorningError] = useState("");
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [nextActivityOffset, setNextActivityOffset] = useState<number | null>(0);
+  const [nextActivityOffset, setNextActivityOffset] = useState<number | null>(null);
   const [visibleActivityCount, setVisibleActivityCount] = useState(5);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
   const [activitiesError, setActivitiesError] = useState("");
@@ -165,7 +165,7 @@ export default function CheckInsPanel() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const loadActivities = useCallback(async (offset = 0, append = false) => {
+  const loadActivities = useCallback(async (offset = 0) => {
     setActivitiesLoading(true);
     setActivitiesError("");
     try {
@@ -173,17 +173,13 @@ export default function CheckInsPanel() {
         params: { offset, limit: 20 },
       });
       const rows = Array.isArray(response.data?.activities) ? response.data.activities as Activity[] : [];
-      setActivities((current) => {
-        if (!append) return rows;
-        const currentIds = new Set(current.map((activity) => activity.id));
-        return [...current, ...rows.filter((activity) => !currentIds.has(activity.id))];
-      });
+      setActivities(rows);
       setNextActivityOffset(
         response.data?.next_offset === null || response.data?.next_offset === undefined
           ? null
           : Number(response.data.next_offset),
       );
-      if (!append) setVisibleActivityCount(5);
+      setVisibleActivityCount(5);
     } catch {
       setActivitiesError("Не удалось загрузить историю тренировок и чек-инов.");
     } finally {
@@ -342,12 +338,10 @@ export default function CheckInsPanel() {
         params: { offset, limit: 20 },
       });
       const rows = Array.isArray(response.data?.activities) ? response.data.activities as Activity[] : [];
-      setActivities((current) => {
-        const currentIds = new Set(current.map((activity) => activity.id));
-        const fresh = rows.filter((activity) => !currentIds.has(activity.id));
-        setVisibleActivityCount(current.length + fresh.length);
-        return [...current, ...fresh];
-      });
+      const currentIds = new Set(activities.map((activity) => activity.id));
+      const fresh = rows.filter((activity) => !currentIds.has(activity.id));
+      setActivities((current) => [...current, ...fresh]);
+      setVisibleActivityCount((current) => current + fresh.length);
       setNextActivityOffset(
         response.data?.next_offset === null || response.data?.next_offset === undefined
           ? null
@@ -403,7 +397,7 @@ export default function CheckInsPanel() {
           ) : (
             <ul className="mt-3 divide-y divide-black/15 border-t border-black/15">
               {visibleActivities.map((activity) => {
-                const existing = activityCheckins[activity.id];
+                const existing = activity.checkin;
                 const editing = editingActivityId === activity.id;
                 return (
                   <li key={activity.id} className="py-3">
