@@ -85,6 +85,8 @@ test("share image is local, transparent, waits for local fonts, and does not req
   const source = read("src/lib/shareImage.ts");
   const button = read("src/components/ShareButton.tsx");
   assert.match(source, /document\.fonts\.load/);
+  assert.match(source, /getComputedStyle\(document\.body\)\.fontFamily/);
+  assert.doesNotMatch(source, /className = "font-display"/);
   assert.match(source, /canvas\.toBlob/);
   assert.match(source, /ctx\.clearRect/);
   assert.match(source, /#ff4b26/);
