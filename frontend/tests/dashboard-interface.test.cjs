@@ -228,12 +228,14 @@ test("the obsolete per-workout +12 XP bonus is no longer generated or displayed"
   assert.ok(xpDetails.includes("activityEvents = (activityAwards?.events ?? []).filter"));
 });
 
-test("global typography grows one point but restores heading and display scales", () => {
+test("typography keeps a stable scale and long text stays within its container", () => {
   const css = read("src/app/globals.css");
-  assert.ok(css.includes("font-size: calc(1rem + 1pt)"));
-  assert.ok(css.includes("--text-sm: calc(0.875rem + 1pt)"));
-  assert.ok(css.includes(":where(h1, h2, h3, h4, h5, h6)"));
-  assert.ok(css.includes("font-size: calc(10px + 1pt)"));
+  assert.ok(css.includes(":root { font-size: 16px; }"));
+  assert.ok(css.includes("box-sizing: border-box"));
+  assert.ok(css.includes("overflow-wrap: anywhere"));
+  assert.ok(css.includes("max-width: 100%"));
+  assert.equal(css.includes("font-size: calc(1rem + 1pt)"), false);
+  assert.equal(css.includes("font-size: calc(10px + 1pt)"), false);
   assert.ok(css.includes("prefers-reduced-motion: reduce"));
 });
 
@@ -301,4 +303,34 @@ test("week calendar renders seven ledger days and shares the XP breakdown compon
 test("the retired dashboard list component is no longer referenced or kept", () => {
   assert.equal(fs.existsSync(path.join(__dirname, "..", "src/components/dashboard/WorkoutsList.tsx")), false);
   assert.equal(fs.existsSync(path.join(__dirname, "..", "src/components/dashboard/DashboardWorkoutsSection.tsx")), false);
+});
+
+
+test("calendar glossary explains load terms and searches definitions", () => {
+  const glossary = read("src/components/dashboard/TrainingGlossary.tsx");
+  const calendar = read("src/components/dashboard/WeekCalendar.tsx");
+  assert.match(calendar, /<TrainingGlossary \/>/);
+  assert.match(glossary, /TSS — Training Stress Score/);
+  assert.match(glossary, /EST — оценочная нагрузка/);
+  assert.match(glossary, /Квалифицирующий день/);
+  assert.match(glossary, /entry\\.description/);
+  assert.match(glossary, /localStorage/);
+  assert.match(glossary, /Помнишь, что такое TSS/);
+});
+
+test("manual rest-day token is represented in calendar and cooperative streak remains a nonfunctional placeholder", () => {
+  const calendar = read("src/components/dashboard/WeekCalendar.tsx");
+  const dashboard = read("src/app/dashboard/page.tsx");
+  const todayCard = read("src/components/dashboard/TodayCard.tsx");
+  assert.match(calendar, /Использовать день отдыха/);
+  assert.match(calendar, /День отдыха — стрик сохранён/);
+  assert.match(dashboard, /authApi\\.post\\("\\/api\\/streak\\/rest-day"/);
+  assert.match(todayCard, /Кооперативный стрик/);
+  assert.match(todayCard, /disabled[\\s\\S]*?Совместные серии появятся позже/);
+});
+
+test("calendar uses seven columns only once sufficient horizontal space is available", () => {
+  const calendar = read("src/components/dashboard/WeekCalendar.tsx");
+  assert.match(calendar, /xl:grid-cols-7/);
+  assert.equal(calendar.includes("lg:grid-cols-7"), false);
 });
