@@ -55,7 +55,7 @@ export default function ShareButton({ data, label = "Поделиться" }: Pr
       setPreviewUrl(url);
       try {
         const file = new File([rendered], fileName(imageInput), { type: "image/png" });
-        setCanShareFiles(Boolean(navigator.share && navigator.canShare?.({ files: [file] })));
+        setCanShareFiles(Boolean(navigator.canShare?.({ files: [file] })));
       } catch {
         setCanShareFiles(false);
       }
