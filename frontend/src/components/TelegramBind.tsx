@@ -3,11 +3,30 @@
 import { useCallback, useEffect, useState } from "react";
 import { authApi } from "@/lib/auth";
 
+type NotifyPrefKey = "daily_bonus_reminder" | "league_overtaken" | "weekly_results" | "activity_social";
+
+type NotifyPrefs = Record<NotifyPrefKey, boolean>;
+
+const DEFAULT_NOTIFY_PREFS: NotifyPrefs = {
+  daily_bonus_reminder: true,
+  league_overtaken: true,
+  weekly_results: true,
+  activity_social: true,
+};
+
+const NOTIFY_PREFS: { key: NotifyPrefKey; label: string; detail: string }[] = [
+  { key: "daily_bonus_reminder", label: "Напоминание о дневном бонусе", detail: "Вечером, если бонус +20 XP ещё доступен" },
+  { key: "league_overtaken", label: "Меня обошли в лиге", detail: "Если место ухудшилось за текущую неделю" },
+  { key: "weekly_results", label: "Итоги недели", detail: "XP, тренировочные дни и результат лиги" },
+  { key: "activity_social", label: "Лайки и комментарии", detail: "Реакции на твои тренировки" },
+];
+
 type Status = {
   bot_configured: boolean;
   bot_username: string | null;
   linked: boolean;
   notify: boolean;
+  notify_prefs: NotifyPrefs;
   has_pending_code: boolean;
 };
 
@@ -22,7 +41,10 @@ export default function TelegramBind() {
   const load = useCallback(async () => {
     try {
       const r = await authApi.get("/api/telegram/status");
-      setStatus(r.data);
+      setStatus({
+        ...r.data,
+        notify_prefs: { ...DEFAULT_NOTIFY_PREFS, ...(r.data.notify_prefs || {}) },
+      });
       if (r.data.linked) {
         setCode(null);
         setDeepLink(null);
@@ -34,6 +56,7 @@ export default function TelegramBind() {
         bot_username: null,
         linked: false,
         notify: false,
+        notify_prefs: DEFAULT_NOTIFY_PREFS,
         has_pending_code: false,
       });
     }
@@ -67,6 +90,22 @@ export default function TelegramBind() {
       await load();
     } catch (e: any) {
       setMsg(e.response?.data?.detail || "Ошибка");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const togglePreference = async (key: NotifyPrefKey, enabled: boolean) => {
+    setBusy(true);
+    setMsg("");
+    try {
+      const response = await authApi.patch("/api/telegram/preferences", { [key]: enabled });
+      setStatus((current) => current ? {
+        ...current,
+        notify_prefs: { ...DEFAULT_NOTIFY_PREFS, ...(response.data.notify_prefs || {}), [key]: enabled },
+      } : current);
+    } catch (e: any) {
+      setMsg(e.response?.data?.detail || "Не удалось сохранить настройки уведомлений");
     } finally {
       setBusy(false);
     }
@@ -148,6 +187,32 @@ export default function TelegramBind() {
               </button>
               {expires && <p className="mt-1 text-[10px] text-[#666]">до {expires}</p>}
             </div>
+          )}
+
+          {status.linked && (
+            <fieldset className="border-2 border-black bg-white p-3">
+              <legend className="px-2 font-display text-sm uppercase">Какие уведомления присылать</legend>
+              <div className="space-y-1">
+                {NOTIFY_PREFS.map((item) => (
+                  <label key={item.key} className="flex cursor-pointer items-start gap-3 border-b border-black/10 py-2 last:border-0">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(status.notify_prefs[item.key])}
+                      disabled={busy}
+                      onChange={(event) => void togglePreference(item.key, event.target.checked)}
+                      className="mt-1 h-4 w-4 accent-[#5866f2] disabled:opacity-50"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-bold">{item.label}</span>
+                      <span className="block text-xs text-[#666]">{item.detail}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="mt-2 text-[10px] text-[#666]">
+                Не больше одного проактивного сообщения в сутки и четырёх в неделю. Глобальный переключатель выше отключает все сообщения.
+              </p>
+            </fieldset>
           )}
 
           {status.linked && (
