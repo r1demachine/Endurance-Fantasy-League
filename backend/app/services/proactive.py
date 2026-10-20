@@ -141,45 +141,69 @@ def _has_daily_bonus(db: Session, user: User, day: date) -> bool:
 
 
 def reminder_decay_active(db: Session, user: User, today: date) -> bool:
-    """Suppress a fourth consecutive daily reminder until a newer workout exists."""
+    """Keep suppressing reminders after three consecutive reminder days until a workout occurs."""
     reminders = (
         db.query(NotificationLog)
         .filter(
             NotificationLog.user_id == user.id,
             NotificationLog.kind == "daily_bonus_reminder",
+            NotificationLog.local_date <= today,
         )
         .order_by(NotificationLog.local_date.desc(), NotificationLog.id.desc())
-        .limit(REMINDER_DECAY_COUNT)
+        .limit(60)
         .all()
     )
-    if len(reminders) < REMINDER_DECAY_COUNT:
-        return False
-    reminder_dates = [row.local_date for row in reminders]
-    if reminder_dates[0] != today - timedelta(days=1):
-        return False
-    if any(
-        reminder_dates[index] - reminder_dates[index + 1] != timedelta(days=1)
-        for index in range(len(reminder_dates) - 1)
-    ):
+    reminder_dates = {row.local_date for row in reminders}
+    if len(reminder_dates) < REMINDER_DECAY_COUNT:
         return False
 
-    # Any activity on a later local date means the user trained after the earliest
-    # of the three reminder windows and resets the fatigue suppression.
-    earliest_day = min(reminder_dates)
-    start_dt = datetime.combine(earliest_day + timedelta(days=1), time.min)
-    end_dt = datetime.combine(today + timedelta(days=1), time.min)
-    had_new_activity = (
-        db.query(Activity.id)
-        .filter(
-            Activity.user_id == user.id,
-            func.coalesce(Activity.start_date_local, Activity.start_date) >= start_dt,
-            func.coalesce(Activity.start_date_local, Activity.start_date) < end_dt,
+    # A consecutive three-day run can remain in the ledger while reminders are
+    # suppressed. Do not require a reminder yesterday: the user stays suppressed
+    # until a subsequent workout resets the fatigue guard.
+    candidate_ends = sorted(reminder_dates, reverse=True)
+    for last_day in candidate_ends:
+        run_dates = {
+            last_day - timedelta(days=offset)
+            for offset in range(REMINDER_DECAY_COUNT)
+        }
+        if not run_dates.issubset(reminder_dates):
+            continue
+        earliest_day = min(run_dates)
+        start_dt = datetime.combine(earliest_day, time.min)
+        end_dt = datetime.combine(today + timedelta(days=1), time.min)
+        had_activity = (
+            db.query(Activity.id)
+            .filter(
+                Activity.user_id == user.id,
+                func.coalesce(Activity.start_date_local, Activity.start_date) >= start_dt,
+                func.coalesce(Activity.start_date_local, Activity.start_date) < end_dt,
+            )
+            .first()
+            is not None
         )
-        .first()
-        is not None
-    )
-    return not had_new_activity
-
+        if not had_activity:
+            return True
+        # A qualifying or non-qualifying workout since this reminder streak resets
+        # decay; older runs before that workout are irrelevant.
+        later_activity_day = (
+            db.query(func.max(func.date(func.coalesce(Activity.start_date_local, Activity.start_date))))
+            .filter(
+                Activity.user_id == user.id,
+                func.coalesce(Activity.start_date_local, Activity.start_date) >= start_dt,
+                func.coalesce(Activity.start_date_local, Activity.start_date) < end_dt,
+            )
+            .scalar()
+        )
+        if later_activity_day:
+            activity_day_value = later_activity_day
+            if isinstance(activity_day_value, str):
+                try:
+                    activity_day_value = date.fromisoformat(activity_day_value[:10])
+                except ValueError:
+                    activity_day_value = None
+            if isinstance(activity_day_value, date):
+                candidate_ends = [candidate for candidate in candidate_ends if candidate > activity_day_value]
+    return False
 
 def daily_reminder_context(db: Session, user: User, now: datetime | None = None) -> tuple[date, int] | None:
     """Return (local date, streak) only when the daily-bonus reminder is appropriate."""
@@ -268,16 +292,28 @@ async def send_proactive(
     now: datetime | None = None,
 ) -> bool:
     """The one gate for every scheduled proactive Telegram message."""
-    if kind not in DEFAULT_NOTIFY_PREFS:
+    if kind not in DEFAULT_NOTIFY_PREFS or not getattr(user, "id", None):
         return False
+    settings = get_settings()
+    if not settings.TELEGRAM_BOT_TOKEN:
+        return False
+
+    # Serialize concurrent tick workers for this user. Limits across different
+    # kinds cannot be guaranteed by the per-kind unique constraint alone.
+    locked_user = (
+        db.query(User)
+        .filter(User.id == user.id)
+        .with_for_update()
+        .first()
+    )
+    if locked_user is None:
+        return False
+    user = locked_user
     if not user.telegram_chat_id or not bool(user.telegram_notify):
         return False
     if not get_notify_prefs(user).get(kind, False):
         return False
     if kind == "daily_bonus_reminder" and not bool(user.timezone_confirmed):
-        return False
-    settings = get_settings()
-    if not settings.TELEGRAM_BOT_TOKEN:
         return False
 
     local_moment = user_local_datetime(user, now)
@@ -325,10 +361,14 @@ async def send_proactive(
 
     outgoing = f"{text.strip()}\n\n{PROACTIVE_FOOTER}"
     try:
-        await send_message(str(user.telegram_chat_id), outgoing)
+        delivered = await send_message(str(user.telegram_chat_id), outgoing)
     except Exception as exc:  # noqa: BLE001
-        # Release a failed reservation so a later cron tick can retry.
         logger.warning("Proactive Telegram delivery failed (%s): %s", kind, type(exc).__name__)
+        delivered = False
+
+    if not delivered:
+        # Telegram returns False for blocked chats and exhausted retries; release
+        # the reservation so failed attempts do not consume daily/weekly allowance.
         db.query(NotificationLog).filter(
             NotificationLog.user_id == user.id,
             NotificationLog.kind == kind,
