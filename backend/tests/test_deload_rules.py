@@ -6,18 +6,20 @@ from app.services import xp_v6 as X6
 
 
 class DeloadRulesTests(unittest.TestCase):
-    def test_manual_deload_requires_both_immediately_previous_weeks(self):
+    def test_manual_deload_requires_two_of_previous_three_weeks_at_75_percent(self):
         baseline = 400.0
-        self.assertTrue(D.previous_two_weeks_qualify([360.0, 400.0], baseline))
-        self.assertFalse(D.previous_two_weeks_qualify([360.0], baseline))
-        self.assertFalse(D.previous_two_weeks_qualify([None, 400.0], baseline))
-        self.assertFalse(D.previous_two_weeks_qualify([359.99, 400.0], baseline))
+        self.assertTrue(D.previous_three_weeks_qualify([300.0, 400.0, 300.0], baseline))
+        self.assertTrue(D.previous_three_weeks_qualify([None, 300.0, 300.0], baseline))
+        self.assertTrue(D.previous_three_weeks_qualify([250.0, 300.0, 300.0], baseline))
+        self.assertFalse(D.previous_three_weeks_qualify([300.0, 299.99, 100.0], baseline))
+        self.assertFalse(D.previous_three_weeks_qualify([None, 300.0, 299.99], baseline))
+        self.assertFalse(D.previous_three_weeks_qualify([300.0, 400.0], baseline))
 
     def test_manual_deload_blocks_pause_high_load_and_manual_decision(self):
         current = date(2026, 10, 12)
         common = dict(
             current_week_start=current, current_load=320.0, baseline=400.0,
-            previous_two_loads=[400.0, 400.0], last_deload_week_start=None,
+            previous_three_loads=[400.0, 400.0, 400.0], last_deload_week_start=None,
             paused=False, manual_decision=False,
         )
         self.assertIsNone(D.manual_deload_block_reason(**common))
@@ -31,7 +33,7 @@ class DeloadRulesTests(unittest.TestCase):
         self.assertTrue(D.cooldown_passed(current, current - timedelta(weeks=3)))
         reason = D.manual_deload_block_reason(
             current_week_start=current, current_load=300.0, baseline=400.0,
-            previous_two_loads=[400.0, 400.0],
+            previous_three_loads=[400.0, 400.0, 400.0],
             last_deload_week_start=current - timedelta(weeks=2),
             paused=False, manual_decision=False,
         )
@@ -41,7 +43,7 @@ class DeloadRulesTests(unittest.TestCase):
         baseline = 400.0
         current = date(2026, 10, 12)
         common = dict(
-            current_week_start=current, baseline=baseline, previous_two_loads=[400.0, 380.0],
+            current_week_start=current, baseline=baseline, previous_three_loads=[400.0, 380.0, 300.0],
             last_deload_week_start=None, paused=False, manual_decision=False, already_deload=False,
         )
         self.assertTrue(D.suggestion_is_appropriate(current_load=300.0, current_day_index=0, **common))
@@ -60,11 +62,12 @@ class DeloadRulesTests(unittest.TestCase):
             X6.weekly_goal_xp(0.85),
         )
 
-    def test_automatic_rule_now_requires_two_previous_weeks(self):
-        self.assertTrue(X6.is_deload_week(320.0, 400.0, [400.0, 360.0]))
-        self.assertFalse(X6.is_deload_week(320.0, 400.0, [400.0]))
-        self.assertFalse(X6.is_deload_week(344.0, 400.0, [400.0, 360.0]))
-        self.assertFalse(X6.is_deload_week(200.0, 400.0, [400.0, 360.0]))
+    def test_automatic_rule_requires_two_of_previous_three_weeks_at_75_percent(self):
+        self.assertTrue(X6.is_deload_week(320.0, 400.0, [300.0, 300.0, 300.0]))
+        self.assertTrue(X6.is_deload_week(320.0, 400.0, [100.0, 300.0, 320.0]))
+        self.assertFalse(X6.is_deload_week(320.0, 400.0, [300.0, 299.99, 100.0]))
+        self.assertFalse(X6.is_deload_week(344.0, 400.0, [300.0, 300.0, 300.0]))
+        self.assertFalse(X6.is_deload_week(200.0, 400.0, [300.0, 300.0, 300.0]))
 
 
 if __name__ == "__main__":

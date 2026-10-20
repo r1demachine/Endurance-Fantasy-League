@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from .database import engine, Base
 from .config import get_settings
 from .rate_limit import limiter
-from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy, upload, duels, clubs, telegram, season, social, recaps, internal_notify
+from .routers import sync, auth, intervals_key, friends, notifications, admin, privacy, upload, duels, clubs, telegram, season, social, recaps, internal_notify, internal_sync
 
 Base.metadata.create_all(bind=engine)
 
@@ -38,6 +38,8 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN api_key_encrypted VARCHAR(500)"))
             if "last_full_sync_at" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN last_full_sync_at TIMESTAMP"))
+            if "last_auto_sync_at" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN last_auto_sync_at TIMESTAMP"))
             if "lthr" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN lthr INTEGER"))
             if "max_hr" not in cols:
@@ -395,6 +397,7 @@ app.include_router(season.router)
 app.include_router(social.router)
 app.include_router(recaps.router)
 app.include_router(internal_notify.router)
+app.include_router(internal_sync.router)
 
 @app.on_event("startup")
 async def _init_broker():

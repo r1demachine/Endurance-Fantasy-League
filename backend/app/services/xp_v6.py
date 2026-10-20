@@ -44,8 +44,8 @@ QUALIFYING_DAY_MIN_TSS = 20.0     # пол дня: 20-минутная прог�
 DELOAD_MIN_RATIO = 0.55
 DELOAD_MAX_RATIO = 0.85
 DELOAD_GOAL_FLOOR = 0.85          # в deload цель не падает ниже 85%
-DELOAD_PREV_WEEKS = 2
-DELOAD_PREV_RATIO = 0.90
+DELOAD_PREV_WEEKS = 3
+DELOAD_PREV_RATIO = 0.75
 
 # ── Регулярность ──
 CONSISTENCY_XP_PER_DAY = 30.0
@@ -240,7 +240,7 @@ def quality_events_week(day_acts_by_date: dict, medians_by_sport: dict) -> list[
     return out
 
 def is_deload_week(week_load: float, baseline: float, prev_loads: list[float]) -> bool:
-    """Разгрузка: 55–85% базы после двух календарных недель ≥90% базы."""
+    """Разгрузка: 55–85% базы, если минимум 2 из 3 предыдущих недель ≥75% базы."""
     if not baseline or baseline <= 0:
         return False
     r = week_load / baseline
@@ -249,7 +249,7 @@ def is_deload_week(week_load: float, baseline: float, prev_loads: list[float]) -
     prev = prev_loads[-DELOAD_PREV_WEEKS:]
     if len(prev) < DELOAD_PREV_WEEKS:
         return False
-    return all(p >= DELOAD_PREV_RATIO * baseline for p in prev)
+    return sum(p >= DELOAD_PREV_RATIO * baseline for p in prev) >= 2
 
 
 def effective_goal_ratio(completion_ratio: float, is_deload: bool) -> float:

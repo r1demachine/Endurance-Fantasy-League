@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..models import Activity, ActivityComment, ActivityReaction, User, Wellness, XPEvent
+from ..models import Activity, ActivityComment, ActivityReaction, StreakRestDay, User, Wellness, XPEvent
 
 # Every XPEvent type written in sync.py/quests.py (plus legacy rows that can
 # still exist before reconciliation) is explicitly classified in one place.
@@ -106,6 +106,7 @@ def empty_day_ledger(day: date) -> dict:
         "activities": [],
         "xp": {"effort": 0.0, "bonuses": [], "total": 0.0},
         "qualifying": False,
+        "rest_day": False,
     }
 
 
@@ -257,6 +258,10 @@ def build_day_ledger(db: Session, user: User, day: date) -> dict:
     effort_xp = X6.effort_xp_day(day_tss)
     qualifying = X6.is_qualifying_day(day_activities_for_rule, day_tss)
     day_total = X6.round_xp(effort_xp + sum(float(item["amount"]) for item in bonuses))
+    rest_day = db.query(StreakRestDay.id).filter(
+        StreakRestDay.user_id == user.id,
+        StreakRestDay.local_date == day,
+    ).first() is not None
     return {
         "date": day.isoformat(),
         "wellness": wellness,
@@ -267,6 +272,7 @@ def build_day_ledger(db: Session, user: User, day: date) -> dict:
             "total": day_total,
         },
         "qualifying": bool(qualifying),
+        "rest_day": rest_day,
     }
 
 
@@ -303,9 +309,17 @@ def qualifying_day_streak(
         ):
             qualifying_days.add(day)
 
-    cursor = today if today in qualifying_days else today - timedelta(days=1)
+    rest_days = {
+        row.local_date
+        for row in db.query(StreakRestDay.local_date).filter(
+            StreakRestDay.user_id == user.id,
+            StreakRestDay.local_date <= today,
+        ).all()
+    }
+    credited_days = qualifying_days | rest_days
+    cursor = today if today in credited_days else today - timedelta(days=1)
     streak = 0
-    while cursor in qualifying_days:
+    while cursor in credited_days:
         streak += 1
         cursor -= timedelta(days=1)
     return streak

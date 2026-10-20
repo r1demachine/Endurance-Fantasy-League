@@ -51,6 +51,9 @@ export default function Dashboard() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
   const [syncError, setSyncError] = useState("");
+  const [restDayBusy, setRestDayBusy] = useState(false);
+  const [restDayMessage, setRestDayMessage] = useState("");
+  const [restDayError, setRestDayError] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -89,7 +92,7 @@ export default function Dashboard() {
       signal: controller.signal,
     }).then((response) => {
       const result = response.data;
-      setWeekData(result.week ? { ...result.week, days: Array.isArray(result.days) ? result.days : [], week_bonuses: Array.isArray(result.week_bonuses) ? result.week_bonuses : [], is_current_week: Boolean(result.is_current_week) } : null);
+      setWeekData(result.week ? { ...result.week, days: Array.isArray(result.days) ? result.days : [], week_bonuses: Array.isArray(result.week_bonuses) ? result.week_bonuses : [], is_current_week: Boolean(result.is_current_week), streak_rest_day: result.streak_rest_day } : null);
       setWeekOptions(result.week_options || []);
       if (!selectedWeekStart && result.week?.week_start) {
         setSelectedWeekStart(result.week.week_start);
@@ -143,7 +146,7 @@ export default function Dashboard() {
         params: selectedWeekStart ? { week_start: selectedWeekStart } : {},
       });
       const result = response.data;
-      setWeekData(result.week ? { ...result.week, days: Array.isArray(result.days) ? result.days : [], week_bonuses: Array.isArray(result.week_bonuses) ? result.week_bonuses : [], is_current_week: Boolean(result.is_current_week) } : null);
+      setWeekData(result.week ? { ...result.week, days: Array.isArray(result.days) ? result.days : [], week_bonuses: Array.isArray(result.week_bonuses) ? result.week_bonuses : [], is_current_week: Boolean(result.is_current_week), streak_rest_day: result.streak_rest_day } : null);
       setWeekOptions(Array.isArray(result.week_options) ? result.week_options : []);
       if (!selectedWeekStart && result.week?.week_start) {
         setSelectedWeekStart(result.week.week_start);
@@ -256,12 +259,36 @@ export default function Dashboard() {
         const response = await authApi.get("/api/weekly-summary", {
           params: selectedWeekStart ? { week_start: selectedWeekStart } : {},
         });
-        setWeekData(response.data.week ? { ...response.data.week, days: Array.isArray(response.data.days) ? response.data.days : [], week_bonuses: Array.isArray(response.data.week_bonuses) ? response.data.week_bonuses : [], is_current_week: Boolean(response.data.is_current_week) } : null);
+        setWeekData(response.data.week ? { ...response.data.week, days: Array.isArray(response.data.days) ? response.data.days : [], week_bonuses: Array.isArray(response.data.week_bonuses) ? response.data.week_bonuses : [], is_current_week: Boolean(response.data.is_current_week), streak_rest_day: response.data.streak_rest_day } : null);
       } catch {
         // Keep the latest usable week snapshot if the refresh also fails.
       }
     } finally {
       setDeloadBusy(false);
+    }
+  };
+
+  const handleUseRestDay = async () => {
+    setRestDayBusy(true);
+    setRestDayMessage("");
+    setRestDayError("");
+    try {
+      const response = await authApi.post("/api/streak/rest-day");
+      setRestDayMessage(String(response.data?.message || "День отдыха использован. Серия сохранена."));
+      await refreshUser(true);
+      await refreshDashboardAfterDataChange();
+    } catch (error: unknown) {
+      setRestDayError(getApiErrorMessage(error, "Не удалось сохранить день отдыха."));
+      try {
+        const response = await authApi.get("/api/weekly-summary", {
+          params: selectedWeekStart ? { week_start: selectedWeekStart } : {},
+        });
+        setWeekData(response.data.week ? { ...response.data.week, days: Array.isArray(response.data.days) ? response.data.days : [], week_bonuses: Array.isArray(response.data.week_bonuses) ? response.data.week_bonuses : [], is_current_week: Boolean(response.data.is_current_week), streak_rest_day: response.data.streak_rest_day } : null);
+      } catch {
+        // Keep the latest usable calendar if a status refresh also fails.
+      }
+    } finally {
+      setRestDayBusy(false);
     }
   };
 
@@ -422,6 +449,11 @@ export default function Dashboard() {
               onOpenSources={openSourceSettings}
               initialActivityId={deepLinkActivityId}
               userName={typeof data.user?.name === "string" ? data.user.name : undefined}
+              restDayState={weekData?.streak_rest_day}
+              restDayBusy={restDayBusy}
+              restDayMessage={restDayMessage}
+              restDayError={restDayError}
+              onUseRestDay={() => void handleUseRestDay()}
             />
             </motion.div>
           </>

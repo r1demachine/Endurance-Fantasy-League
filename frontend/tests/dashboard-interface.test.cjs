@@ -228,13 +228,16 @@ test("the obsolete per-workout +12 XP bonus is no longer generated or displayed"
   assert.ok(xpDetails.includes("activityEvents = (activityAwards?.events ?? []).filter"));
 });
 
-test("global typography grows one point but restores heading and display scales", () => {
+test("typography uses original Tailwind sizes with wrapping and bounded display headings", () => {
   const css = read("src/app/globals.css");
-  assert.ok(css.includes("font-size: calc(1rem + 1pt)"));
-  assert.ok(css.includes("--text-sm: calc(0.875rem + 1pt)"));
-  assert.ok(css.includes(":where(h1, h2, h3, h4, h5, h6)"));
-  assert.ok(css.includes("font-size: calc(10px + 1pt)"));
-  assert.ok(css.includes("prefers-reduced-motion: reduce"));
+  assert.equal(css.includes("font-size: calc(1rem + 1pt)"), false);
+  assert.equal(css.includes("font-size: calc(1rem + 2pt)"), false);
+  assert.ok(css.includes(".font-display {\n  overflow-wrap: anywhere;"));
+  assert.ok(css.includes("font-size: clamp(1.75rem, 4vw + 0.75rem, 3.75rem) !important"));
+  assert.ok(css.includes(":where(.flex, .grid) > *"));
+  assert.ok(css.includes("hyphens: auto"));
+  assert.ok(css.includes("white-space: normal"));
+  assert.equal(css.includes("overflow-x: hidden;"), true);
 });
 
 
@@ -301,4 +304,47 @@ test("week calendar renders seven ledger days and shares the XP breakdown compon
 test("the retired dashboard list component is no longer referenced or kept", () => {
   assert.equal(fs.existsSync(path.join(__dirname, "..", "src/components/dashboard/WorkoutsList.tsx")), false);
   assert.equal(fs.existsSync(path.join(__dirname, "..", "src/components/dashboard/DashboardWorkoutsSection.tsx")), false);
+});
+
+
+
+test("calendar glossary explains load terms and searches definitions", () => {
+  const glossary = read("src/components/dashboard/TrainingGlossary.tsx");
+  const calendar = read("src/components/dashboard/WeekCalendar.tsx");
+  assert.ok(calendar.includes("<TrainingGlossary />"));
+  assert.ok(glossary.includes("TSS — Training Stress Score"));
+  assert.ok(glossary.includes("EST — оценочная нагрузка"));
+  assert.ok(glossary.includes("Квалифицирующий день"));
+  assert.ok(glossary.includes("entry.description"));
+  assert.ok(glossary.includes("localStorage"));
+  assert.ok(glossary.includes("Помнишь, что такое TSS"));
+});
+
+test("manual rest-day token is represented in calendar and cooperative streak remains a nonfunctional placeholder", () => {
+  const calendar = read("src/components/dashboard/WeekCalendar.tsx");
+  const dashboard = read("src/app/dashboard/page.tsx");
+  const todayCard = read("src/components/dashboard/TodayCard.tsx");
+  assert.ok(calendar.includes("Использовать день отдыха"));
+  assert.ok(calendar.includes("День отдыха — стрик сохранён"));
+  assert.ok(dashboard.includes('authApi.post("/api/streak/rest-day")'));
+  assert.ok(todayCard.includes("Кооперативный стрик"));
+  assert.ok(todayCard.includes("disabled"));
+  assert.ok(todayCard.includes("Совместные серии появятся позже"));
+});
+
+test("calendar uses seven columns only once sufficient horizontal space is available", () => {
+  const calendar = read("src/components/dashboard/WeekCalendar.tsx");
+  assert.ok(calendar.includes("lg:grid-cols-7"));
+  assert.equal(calendar.includes("xl:grid-cols-7"), false);
+});
+
+
+
+
+test("header switches to mobile navigation at the lg breakpoint", () => {
+  const header = read("src/components/Header.tsx");
+  assert.ok(header.includes("hidden lg:block fixed top-0"));
+  assert.ok(header.includes("lg:hidden fixed bottom-0"));
+  assert.ok(header.includes("hidden lg:block h-[72px]"));
+  assert.equal(header.includes("md:hidden fixed bottom-0"), false);
 });

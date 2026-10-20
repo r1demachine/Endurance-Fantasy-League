@@ -18,6 +18,7 @@ import ShareButton from "@/components/ShareButton";
 import { EmptyState } from "@/components/ui";
 import { formatWeekRange } from "@/lib/format";
 import { formatActivityDuration, formatSleepDuration, getCalendarWeekDates } from "@/lib/week-calendar";
+import TrainingGlossary from "@/components/dashboard/TrainingGlossary";
 
 type WeekOption = { week_start: string; label: string };
 type Wellness = {
@@ -45,6 +46,7 @@ type DayLedger = {
   activities?: DayActivity[];
   xp?: { effort?: number; bonuses?: { title: string; amount: number }[]; total?: number };
   qualifying?: boolean;
+  rest_day?: boolean;
 };
 type WeekBonus = { title: string; amount: number };
 
@@ -57,6 +59,11 @@ type Props = {
   onOpenSources: () => void;
   initialActivityId?: number | null;
   userName?: string;
+  restDayState?: { today: string; available: boolean; used_this_week: boolean; reason?: string | null };
+  restDayBusy?: boolean;
+  restDayMessage?: string;
+  restDayError?: string;
+  onUseRestDay?: () => void;
 };
 
 function dateFromIso(value: string): Date | null {
@@ -221,12 +228,18 @@ function DayColumn({
   isFuture,
   onOpenActivity,
   userName,
+  canUseRestDay = false,
+  restDayBusy = false,
+  onUseRestDay,
 }: {
   day: DayLedger;
   isToday: boolean;
   isFuture: boolean;
   onOpenActivity: (activity: DayActivity, trigger: HTMLButtonElement) => void;
   userName?: string;
+  canUseRestDay?: boolean;
+  restDayBusy?: boolean;
+  onUseRestDay?: () => void;
 }) {
   const activities = day.activities ?? [];
   return (
@@ -247,14 +260,28 @@ function DayColumn({
             />
           ))}
           {activities.length === 0 && (
-            <p className="px-1 py-3 text-center text-[10px] text-[#777]">{isFuture ? "Впереди" : "Нет тренировок"}</p>
+            <p className="px-1 py-3 text-center text-[10px] text-[#777]">{isFuture ? "Впереди" : day.rest_day ? "День отдыха" : "Нет тренировок"}</p>
           )}
         </div>
       </div>
       <div className="border-t-2 border-black bg-[#f4f4f0] px-2 py-2">
         <p className="text-[9px] font-bold uppercase tracking-wide text-[#666]">Итого за день</p>
         <p className="font-display text-base text-[#ff4b26]">+{Math.round(Number(day.xp?.total) || 0)} XP</p>
-        {day.qualifying && <p className="mt-0.5 text-[9px] font-bold text-[#166534]">Квалифицирующий день</p>}
+        {day.rest_day ? (
+          <p className="mt-1 break-words text-[9px] font-bold leading-snug text-[#5866f2]">День отдыха — стрик сохранён</p>
+        ) : day.qualifying ? (
+          <p className="mt-1 break-words text-[9px] font-bold leading-snug text-[#166534]">Квалифицирующий день</p>
+        ) : null}
+        {isToday && canUseRestDay && activities.length === 0 && onUseRestDay && (
+          <button
+            type="button"
+            onClick={onUseRestDay}
+            disabled={restDayBusy || isFuture}
+            className="mt-2 w-full border-2 border-black bg-[#c7d2fe] px-2 py-2 text-[10px] font-black uppercase leading-snug text-[#111] hover:bg-[#ffd500] disabled:cursor-wait disabled:opacity-50"
+          >
+            {restDayBusy ? "Сохраняем…" : "Использовать день отдыха"}
+          </button>
+        )}
       </div>
     </article>
   );
@@ -269,6 +296,11 @@ export default function WeekCalendar({
   onOpenSources,
   initialActivityId = null,
   userName,
+  restDayState,
+  restDayBusy = false,
+  restDayMessage = "",
+  restDayError = "",
+  onUseRestDay,
 }: Props) {
   const [selectedActivity, setSelectedActivity] = useState<DayActivity | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -296,6 +328,7 @@ export default function WeekCalendar({
       activities: [],
       xp: { effort: 0, bonuses: [], total: 0 },
       qualifying: false,
+      rest_day: false,
     });
   }, [activeWeek, selectedWeekStart, weekData]);
 
@@ -311,7 +344,7 @@ export default function WeekCalendar({
     setSelectedActivity(target);
   }, [initialActivityId, weekLoading, weekData, selectedWeekStart, ledgerDays]);
 
-  const today = toIsoDate(new Date());
+  const today = restDayState?.today ?? toIsoDate(new Date());
   const hasActivities = ledgerDays.some((day) => (day.activities?.length ?? 0) > 0);
   const weekBonuses: WeekBonus[] = Array.isArray(weekData?.week_bonuses) ? weekData.week_bonuses : [];
 
@@ -331,6 +364,7 @@ export default function WeekCalendar({
           <p className="text-[10px] font-bold uppercase tracking-widest text-[#666]">Тренировки</p>
           <h2 id="week-calendar-heading" className="font-display text-2xl uppercase">Календарь недели</h2>
           <p className="mt-1 text-xs text-[#666]">{formatWeekRange(activeWeek)}</p>
+          <div className="mt-2"><TrainingGlossary /></div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {weekData?.is_deload && (
               <span className={`px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-white ${weekData.deload_source === "manual" ? "bg-[#a855f7]" : "bg-[#0ea5e9]"}`}>
@@ -375,6 +409,15 @@ export default function WeekCalendar({
         </div>
       </header>
 
+      {restDayMessage && weekData?.is_current_week && (
+        <p role="status" className="border-b border-black/10 bg-[#e9f8ee] px-4 py-2 text-sm font-bold text-[#166534]">{restDayMessage}</p>
+      )}
+      {restDayError && (
+        <p role="alert" className="border-b border-black/10 bg-[#fff1ee] px-4 py-2 text-sm font-bold text-[#b91c1c]">{restDayError}</p>
+      )}
+      {restDayState?.used_this_week && weekData?.is_current_week && (
+        <p className="border-b border-black/10 px-4 py-2 text-xs text-[#666]">День отдыха на этой неделе уже использован. Его можно применить только один раз и только в день без тренировок.</p>
+      )}
       {weekLoading ? (
         <div className="p-4 text-sm text-[#666]" role="status">Загружаем календарь недели…</div>
       ) : ledgerDays.length === 0 ? (
@@ -407,6 +450,9 @@ export default function WeekCalendar({
                 isFuture={day.date > today}
                 onOpenActivity={openActivity}
                 userName={userName}
+                canUseRestDay={Boolean(restDayState?.available && day.date === restDayState.today)}
+                restDayBusy={restDayBusy}
+                onUseRestDay={onUseRestDay}
               />
             ))}
           </div>

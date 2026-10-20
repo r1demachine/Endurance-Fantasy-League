@@ -129,7 +129,7 @@ export default function TodayCard({ data, loading, error, onRetry, onOpenSources
           </h2>
         </div>
         {data && (
-          <div className="grid grid-cols-2 gap-2 md:flex md:items-center">
+          <div className="grid min-w-0 grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center">
             <div className="border-2 border-black bg-white px-3 py-2">
               <p className="text-[9px] font-black uppercase tracking-widest text-[#666]">Серия</p>
               <p className="font-display text-lg text-[#ff4b26]">{formatStreak(data.streak)}</p>
@@ -137,6 +137,18 @@ export default function TodayCard({ data, loading, error, onRetry, onOpenSources
             <div className="border-2 border-black bg-white px-3 py-2">
               <p className="text-[9px] font-black uppercase tracking-widest text-[#666]">Время на сегодня</p>
               <p className="flex items-center gap-1.5 font-bold text-sm"><Timer size={14} />{formatSecondsLeftToday(data.seconds_left_today)}</p>
+            </div>
+            <div className="min-w-0 border-2 border-black bg-white px-3 py-2 md:max-w-[220px]">
+              <p className="break-words text-[9px] font-black uppercase tracking-widest text-[#666]">Кооперативный стрик</p>
+              <p className="mt-1 break-words text-xs font-bold">Совместная серия с другом</p>
+              <button
+                type="button"
+                disabled
+                title="Совместные серии появятся позже"
+                className="mt-1 max-w-full border border-black/20 bg-[#f4f4f0] px-2 py-1 text-[10px] font-black uppercase text-[#666] opacity-80"
+              >
+                Скоро
+              </button>
             </div>
           </div>
         )}
