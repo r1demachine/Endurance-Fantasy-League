@@ -1,6 +1,4 @@
 """Secret-protected scheduled proactive notification tick."""
-from __future__ import annotations
-
 import hmac
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
@@ -11,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..database import SessionLocal, get_db
-from ..models import LeagueRankSnapshot, LeagueMembership, User, WeeklySummary
+from ..models import LeagueRankSnapshot, User, WeeklySummary
 from ..rate_limit import limiter
 from ..services.league import league_ranking_key
 from ..services.proactive import (
@@ -22,7 +20,6 @@ from ..services.proactive import (
     send_proactive,
     user_local_datetime,
 )
-from ..services.seasons import local_date
 from ..services import xp_v6 as X6
 
 router = APIRouter(prefix="/api/internal/notify", tags=["Internal notifications"])
@@ -99,9 +96,9 @@ def _rank_current_weeks(db: Session, now: datetime) -> list[dict[str, Any]]:
             ),
         ))
         per_division: dict[str | None, int] = {}
-        for row in rows:
+        for position, row in enumerate(rows, start=1):
             if beta:
-                rank = rows.index(row) + 1
+                rank = position
             else:
                 division = row["division"]
                 per_division[division] = per_division.get(division, 0) + 1

@@ -189,7 +189,7 @@ async def toggle_activity_reaction(
             "activity_like",
             f"{actor_name} оценил твою тренировку",
             link=_activity_link(activity),
-            send_telegram=False,
+            send_telegram=True,
         )
 
     return {

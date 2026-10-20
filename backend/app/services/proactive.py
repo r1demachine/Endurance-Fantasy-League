@@ -272,7 +272,9 @@ async def send_proactive(
         return False
     if not user.telegram_chat_id or not bool(user.telegram_notify):
         return False
-    if not bool(user.timezone_confirmed) or not get_notify_prefs(user).get(kind, False):
+    if not get_notify_prefs(user).get(kind, False):
+        return False
+    if kind == "daily_bonus_reminder" and not bool(user.timezone_confirmed):
         return False
     settings = get_settings()
     if not settings.TELEGRAM_BOT_TOKEN:

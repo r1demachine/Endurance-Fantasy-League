@@ -7,7 +7,10 @@ from sqlalchemy import or_, and_, func
 from ..dependencies import get_current_user, require_privacy_consent
 from ..auth import decrypt_secret, decode_access_token_claims
 from ..database import get_db, SessionLocal
-from ..models import User, Activity, Wellness, Friendship, FriendshipStatus, WeeklySummary, XPEvent, LeagueWeek, LeagueMembership, SyncProgress
+from ..models import (
+    User, Activity, Wellness, Friendship, FriendshipStatus, WeeklySummary, XPEvent,
+    LeagueWeek, LeagueMembership, SyncProgress, NotificationLog, LeagueRankSnapshot,
+)
 import asyncio
 from collections import defaultdict
 from ..services.xp import recalculate_timeline, level_from_xp, round_xp
@@ -2407,6 +2410,8 @@ async def delete_training_data_source(
     db.query(XPEvent).filter(XPEvent.user_id == current.id).delete(synchronize_session=False)
     db.query(WeeklySummary).filter(WeeklySummary.user_id == current.id).delete(synchronize_session=False)
     db.query(LeagueMembership).filter(LeagueMembership.user_id == current.id).delete(synchronize_session=False)
+    db.query(NotificationLog).filter(NotificationLog.user_id == current.id).delete(synchronize_session=False)
+    db.query(LeagueRankSnapshot).filter(LeagueRankSnapshot.user_id == current.id).delete(synchronize_session=False)
 
     if xp_engine == "v6":
         # First pass rebuilds weekly summaries/events; second pass evaluates
@@ -2450,6 +2455,8 @@ async def reset_all_data(
     db.query(XPEvent).filter(XPEvent.user_id == current.id).delete(synchronize_session=False)
     db.query(WeeklySummary).filter(WeeklySummary.user_id == current.id).delete(synchronize_session=False)
     db.query(LeagueMembership).filter(LeagueMembership.user_id == current.id).delete(synchronize_session=False)
+    db.query(NotificationLog).filter(NotificationLog.user_id == current.id).delete(synchronize_session=False)
+    db.query(LeagueRankSnapshot).filter(LeagueRankSnapshot.user_id == current.id).delete(synchronize_session=False)
     current.legacy_xp_offset = 0.0
     current.xp_migrated_at = None
     current.division_current = None
