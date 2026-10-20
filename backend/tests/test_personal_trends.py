@@ -301,11 +301,10 @@ class PersonalTrendCalculationTests(unittest.TestCase):
 
 
 class PersonalTrendApiTests(unittest.TestCase):
-    _client_counter = 0
-
     def setUp(self):
         Base.metadata.drop_all(bind=TEST_ENGINE)
         Base.metadata.create_all(bind=TEST_ENGINE)
+        limiter._storage.reset()
         self.owner_id = None
         with TestSession() as db:
             owner = User(
@@ -352,8 +351,7 @@ class PersonalTrendApiTests(unittest.TestCase):
 
         self.app.dependency_overrides[get_db] = override_db
         self.app.dependency_overrides[get_current_user] = lambda: self.current_user
-        type(self)._client_counter += 1
-        self.client = TestClient(self.app, client=("198.51.100." + str(type(self)._client_counter), 50000))
+        self.client = TestClient(self.app)
 
     def tearDown(self):
         self.client.close()
@@ -483,8 +481,7 @@ class PersonalTrendApiTests(unittest.TestCase):
                 db.close()
 
         app.dependency_overrides[get_db] = override_db
-        type(self)._client_counter += 1
-        with TestClient(app, client=("198.51.100." + str(type(self)._client_counter), 50000)) as client:
+        with TestClient(app) as client:
             response = client.post("/api/personal-analysis/interpretation")
         self.assertEqual(response.status_code, 401)
 
