@@ -1,14 +1,20 @@
 """Private API for deterministic personal training and wellbeing trends."""
 from datetime import datetime, time, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..dependencies import get_current_user
+from ..config import get_settings
+from ..rate_limit import limiter
 from ..models import Activity, ActivityCheckIn, MorningCheckIn, User, Wellness
 from ..services.personal_trends import build_personal_trends, local_today, resolve_timezone
+from ..services.personal_interpretation import (
+    PersonalInterpretationError,
+    generate_personal_interpretation,
+)
 
 router = APIRouter(prefix="/api/personal-analysis", tags=["Personal analysis"])
 
@@ -90,3 +96,60 @@ def get_personal_trends(
         activities=activity_rows,
         activity_checkins=activity_checkin_rows,
     )
+
+
+
+@router.post("/interpretation")
+@limiter.limit("5/minute")
+def post_personal_interpretation(
+    request: Request,
+    days: int = Query(default=28, ge=14, le=90),
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Interpret the current user's aggregate trends without storing the LLM response."""
+    trends = get_personal_trends(days=days, current=current, db=db)
+
+    if trends["status"] != "ready":
+        return {
+            "status": "insufficient_data",
+            "analysis": None,
+            "period": trends["period"],
+            "data_gaps": trends["data_gaps"],
+            "disclaimer": trends["disclaimer"],
+            "message": "Пока недостаточно сопоставимых данных для персональной интерпретации.",
+        }
+
+    settings = get_settings()
+    if not settings.GROQ_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="AI-анализ не настроен на сервере: добавь GROQ_API_KEY в переменные окружения backend.",
+        )
+
+    try:
+        analysis = generate_personal_interpretation(
+            trends,
+            api_key=settings.GROQ_API_KEY,
+            model=settings.GROQ_MODEL,
+            timeout_seconds=settings.GROQ_TIMEOUT_SECONDS,
+        )
+    except PersonalInterpretationError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Не удалось получить корректный ответ AI-сервиса. Данные не изменены; попробуй позже.",
+        ) from exc
+
+    return {
+        "status": "ready",
+        "provider": "groq",
+        "model": settings.GROQ_MODEL,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "period": trends["period"],
+        "analysis": analysis.model_dump(),
+        "data_quality": {
+            "coverage": trends["coverage"],
+            "data_gaps": trends["data_gaps"],
+        },
+        "disclaimer": trends["disclaimer"],
+    }
