@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,7 @@ from ..models import (
     WeeklySummary,
     XPEvent,
 )
+from ..rate_limit import limiter
 from ..services.seasons import local_date
 
 router = APIRouter(prefix="/api", tags=["Recaps"])
@@ -37,7 +38,9 @@ def _not_available(week_start: date, reason: str) -> dict:
 
 
 @router.get("/week-recap")
+@limiter.limit("30/minute")
 def get_week_recap(
+    request: Request,
     week_start: date | None = Query(default=None),
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
