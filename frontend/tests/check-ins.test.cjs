@@ -47,7 +47,8 @@ test("check-ins are included in the authenticated dashboard only, not public act
   assert.match(component, /\/api\/check-ins\/history\/activities/);
   assert.match(component, /Загрузить предыдущие тренировки/);
   assert.match(router, /@router.get\("\/history\/activities"\)/);
-  assert.match(dashboard, /<CheckInsPanel \/>/);
+  assert.match(dashboard, /<CheckInsPanel key=\{/);
+  assert.match(dashboard, /recent_activities\.map/);
   assert.match(router, /Depends\(get_current_user\)/);
   assert.match(router, /ActivityCheckIn\.user_id == current\.id/);
   assert.match(component, /Ответы видны только тебе/);

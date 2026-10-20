@@ -390,6 +390,16 @@ export default function CheckInsPanel() {
           <h3 className="font-display text-xl uppercase">После тренировки</h3>
           <p className="mt-2 text-sm text-[#555]">Оцени субъективную тяжесть каждого занятия после его появления в EFL. Пропущенную запись можно добавить позже.</p>
           {activitiesError && <p role="alert" className="mt-2 text-xs font-bold text-[#b42318]">{activitiesError}</p>}
+          {activitiesError && activities.length === 0 && (
+            <button
+              type="button"
+              onClick={() => void loadActivities()}
+              disabled={activitiesLoading}
+              className="mt-2 border-2 border-black bg-white px-3 py-2 text-xs font-bold uppercase disabled:opacity-50"
+            >
+              Повторить загрузку
+            </button>
+          )}
           {activitiesLoading && activities.length === 0 ? (
             <p role="status" className="mt-3 border-t border-black/15 pt-3 text-xs text-[#666]">Загружаем историю тренировок…</p>
           ) : visibleActivities.length === 0 ? (

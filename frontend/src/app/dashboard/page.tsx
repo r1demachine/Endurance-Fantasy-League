@@ -396,7 +396,7 @@ export default function Dashboard() {
 
         {isAuthed && !isEmpty && (
           <motion.div variants={sectionItemVariants} custom={transitionDirection}>
-            <CheckInsPanel />
+            <CheckInsPanel key={Array.isArray(data.recent_activities) ? data.recent_activities.map((activity: { id: number }) => activity.id).join(",") : "none"} />
           </motion.div>
         )}
 
