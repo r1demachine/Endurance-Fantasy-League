@@ -40,6 +40,18 @@ test("activity share text contains sport, duration, and TSS", () => {
   assert.ok(lines.some((line) => line.includes("31,2 км")));
 });
 
+test("day share format includes date, daily XP context, and workout count", () => {
+  const { formatShareLines } = loadShareImageModule();
+  const lines = formatShareLines({
+    kind: "day",
+    xp: 93,
+    date: "2026-10-20",
+    workoutCount: 2,
+  });
+  assert.ok(lines.some((line) => line.includes("20.10.2026")));
+  assert.ok(lines.some((line) => line.includes("Тренировок: 2")));
+});
+
 test("league rank is omitted unless the explicit checkbox option is enabled", () => {
   const { formatShareLines } = loadShareImageModule();
   const data = { kind: "week", xp: 200, goalPercent: 92, trainingDays: 4, leagueRank: 3 };
