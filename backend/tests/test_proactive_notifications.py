@@ -175,6 +175,19 @@ class ProactiveNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.send_mock.await_count, 0)
         self.assertEqual(self.db.query(NotificationLog).count(), 0)
 
+    async def test_failed_telegram_delivery_does_not_consume_a_message_slot(self):
+        now = datetime(2026, 10, 20, 14, 30, tzinfo=timezone.utc)
+        self.send_mock.return_value = False
+        first = await send_proactive(self.db, self.owner, "activity_social", "Сбой доставки", now=now)
+        self.assertFalse(first)
+        self.assertEqual(self.db.query(NotificationLog).count(), 0)
+
+        self.send_mock.return_value = True
+        retry = await send_proactive(self.db, self.owner, "activity_social", "Повтор", now=now)
+        self.assertTrue(retry)
+        self.assertEqual(self.db.query(NotificationLog).count(), 1)
+        self.assertEqual(self.send_mock.await_count, 2)
+
     def test_three_consecutive_reminders_decay_until_new_activity(self):
         for day in (date(2026, 10, 17), date(2026, 10, 18), date(2026, 10, 19)):
             self.db.add(NotificationLog(
