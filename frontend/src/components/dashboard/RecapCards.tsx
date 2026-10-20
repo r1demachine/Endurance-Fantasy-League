@@ -69,6 +69,7 @@ export function PreviousWeekRecapBanner() {
   const [visible, setVisible] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     const day = new Date().getDay();
@@ -83,9 +84,14 @@ export function PreviousWeekRecapBanner() {
       if (!cancelled) setError("Не удалось загрузить итоги прошлой недели.");
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [retry]);
 
-  if (!visible || !recap) return null;
+  if (!visible || !recap) {
+    if (error) {
+      return <section className="border-b-2 border-black bg-white p-3"><ErrorState message={error} onRetry={() => { setError(""); setRetry((value) => value + 1); }} /></section>;
+    }
+    return null;
+  }
   const close = () => {
     persistDismissed(`efl:week-recap-dismissed:${recap.week_start}`);
     setVisible(false);
@@ -122,16 +128,13 @@ export function PreviousWeekRecapBanner() {
 
 export function WeekRecapCard({ weekStart, userName }: { weekStart: string; userName?: string }) {
   const [recap, setRecap] = useState<WeekRecap | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     if (!weekStart) return;
     let cancelled = false;
-    setLoading(true);
-    setError("");
-    setRecap(null);
     authApi.get("/api/week-recap", { params: { week_start: weekStart } }).then((response) => {
       if (cancelled) return;
       const value = response.data as WeekRecap;
@@ -144,8 +147,15 @@ export function WeekRecapCard({ weekStart, userName }: { weekStart: string; user
     return () => { cancelled = true; };
   }, [weekStart, retry]);
 
-  if (loading && !recap) return <section className="border-b-2 border-black bg-white p-4"><Skeleton label="Загружаем итоги недели" rows={2} /></section>;
-  if (!recap) return error ? <section className="border-b-2 border-black bg-white p-4"><ErrorState message={error} onRetry={() => setRetry((value) => value + 1)} /></section> : null;
+  const retryWeekRecap = () => {
+    setLoading(true);
+    setError("");
+    setRetry((value) => value + 1);
+  };
+
+  if (!weekStart) return null;
+  if (loading) return <section className="border-b-2 border-black bg-white p-4"><Skeleton label="Загружаем итоги недели" rows={2} /></section>;
+  if (!recap) return error ? <section className="border-b-2 border-black bg-white p-4"><ErrorState message={error} onRetry={retryWeekRecap} /></section> : null;
 
   const tiles = [
     ["Нагрузка", recap.tiles?.effort],
@@ -223,9 +233,6 @@ export function SeasonRecapCard({ userName }: { userName?: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError("");
-    setRecap(null);
     authApi.get("/api/season/recap", {
       params: selectedSeasonStart ? { season_start: selectedSeasonStart } : {},
     }).then((response) => {
@@ -241,8 +248,19 @@ export function SeasonRecapCard({ userName }: { userName?: string }) {
     return () => { cancelled = true; };
   }, [selectedSeasonStart, retry]);
 
-  if (loading && !recap) return <section className="border-b-2 border-black bg-white p-4"><Skeleton label="Загружаем итоги сезона" rows={2} /></section>;
-  if (!recap) return error ? <section className="border-b-2 border-black bg-white p-4"><ErrorState message={error} onRetry={() => setRetry((value) => value + 1)} /></section> : null;
+  const retrySeasonRecap = () => {
+    setLoading(true);
+    setError("");
+    setRetry((value) => value + 1);
+  };
+  const chooseSeason = (value: string) => {
+    setLoading(true);
+    setError("");
+    setSelectedSeasonStart(value);
+  };
+
+  if (loading) return <section className="border-b-2 border-black bg-white p-4"><Skeleton label="Загружаем итоги сезона" rows={2} /></section>;
+  if (!recap) return error ? <section className="border-b-2 border-black bg-white p-4"><ErrorState message={error} onRetry={retrySeasonRecap} /></section> : null;
   const metrics = recap.metrics;
   return (
     <section className="border-b-2 border-black bg-[#f4f4f0] p-4 md:p-6" aria-label="Итоги сезона">
@@ -253,7 +271,7 @@ export function SeasonRecapCard({ userName }: { userName?: string }) {
           {currentSeasonStart && (
             <label className="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold">
               <span>Период:</span>
-              <select value={selectedSeasonStart} onChange={(event) => setSelectedSeasonStart(event.target.value)} className="max-w-full border-2 border-black bg-white px-2 py-1">
+              <select value={selectedSeasonStart} onChange={(event) => chooseSeason(event.target.value)} className="max-w-full border-2 border-black bg-white px-2 py-1">
                 <option value="">Текущий сезон</option>
                 <option value={previousSeasonStart(currentSeasonStart)}>Предыдущий сезон</option>
               </select>
