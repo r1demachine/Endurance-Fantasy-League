@@ -389,7 +389,7 @@ def build_personal_trends(
 
     # Multiple activities on one date are summarized within the date; dates have equal weight.
     for day, answers in expectation_by_day.items():
-        metrics["harder_than_expected_share"][day].append(mean(answers))
+        metrics["harder_than_expected_share"][day].extend(answers)
     for day, answers in rpe_by_day.items():
         metrics["rpe"][day].extend(answers)
 

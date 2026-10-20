@@ -201,6 +201,26 @@ class PersonalTrendCalculationTests(unittest.TestCase):
         self.assertEqual(metric["current"]["samples"], 2)
         self.assertEqual(metric["status"], "insufficient_data")
 
+    def test_load_expectation_share_counts_workouts_but_weights_calendar_days_equally(self):
+        activities = [
+            activity(1, 30, TODAY, tss=20),
+            activity(1, 31, TODAY, tss=30),
+            activity(1, 32, TODAY, tss=40),
+        ]
+        checkins = [
+            activity_checkin(1, 30, expectation="harder"),
+            activity_checkin(1, 31, expectation="harder"),
+            activity_checkin(1, 32, expectation="as_expected"),
+        ]
+
+        result = calculate(activities=activities, activity_checkins=checkins)
+        metric = observation(result, "harder_than_expected_share")
+
+        self.assertEqual(metric["current"]["mean"], 66.67)
+        self.assertEqual(metric["current"]["days_with_data"], 1)
+        self.assertEqual(metric["current"]["samples"], 3)
+        self.assertEqual(metric["status"], "insufficient_data")
+
     def test_tss_and_rpe_relationship_requires_enough_paired_days_and_reports_real_values(self):
         activities = []
         checkins = []
