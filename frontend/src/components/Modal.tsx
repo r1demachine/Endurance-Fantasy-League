@@ -128,7 +128,7 @@ export function Modal({
         transition={{ duration: 0.2, ease: "easeOut" }}
         className={isSettings
           ? "flex h-[100dvh] max-h-[100dvh] w-full max-w-none flex-col border-0 border-black bg-[#f4f4f0] text-[#111] shadow-none sm:border-2 sm:shadow-[6px_6px_0_rgba(0,0,0,0.45)] md:h-[92vh] md:max-h-[92vh] md:w-[96vw] md:max-w-[1600px]"
-          : "flex max-h-[80vh] w-full max-w-md flex-col border-2 border-black bg-[#f4f4f0] shadow-[6px_6px_0_rgba(0,0,0,0.45)]"}
+          : "flex max-h-[80vh] w-full max-w-md flex-col border-2 border-black bg-[#f4f4f0] text-[#111] shadow-[6px_6px_0_rgba(0,0,0,0.45)]"}
       >
         <div className="flex items-center justify-between gap-3 border-b-2 border-black bg-[#5866f2] px-4 py-3 text-white">
           <h2 id={titleId} className="font-display text-xl uppercase leading-none">{title}</h2>
