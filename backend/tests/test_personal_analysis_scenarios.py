@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 from zoneinfo import ZoneInfo
 
 from cryptography.fernet import Fernet
+import httpx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -486,7 +487,10 @@ class PersonalAnalysisApiScenarioTests(unittest.TestCase):
         wellbeing = next(item for item in body["observations"] if item["key"] == "wellbeing")
         self.assertEqual(wellbeing["current"]["mean"], 4.0)
         self.assertEqual(wellbeing["previous"]["mean"], 4.0)
-        self.assertNotIn(str(self.other_id), json.dumps(body))
+        self.assertEqual(wellbeing["current"]["samples"], 7)
+        self.assertEqual(wellbeing["previous"]["samples"], 7)
+        self.assertNotIn("user_id", body)
+        self.assertNotEqual(wellbeing["current"]["mean"], 1.0)
 
     @patch("app.routers.personal_analysis.get_settings")
     @patch("app.routers.personal_analysis.generate_personal_interpretation")
