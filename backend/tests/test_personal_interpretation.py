@@ -7,6 +7,7 @@ import httpx
 
 from app.services.personal_interpretation import (
     GROQ_CHAT_COMPLETIONS_URL,
+    PERSONAL_INTERPRETATION_JSON_SCHEMA,
     PersonalInterpretationError,
     generate_personal_interpretation,
 )
@@ -96,10 +97,27 @@ class PersonalInterpretationServiceTests(unittest.TestCase):
         self.assertEqual(post.call_args.args[0], GROQ_CHAT_COMPLETIONS_URL)
         self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer test-secret")
         request_body = post.call_args.kwargs["json"]
-        self.assertEqual(request_body["response_format"], {"type": "json_object"})
+        self.assertEqual(
+            request_body["response_format"],
+            {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "personal_interpretation",
+                    "strict": True,
+                    "schema": PERSONAL_INTERPRETATION_JSON_SCHEMA,
+                },
+            },
+        )
+        schema = request_body["response_format"]["json_schema"]["schema"]
+        self.assertEqual(set(schema["properties"]), {
+            "headline", "summary", "positive_signals", "caution_signals",
+            "practical_next_steps", "data_limitations",
+        })
+        self.assertEqual(set(schema["required"]), set(schema["properties"]))
+        self.assertFalse(schema["additionalProperties"])
         self.assertEqual(request_body["model"], "qwen/qwen3.8-27b")
         self.assertEqual(request_body["reasoning_format"], "hidden")
-        self.assertEqual(request_body["max_completion_tokens"], 900)
+        self.assertEqual(request_body["max_completion_tokens"], 1100)
         self.assertEqual(request_body["temperature"], 0.2)
         user_content = json.loads(request_body["messages"][1]["content"])
         serialized = json.dumps(user_content, ensure_ascii=False)
@@ -109,6 +127,24 @@ class PersonalInterpretationServiceTests(unittest.TestCase):
         self.assertNotIn("private_daily_dates", serialized)
         self.assertIn("observations", user_content)
         self.assertIn("data_gaps", user_content)
+
+    @patch("app.services.personal_interpretation.httpx.post")
+    def test_schema_errors_report_only_field_and_error_codes(self, post):
+        invalid = {**VALID_ANALYSIS, "headline": "x"}
+        response = Mock()
+        response.json.return_value = {
+            "choices": [{"message": {"content": json.dumps(invalid, ensure_ascii=False)}}]
+        }
+        response.raise_for_status.return_value = None
+        post.return_value = response
+
+        with self.assertRaises(PersonalInterpretationError) as raised:
+            generate_personal_interpretation(sample_trends(), api_key="test-secret")
+
+        self.assertEqual(raised.exception.category, "invalid_schema")
+        self.assertEqual(raised.exception.quality_check, "schema_headline_string_too_short")
+        self.assertNotIn("Данных", str(raised.exception))
+        self.assertNotIn("test-secret", str(raised.exception))
 
     @patch("app.services.personal_interpretation.httpx.post")
     def test_rejects_invalid_json_and_schema(self, post):

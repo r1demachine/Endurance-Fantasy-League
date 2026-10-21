@@ -47,6 +47,53 @@ class PersonalInterpretation(BaseModel):
     data_limitations: list[Annotated[str, Field(min_length=1, max_length=240)]] = Field(max_length=5)
 
 
+# Keep the provider-side schema intentionally to basic, strict-compatible JSON Schema
+# types. Pydantic applies additional length/list limits after the response is received.
+PERSONAL_INTERPRETATION_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "headline": {"type": "string"},
+        "summary": {"type": "string"},
+        "positive_signals": {"type": "array", "items": {"type": "string"}},
+        "caution_signals": {"type": "array", "items": {"type": "string"}},
+        "practical_next_steps": {"type": "array", "items": {"type": "string"}},
+        "data_limitations": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": [
+        "headline",
+        "summary",
+        "positive_signals",
+        "caution_signals",
+        "practical_next_steps",
+        "data_limitations",
+    ],
+    "additionalProperties": False,
+}
+
+_PERSONAL_INTERPRETATION_FIELDS = {
+    "headline",
+    "summary",
+    "positive_signals",
+    "caution_signals",
+    "practical_next_steps",
+    "data_limitations",
+}
+
+
+def _schema_quality_check(exc: ValidationError) -> str:
+    """Return field/type codes only; never include invalid values or error messages."""
+    issue_codes: list[str] = []
+    for error in exc.errors(include_url=False):
+        location = error.get("loc", ())
+        field = location[0] if location and location[0] in _PERSONAL_INTERPRETATION_FIELDS else "unknown"
+        error_type = re.sub(r"[^a-z0-9_]", "", str(error.get("type", "validation_error")).lower())
+        error_type = error_type[:32] or "validation_error"
+        code = f"{field}_{error_type}"
+        if code not in issue_codes:
+            issue_codes.append(code)
+    return "schema_" + "_".join(issue_codes[:3])
+
+
 SYSTEM_PROMPT = """Ты — помощник по описательной аналитике тренировок Endurance Fantasy League.
 Отвечай на русском. Верни только один JSON-объект с ключами:
 headline, summary, positive_signals, caution_signals, practical_next_steps, data_limitations.
@@ -69,6 +116,11 @@ headline, summary, positive_signals, caution_signals, practical_next_steps, data
   другие показатели стабильны. Не отрицай пробелы и не утверждай полноту данных.
 - В data_limitations отмечай только реальные пробелы из входных данных. Не повторяй дисклеймер
   дословно и не добавляй лишнего.
+- Точно соблюдай размеры: headline — 3–100 символов; summary — 1–700 символов;
+  каждый элемент массивов — 1–240 символов. positive_signals и practical_next_steps —
+  максимум 4 пункта; caution_signals и data_limitations — максимум 5 пунктов.
+- Всегда возвращай все шесть ключей, даже если по какому-то списку нечего добавить: используй [].
+  Не возвращай null, вложенные объекты вместо строк, дополнительные ключи или обёртку вокруг объекта.
 - Используй краткие формулировки, без Markdown, эмодзи и текста за пределами JSON.
 """
 
@@ -271,10 +323,17 @@ def generate_personal_interpretation(
                 "content": json.dumps(_model_input(trends), ensure_ascii=False, separators=(",", ":")),
             },
         ],
-        "response_format": {"type": "json_object"},
-        # Qwen 3.8 supports explicit reasoning_format with JSON Object Mode.
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "personal_interpretation",
+                "strict": True,
+                "schema": PERSONAL_INTERPRETATION_JSON_SCHEMA,
+            },
+        },
+        # Return only the constrained final answer, not reasoning text.
         "reasoning_format": "hidden",
-        "max_completion_tokens": 900,
+        "max_completion_tokens": 1100,
         "temperature": 0.2,
     }
 
@@ -325,6 +384,7 @@ def generate_personal_interpretation(
         raise PersonalInterpretationError(
             "Groq returned an unexpected JSON schema",
             category="invalid_schema",
+            quality_check=_schema_quality_check(exc),
         ) from exc
 
     _validate_interpretation_claims(analysis, trends)
