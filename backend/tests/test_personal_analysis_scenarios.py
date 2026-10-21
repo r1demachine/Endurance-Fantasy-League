@@ -385,6 +385,7 @@ class PersonalAnalysisScenarioTests(unittest.TestCase):
             ),
             valid_analysis(summary="Повышенная нагрузка вызвала ухудшение самочувствия."),
         ]
+        expected_checks = ["unsupported_numeric", "ignored_data_gaps", "causal_assertion"]
         for index, payload in enumerate(bad_responses):
             with self.subTest(case=index):
                 post.reset_mock()
@@ -392,10 +393,17 @@ class PersonalAnalysisScenarioTests(unittest.TestCase):
                 with self.assertRaises(PersonalInterpretationError) as raised:
                     generate_personal_interpretation(trends, api_key="test-secret")
                 self.assertEqual(raised.exception.category, "unsupported_claim")
+                self.assertEqual(raised.exception.quality_check, expected_checks[index])
 
     @patch("app.services.personal_interpretation.httpx.post")
     def test_valid_grounded_response_passes_schema_and_quality_gate(self, post):
-        post.return_value = provider_response(json.dumps(valid_analysis(), ensure_ascii=False))
+        payload = valid_analysis(
+            summary=(
+                "Сон и самочувствие стоит оценивать отдельно; поэтому продолжай "
+                "отмечать оба показателя."
+            )
+        )
+        post.return_value = provider_response(json.dumps(payload, ensure_ascii=False))
         result = generate_personal_interpretation(
             {
                 "period": {"start": "2026-10-01", "end": "2026-10-20", "days": 20},

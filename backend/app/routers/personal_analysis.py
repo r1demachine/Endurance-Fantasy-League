@@ -144,8 +144,9 @@ def post_personal_interpretation(
     except PersonalInterpretationError as exc:
         # Diagnostic fields intentionally exclude the API key, user data, prompt and provider body.
         logger.warning(
-            "Personal interpretation failed: category=%s upstream_status=%s model=%s",
+            "Personal interpretation failed: category=%s quality_check=%s upstream_status=%s model=%s",
             exc.category,
+            exc.quality_check or "none",
             exc.upstream_status,
             settings.GROQ_MODEL,
         )
