@@ -377,7 +377,8 @@ def _request_interpretation(
                     safe_codes.append(code)
 
         retry_after_seconds = None
-        retry_after = exc.response.headers.get("Retry-After", "").strip()
+        raw_retry_after = exc.response.headers.get("Retry-After", "")
+        retry_after = raw_retry_after.strip() if isinstance(raw_retry_after, str) else ""
         if re.fullmatch(r"\d{1,5}", retry_after):
             retry_after_seconds = min(int(retry_after), 86400)
 
