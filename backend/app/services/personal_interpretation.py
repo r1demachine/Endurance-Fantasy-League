@@ -307,6 +307,7 @@ def _validate_interpretation_claims(
         )
 
     # Check individual statements so a disclaimer elsewhere cannot excuse a causal claim.
+    text = _response_text(analysis)
     for statement in re.split(r"[.!?;\n]+", text):
         if _CAUSAL_TERMS.search(statement) and _METRIC_TERMS.search(statement):
             raise PersonalInterpretationError(
