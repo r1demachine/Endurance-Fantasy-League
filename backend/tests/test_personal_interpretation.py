@@ -23,6 +23,15 @@ VALID_ANALYSIS = {
 }
 
 
+def provider_response(content):
+    response = Mock()
+    response.json.return_value = {
+        "choices": [{"message": {"content": content}}],
+    }
+    response.raise_for_status.return_value = None
+    return response
+
+
 def sample_trends():
     return {
         "user_id": 123,
