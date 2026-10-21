@@ -25,10 +25,13 @@ class PersonalInterpretationError(RuntimeError):
         *,
         category: str = "unknown",
         upstream_status: int | None = None,
+        quality_check: str | None = None,
     ):
         super().__init__(message)
         self.category = category
         self.upstream_status = upstream_status
+        # Fixed identifier only; never stores generated text or user data.
+        self.quality_check = quality_check
 
 
 class PersonalInterpretation(BaseModel):
@@ -62,6 +65,8 @@ headline, summary, positive_signals, caution_signals, practical_next_steps, data
 - Практические шаги должны быть общими и безопасными: продолжать отмечать данные, наблюдать за
   динамикой, сопоставлять субъективное состояние с нагрузкой. Не назначай лечение, не предписывай
   конкретные тренировочные нагрузки и не советуй тренироваться через боль.
+- Если data_gaps не пуст, кратко назови соответствующий пробел в data_limitations, даже если
+  другие показатели стабильны. Не отрицай пробелы и не утверждай полноту данных.
 - В data_limitations отмечай только реальные пробелы из входных данных. Не повторяй дисклеймер
   дословно и не добавляй лишнего.
 - Используй краткие формулировки, без Markdown, эмодзи и текста за пределами JSON.
@@ -143,7 +148,7 @@ _METRIC_TERMS = re.compile(
 _CAUSAL_TERMS = re.compile(
     r"из[ -]за|вследстви[ея]|вызвал(?:о|а|и)?|прив[её]л(?:о|а|и)?\s+к|"
     r"повлиял(?:о|а|и)?\s+на|обусловил(?:о|а|и)?|спровоцировал(?:о|а|и)?|"
-    r"объясня\w*|поэтому|caused? by|due to|resulted in|led to",
+    r"объясня\w*|caused? by|due to|resulted in|led to",
     re.IGNORECASE,
 )
 
@@ -219,6 +224,7 @@ def _validate_interpretation_claims(
         raise PersonalInterpretationError(
             "Groq returned a numeric claim not present in the source data",
             category="unsupported_claim",
+            quality_check="unsupported_numeric",
         )
 
     # The response must not silently present a complete picture when source gaps exist.
@@ -232,6 +238,7 @@ def _validate_interpretation_claims(
         raise PersonalInterpretationError(
             "Groq ignored source data gaps",
             category="unsupported_claim",
+            quality_check="ignored_data_gaps",
         )
 
     # Check individual statements so a disclaimer elsewhere cannot excuse a causal claim.
@@ -240,6 +247,7 @@ def _validate_interpretation_claims(
             raise PersonalInterpretationError(
                 "Groq returned an unsupported causal assertion",
                 category="unsupported_claim",
+                quality_check="causal_assertion",
             )
 
 
