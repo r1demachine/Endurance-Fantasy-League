@@ -252,6 +252,41 @@ class PersonalInterpretationServiceTests(unittest.TestCase):
         self.assertNotIn("test-secret", str(raised.exception))
 
     @patch("app.services.personal_interpretation.httpx.post")
+    def test_upstream_400_keeps_only_sanitized_code_and_retry_delay(self, post):
+        upstream = Mock()
+        upstream.status_code = 400
+        upstream.text = "private provider body with sensitive values"
+        upstream.headers = {"Retry-After": "7"}
+        upstream.json.return_value = {
+            "error": {
+                "code": "json_schema_invalid",
+                "type": "invalid_request_error",
+                "message": "private provider body with sensitive values",
+            }
+        }
+        error = httpx.HTTPStatusError(
+            "400 Bad Request",
+            request=Mock(),
+            response=upstream,
+        )
+        response = Mock()
+        response.raise_for_status.side_effect = error
+        post.return_value = response
+
+        with self.assertRaises(PersonalInterpretationError) as raised:
+            generate_personal_interpretation(sample_trends(), api_key="test-secret")
+
+        self.assertEqual(raised.exception.upstream_status, 400)
+        self.assertEqual(
+            raised.exception.upstream_error_code,
+            "json_schema_invalid_invalid_request_error",
+        )
+        self.assertEqual(raised.exception.retry_after_seconds, 7)
+        self.assertNotIn("private provider body", str(raised.exception))
+        self.assertNotIn("sensitive values", str(raised.exception))
+        self.assertNotIn("test-secret", str(raised.exception))
+
+    @patch("app.services.personal_interpretation.httpx.post")
     def test_empty_api_key_never_calls_provider(self, post):
         with self.assertRaises(PersonalInterpretationError):
             generate_personal_interpretation(sample_trends(), api_key=" ")
