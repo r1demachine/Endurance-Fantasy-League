@@ -247,7 +247,7 @@ def generate_personal_interpretation(
     trends: dict[str, Any],
     *,
     api_key: str,
-    model: str = "openai/gpt-oss-20b",
+    model: str = "qwen/qwen3.8-27b",
     timeout_seconds: float = 20.0,
 ) -> PersonalInterpretation:
     """Call Groq once and validate its JSON response against a strict schema."""
@@ -264,7 +264,7 @@ def generate_personal_interpretation(
             },
         ],
         "response_format": {"type": "json_object"},
-        # GPT-OSS reasoning models need a non-raw reasoning format when JSON mode is enabled.
+        # Qwen 3.8 supports explicit reasoning_format with JSON Object Mode.
         "reasoning_format": "hidden",
         "max_completion_tokens": 900,
         "temperature": 0.2,
