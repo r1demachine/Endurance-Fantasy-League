@@ -126,8 +126,10 @@ class PersonalInterpretationServiceTests(unittest.TestCase):
         self.assertFalse(schema["additionalProperties"])
         self.assertEqual(request_body["model"], "qwen/qwen3.8-27b")
         self.assertEqual(request_body["reasoning_format"], "hidden")
-        self.assertEqual(request_body["max_completion_tokens"], 1100)
-        self.assertEqual(request_body["temperature"], 0.2)
+        self.assertEqual(request_body["reasoning_effort"], "none")
+        self.assertEqual(request_body["max_completion_tokens"], 900)
+        self.assertEqual(request_body["temperature"], 0.7)
+        self.assertEqual(request_body["top_p"], 0.8)
         user_content = json.loads(request_body["messages"][1]["content"])
         serialized = json.dumps(user_content, ensure_ascii=False)
         self.assertNotIn("private-user", serialized)
@@ -222,6 +224,14 @@ class PersonalInterpretationServiceTests(unittest.TestCase):
         response = Mock()
         response.status_code = 401
         response.text = "private upstream response containing secret"
+        response.headers = {}
+        response.json.return_value = {
+            "error": {
+                "code": "auth_invalid",
+                "type": "authentication_error",
+                "message": "private upstream response containing secret",
+            }
+        }
         error = httpx.HTTPStatusError(
             "401 Unauthorized",
             request=Mock(),
@@ -236,6 +246,8 @@ class PersonalInterpretationServiceTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.category, "upstream_http_error")
         self.assertEqual(raised.exception.upstream_status, 401)
+        self.assertEqual(raised.exception.upstream_error_code, "auth_invalid_authentication_error")
+        self.assertIsNone(raised.exception.retry_after_seconds)
         self.assertNotIn("private upstream response", str(raised.exception))
         self.assertNotIn("test-secret", str(raised.exception))
 
