@@ -264,6 +264,8 @@ def generate_personal_interpretation(
             },
         ],
         "response_format": {"type": "json_object"},
+        # GPT-OSS reasoning models need a non-raw reasoning format when JSON mode is enabled.
+        "reasoning_format": "hidden",
         "max_completion_tokens": 900,
         "temperature": 0.2,
     }
