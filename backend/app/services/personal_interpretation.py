@@ -26,12 +26,16 @@ class PersonalInterpretationError(RuntimeError):
         category: str = "unknown",
         upstream_status: int | None = None,
         quality_check: str | None = None,
+        upstream_error_code: str | None = None,
+        retry_after_seconds: int | None = None,
     ):
         super().__init__(message)
         self.category = category
         self.upstream_status = upstream_status
-        # Fixed identifier only; never stores generated text or user data.
+        # Fixed identifiers only; never store provider messages or generated text.
         self.quality_check = quality_check
+        self.upstream_error_code = upstream_error_code
+        self.retry_after_seconds = retry_after_seconds
 
 
 class PersonalInterpretation(BaseModel):
@@ -200,7 +204,14 @@ _METRIC_TERMS = re.compile(
 _CAUSAL_TERMS = re.compile(
     r"из[ -]за|вследстви[ея]|вызвал(?:о|а|и)?|прив[её]л(?:о|а|и)?\s+к|"
     r"повлиял(?:о|а|и)?\s+на|обусловил(?:о|а|и)?|спровоцировал(?:о|а|и)?|"
-    r"объясня\w*|caused? by|due to|resulted in|led to",
+    r"caused? by|due to|resulted in|led to",
+    re.IGNORECASE,
+)
+_CAUSAL_QUALIFIERS = re.compile(
+    r"\b(?:не|нельзя|невозможно|неясно|неизвестно|недостаточно|нет\s+оснований|"
+    r"не\s+подтвержд\w*|не\s+доказыв\w*|не\s+означа\w*|"
+    r"не\s+свидетельств\w*|не\s+позволяет|не\s+следует|"
+    r"не\s+установлен\w*|без\s+данных)\b",
     re.IGNORECASE,
 )
 
@@ -264,6 +275,12 @@ def _response_text(analysis: PersonalInterpretation) -> str:
     return "\n".join(values)
 
 
+def _causal_claim_is_asserted(statement: str, match: re.Match[str]) -> bool:
+    """Treat explicit negation/insufficient-evidence wording as a limitation, not a claim."""
+    prefix = statement[max(0, match.start() - 90):match.start()]
+    return not _CAUSAL_QUALIFIERS.search(prefix)
+
+
 def _validate_interpretation_claims(
     analysis: PersonalInterpretation,
     trends: dict[str, Any],
@@ -306,15 +323,22 @@ def _validate_interpretation_claims(
             quality_check="ignored_data_gaps",
         )
 
-    # Check individual statements so a disclaimer elsewhere cannot excuse a causal claim.
-    text = _response_text(analysis)
-    for statement in re.split(r"[.!?;\n]+", text):
-        if _CAUSAL_TERMS.search(statement) and _METRIC_TERMS.search(statement):
-            raise PersonalInterpretationError(
-                "Groq returned an unsupported causal assertion",
-                category="unsupported_claim",
-                quality_check="causal_assertion",
-            )
+    # Check each field independently so logs identify the source field without exposing text.
+    # Negated or explicitly uncertain statements should not be mistaken for positive causal claims.
+    for field_name, value in _response_fields(analysis).items():
+        field_text = " ".join(value if isinstance(value, list) else [value])
+        for statement in re.split(r"[.!?;\n]+", field_text):
+            match = _CAUSAL_TERMS.search(statement)
+            if (
+                match
+                and _METRIC_TERMS.search(statement)
+                and _causal_claim_is_asserted(statement, match)
+            ):
+                raise PersonalInterpretationError(
+                    "Groq returned an unsupported causal assertion",
+                    category="unsupported_claim",
+                    quality_check=f"causal_assertion_{field_name}",
+                )
 
 
 def _request_interpretation(
@@ -336,11 +360,34 @@ def _request_interpretation(
         )
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
-        # Keep only the HTTP status. Never log the response body or authorization header.
+        # Extract only safe machine-readable codes and a numeric retry delay, never the body text.
+        try:
+            error_payload = exc.response.json().get("error", {})
+        except (ValueError, AttributeError):
+            error_payload = {}
+        if not isinstance(error_payload, dict):
+            error_payload = {}
+
+        safe_codes = []
+        for key in ("code", "type"):
+            raw_code = error_payload.get(key)
+            if isinstance(raw_code, str):
+                code = re.sub(r"[^A-Za-z0-9_.-]", "_", raw_code)[:48].strip("_")
+                if code and code not in safe_codes:
+                    safe_codes.append(code)
+
+        retry_after_seconds = None
+        raw_retry_after = exc.response.headers.get("Retry-After", "")
+        retry_after = raw_retry_after.strip() if isinstance(raw_retry_after, str) else ""
+        if re.fullmatch(r"\d{1,5}", retry_after):
+            retry_after_seconds = min(int(retry_after), 86400)
+
         raise PersonalInterpretationError(
             "Groq rejected the request",
             category="upstream_http_error",
             upstream_status=exc.response.status_code,
+            upstream_error_code="_".join(safe_codes) or None,
+            retry_after_seconds=retry_after_seconds,
         ) from exc
     except httpx.TimeoutException as exc:
         raise PersonalInterpretationError(
@@ -405,8 +452,11 @@ def generate_personal_interpretation(
         },
         # Return only the constrained final answer, not reasoning text.
         "reasoning_format": "hidden",
-        "max_completion_tokens": 1100,
-        "temperature": 0.2,
+        # Qwen recommends instruct mode for efficient general-purpose text generation.
+        "reasoning_effort": "none",
+        "max_completion_tokens": 900,
+        "temperature": 0.7,
+        "top_p": 0.8,
     }
 
     analysis = _request_interpretation(

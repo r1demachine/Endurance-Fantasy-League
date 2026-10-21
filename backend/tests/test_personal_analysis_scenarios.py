@@ -385,7 +385,7 @@ class PersonalAnalysisScenarioTests(unittest.TestCase):
             ),
             valid_analysis(summary="Повышенная нагрузка вызвала ухудшение самочувствия."),
         ]
-        expected_checks = ["unsupported_numeric_summary", "ignored_data_gaps", "causal_assertion"]
+        expected_checks = ["unsupported_numeric_summary", "ignored_data_gaps", "causal_assertion_summary"]
         for index, payload in enumerate(bad_responses):
             with self.subTest(case=index):
                 post.reset_mock()
@@ -394,6 +394,28 @@ class PersonalAnalysisScenarioTests(unittest.TestCase):
                     generate_personal_interpretation(trends, api_key="test-secret")
                 self.assertEqual(raised.exception.category, "unsupported_claim")
                 self.assertEqual(raised.exception.quality_check, expected_checks[index])
+
+    @patch("app.services.personal_interpretation.httpx.post")
+    def test_causal_gate_allows_explicit_uncertainty_and_negation(self, post):
+        payload = valid_analysis(
+            summary="Самочувствие пока не позволяет сделать вывод о влиянии нагрузки.",
+            caution_signals=["Недостаточно данных, чтобы утверждать, что сон вызвал ухудшение самочувствия."],
+        )
+        post.return_value = provider_response(json.dumps(payload, ensure_ascii=False))
+        result = generate_personal_interpretation(
+            {
+                "period": {"start": "2026-10-01", "end": "2026-10-20", "days": 20},
+                "comparison_windows": {},
+                "observations": [{"key": "wellbeing", "current": {"mean": 4.0}, "change": 0.0}],
+                "training_load_relationship": {"status": "insufficient_data"},
+                "coverage": {},
+                "data_gaps": ["Есть пропуски утренних чек-инов."],
+                "methodology": [],
+                "disclaimer": "Описательная аналитика.",
+            },
+            api_key="test-secret",
+        )
+        self.assertEqual(result.headline, "Динамика без резких изменений")
 
     @patch("app.services.personal_interpretation.httpx.post")
     def test_valid_grounded_response_passes_schema_and_quality_gate(self, post):
@@ -579,6 +601,26 @@ class PersonalAnalysisApiScenarioTests(unittest.TestCase):
         self.assertIn("подключиться к Groq", response.json()["detail"])
         self.assertNotIn("credential", response.text)
         self.assertNotIn("raw upstream body", response.text)
+
+    @patch("app.routers.personal_analysis.get_settings")
+    @patch("app.routers.personal_analysis.generate_personal_interpretation")
+    @patch("app.routers.personal_analysis.local_today", return_value=TODAY)
+    def test_groq_rate_limit_is_returned_as_429_with_retry_after(
+        self, _today, generate, get_settings
+    ):
+        get_settings.return_value = self.settings()
+        generate.side_effect = PersonalInterpretationError(
+            "sanitized rate-limit error",
+            category="upstream_http_error",
+            upstream_status=429,
+            upstream_error_code="rate_limit_exceeded",
+            retry_after_seconds=17,
+        )
+        response = self.client.post("/api/personal-analysis/interpretation")
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.headers.get("Retry-After"), "17")
+        self.assertIn("лимит", response.json()["detail"])
+        self.assertNotIn("rate_limit_exceeded", response.text)
 
 
 if __name__ == "__main__":

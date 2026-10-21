@@ -144,10 +144,12 @@ def post_personal_interpretation(
     except PersonalInterpretationError as exc:
         # Diagnostic fields intentionally exclude the API key, user data, prompt and provider body.
         logger.warning(
-            "Personal interpretation failed: category=%s quality_check=%s upstream_status=%s model=%s",
+            "Personal interpretation failed: category=%s quality_check=%s upstream_status=%s upstream_error_code=%s retry_after_seconds=%s model=%s",
             exc.category,
             exc.quality_check or "none",
             exc.upstream_status,
+            exc.upstream_error_code or "none",
+            exc.retry_after_seconds if exc.retry_after_seconds is not None else "none",
             settings.GROQ_MODEL,
         )
         if exc.category == "unsupported_claim":
@@ -165,13 +167,20 @@ def post_personal_interpretation(
         elif exc.upstream_status == 404:
             detail = "Модель Groq не найдена или недоступна (HTTP 404). Проверь значение GROQ_MODEL."
         elif exc.upstream_status == 429:
-            detail = "Groq вернул лимит запросов или исчерпание квоты (HTTP 429). Проверь лимиты и баланс проекта."
+            detail = "Groq временно ограничил запросы или исчерпан лимит токенов (HTTP 429). Не нажимай повторно подряд; проверь лимиты Groq и попробуй позже."
         elif exc.upstream_status is not None and exc.upstream_status >= 500:
             detail = f"Groq временно ответил ошибкой HTTP {exc.upstream_status}. Попробуй позже."
         elif exc.category in {"invalid_response", "invalid_schema"}:
             detail = "Groq ответил, но формат ответа оказался некорректным. Попробуй ещё раз."
         else:
             detail = "Не удалось получить корректный ответ AI-сервиса. Данные не изменены; попробуй позже."
+        if exc.upstream_status == 429:
+            headers = (
+                {"Retry-After": str(exc.retry_after_seconds)}
+                if exc.retry_after_seconds is not None
+                else None
+            )
+            raise HTTPException(status_code=429, detail=detail, headers=headers) from exc
         raise HTTPException(status_code=502, detail=detail) from exc
 
     return {
