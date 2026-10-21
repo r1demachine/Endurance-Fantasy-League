@@ -245,15 +245,22 @@ def _source_numbers(value: Any) -> set[str]:
     return set()
 
 
+def _response_fields(analysis: PersonalInterpretation) -> dict[str, list[str] | str]:
+    """Map fixed schema field names to text without retaining or logging field values."""
+    return {
+        "headline": analysis.headline,
+        "summary": analysis.summary,
+        "positive_signals": analysis.positive_signals,
+        "caution_signals": analysis.caution_signals,
+        "practical_next_steps": analysis.practical_next_steps,
+        "data_limitations": analysis.data_limitations,
+    }
+
+
 def _response_text(analysis: PersonalInterpretation) -> str:
-    values = [analysis.headline, analysis.summary]
-    for field in (
-        analysis.positive_signals,
-        analysis.caution_signals,
-        analysis.practical_next_steps,
-        analysis.data_limitations,
-    ):
-        values.extend(field)
+    values: list[str] = []
+    for value in _response_fields(analysis).values():
+        values.extend(value if isinstance(value, list) else [value])
     return "\n".join(values)
 
 
@@ -266,17 +273,23 @@ def _validate_interpretation_claims(
     This is a conservative deterministic gate, not a general natural-language fact
     checker. The source prompt and the UI disclaimer remain necessary safeguards.
     """
-    text = _response_text(analysis)
     allowed_numbers = _source_numbers(_model_input(trends))
-    unsupported_numbers = {
-        _normalise_number(match.group(0))
-        for match in _NUMBER_TOKEN.finditer(text)
-    } - allowed_numbers
-    if unsupported_numbers:
+    unsupported_fields = []
+    for field_name, value in _response_fields(analysis).items():
+        field_text = " ".join(value if isinstance(value, list) else [value])
+        unsupported_numbers = {
+            _normalise_number(match.group(0))
+            for match in _NUMBER_TOKEN.finditer(field_text)
+        } - allowed_numbers
+        if unsupported_numbers:
+            unsupported_fields.append(field_name)
+
+    if unsupported_fields:
+        # Field names are fixed identifiers; never include the offending values or text.
         raise PersonalInterpretationError(
             "Groq returned a numeric claim not present in the source data",
             category="unsupported_claim",
-            quality_check="unsupported_numeric",
+            quality_check="unsupported_numeric_" + "_".join(unsupported_fields[:3]),
         )
 
     # The response must not silently present a complete picture when source gaps exist.
@@ -294,6 +307,7 @@ def _validate_interpretation_claims(
         )
 
     # Check individual statements so a disclaimer elsewhere cannot excuse a causal claim.
+    text = _response_text(analysis)
     for statement in re.split(r"[.!?;\n]+", text):
         if _CAUSAL_TERMS.search(statement) and _METRIC_TERMS.search(statement):
             raise PersonalInterpretationError(
@@ -303,40 +317,13 @@ def _validate_interpretation_claims(
             )
 
 
-def generate_personal_interpretation(
-    trends: dict[str, Any],
+def _request_interpretation(
+    request_body: dict[str, Any],
     *,
     api_key: str,
-    model: str = "qwen/qwen3.8-27b",
-    timeout_seconds: float = 20.0,
+    timeout_seconds: float,
 ) -> PersonalInterpretation:
-    """Call Groq once and validate its JSON response against a strict schema."""
-    if not api_key or not api_key.strip():
-        raise PersonalInterpretationError("Groq API key is not configured")
-
-    request_body = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": json.dumps(_model_input(trends), ensure_ascii=False, separators=(",", ":")),
-            },
-        ],
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "personal_interpretation",
-                "strict": True,
-                "schema": PERSONAL_INTERPRETATION_JSON_SCHEMA,
-            },
-        },
-        # Return only the constrained final answer, not reasoning text.
-        "reasoning_format": "hidden",
-        "max_completion_tokens": 1100,
-        "temperature": 0.2,
-    }
-
+    """Make one Groq request and apply JSON/Pydantic contract validation."""
     try:
         response = httpx.post(
             GROQ_CHAT_COMPLETIONS_URL,
@@ -379,7 +366,7 @@ def generate_personal_interpretation(
         ) from exc
 
     try:
-        analysis = PersonalInterpretation.model_validate(decoded)
+        return PersonalInterpretation.model_validate(decoded)
     except ValidationError as exc:
         raise PersonalInterpretationError(
             "Groq returned an unexpected JSON schema",
@@ -387,5 +374,75 @@ def generate_personal_interpretation(
             quality_check=_schema_quality_check(exc),
         ) from exc
 
+
+def generate_personal_interpretation(
+    trends: dict[str, Any],
+    *,
+    api_key: str,
+    model: str = "qwen/qwen3.8-27b",
+    timeout_seconds: float = 20.0,
+) -> PersonalInterpretation:
+    """Call Groq, with one number-free repair attempt if its first answer invents numbers."""
+    if not api_key or not api_key.strip():
+        raise PersonalInterpretationError("Groq API key is not configured")
+
+    request_body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": json.dumps(_model_input(trends), ensure_ascii=False, separators=(",", ":")),
+            },
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "personal_interpretation",
+                "strict": True,
+                "schema": PERSONAL_INTERPRETATION_JSON_SCHEMA,
+            },
+        },
+        # Return only the constrained final answer, not reasoning text.
+        "reasoning_format": "hidden",
+        "max_completion_tokens": 1100,
+        "temperature": 0.2,
+    }
+
+    analysis = _request_interpretation(
+        request_body,
+        api_key=api_key,
+        timeout_seconds=timeout_seconds,
+    )
+    try:
+        _validate_interpretation_claims(analysis, trends)
+        return analysis
+    except PersonalInterpretationError as exc:
+        if exc.category != "unsupported_claim" or not (exc.quality_check or "").startswith("unsupported_numeric_"):
+            raise
+
+    # A single repair is attempted only for unsupported numeric claims. Keep the
+    # source input and schema unchanged; ask for qualitative wording with no digits.
+    retry_body = {
+        **request_body,
+        "messages": [
+            {
+                "role": "system",
+                "content": SYSTEM_PROMPT
+                + "\n\nПовторная попытка: предыдущий ответ содержал числовые утверждения, "
+                + "которые нельзя подтвердить точными числовыми значениями во входных данных. "
+                + "Сформируй новый полный JSON по той же схеме. В этот раз не используй "
+                + "арабские цифры, даты, проценты, длительности или числовые диапазоны ни в одном "
+                + "текстовом поле. Передай те же выводы качественно, без чисел. Не меняй данные "
+                + "и не добавляй новые факты.",
+            },
+            request_body["messages"][1],
+        ],
+    }
+    analysis = _request_interpretation(
+        retry_body,
+        api_key=api_key,
+        timeout_seconds=timeout_seconds,
+    )
     _validate_interpretation_claims(analysis, trends)
     return analysis

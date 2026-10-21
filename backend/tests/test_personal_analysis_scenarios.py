@@ -385,7 +385,7 @@ class PersonalAnalysisScenarioTests(unittest.TestCase):
             ),
             valid_analysis(summary="Повышенная нагрузка вызвала ухудшение самочувствия."),
         ]
-        expected_checks = ["unsupported_numeric", "ignored_data_gaps", "causal_assertion"]
+        expected_checks = ["unsupported_numeric_summary", "ignored_data_gaps", "causal_assertion"]
         for index, payload in enumerate(bad_responses):
             with self.subTest(case=index):
                 post.reset_mock()
