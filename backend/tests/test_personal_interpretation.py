@@ -129,6 +129,43 @@ class PersonalInterpretationServiceTests(unittest.TestCase):
         self.assertIn("data_gaps", user_content)
 
     @patch("app.services.personal_interpretation.httpx.post")
+    def test_unsupported_numeric_claim_gets_one_number_free_retry(self, post):
+        bad = {
+            **VALID_ANALYSIS,
+            "summary": "За период у тебя было 999 тренировок.",
+        }
+        post.side_effect = [
+            provider_response(json.dumps(bad, ensure_ascii=False)),
+            provider_response(json.dumps(VALID_ANALYSIS, ensure_ascii=False)),
+        ]
+
+        result = generate_personal_interpretation(sample_trends(), api_key="test-secret")
+
+        self.assertEqual(result.headline, VALID_ANALYSIS["headline"])
+        self.assertEqual(post.call_count, 2)
+        retry_body = post.call_args_list[1].kwargs["json"]
+        self.assertIn("не используй арабские цифры", retry_body["messages"][0]["content"])
+        self.assertEqual(
+            retry_body["response_format"]["json_schema"]["schema"],
+            PERSONAL_INTERPRETATION_JSON_SCHEMA,
+        )
+
+    @patch("app.services.personal_interpretation.httpx.post")
+    def test_unsupported_numeric_retry_still_rejects_bad_response(self, post):
+        bad = {
+            **VALID_ANALYSIS,
+            "summary": "За период у тебя было 999 тренировок.",
+        }
+        post.return_value = provider_response(json.dumps(bad, ensure_ascii=False))
+
+        with self.assertRaises(PersonalInterpretationError) as raised:
+            generate_personal_interpretation(sample_trends(), api_key="test-secret")
+
+        self.assertEqual(raised.exception.category, "unsupported_claim")
+        self.assertEqual(raised.exception.quality_check, "unsupported_numeric_summary")
+        self.assertEqual(post.call_count, 2)
+
+    @patch("app.services.personal_interpretation.httpx.post")
     def test_schema_errors_report_only_field_and_error_codes(self, post):
         invalid = {**VALID_ANALYSIS, "headline": "x"}
         response = Mock()
