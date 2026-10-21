@@ -602,6 +602,26 @@ class PersonalAnalysisApiScenarioTests(unittest.TestCase):
         self.assertNotIn("credential", response.text)
         self.assertNotIn("raw upstream body", response.text)
 
+    @patch("app.routers.personal_analysis.get_settings")
+    @patch("app.routers.personal_analysis.generate_personal_interpretation")
+    @patch("app.routers.personal_analysis.local_today", return_value=TODAY)
+    def test_groq_rate_limit_is_returned_as_429_with_retry_after(
+        self, _today, generate, get_settings
+    ):
+        get_settings.return_value = self.settings()
+        generate.side_effect = PersonalInterpretationError(
+            "sanitized rate-limit error",
+            category="upstream_http_error",
+            upstream_status=429,
+            upstream_error_code="rate_limit_exceeded",
+            retry_after_seconds=17,
+        )
+        response = self.client.post("/api/personal-analysis/interpretation")
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.headers.get("Retry-After"), "17")
+        self.assertIn("лимит", response.json()["detail"])
+        self.assertNotIn("rate_limit_exceeded", response.text)
+
 
 if __name__ == "__main__":
     unittest.main()
