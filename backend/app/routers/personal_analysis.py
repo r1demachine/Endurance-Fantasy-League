@@ -123,6 +123,11 @@ def post_personal_interpretation(
         }
 
     settings = get_settings()
+    if not getattr(settings, "PERSONAL_ANALYSIS_AI_ENABLED", True):
+        raise HTTPException(
+            status_code=503,
+            detail="AI-анализ отключён настройкой PERSONAL_ANALYSIS_AI_ENABLED.",
+        )
     if not settings.GROQ_API_KEY:
         raise HTTPException(
             status_code=503,
@@ -144,7 +149,9 @@ def post_personal_interpretation(
             exc.upstream_status,
             settings.GROQ_MODEL,
         )
-        if exc.category == "timeout":
+        if exc.category == "unsupported_claim":
+            detail = "Groq вернул неподтверждённое утверждение или проигнорировал пропуски. Ответ не показан; попробуй ещё раз."
+        elif exc.category == "timeout":
             detail = "Groq не ответил за установленное время. Попробуй позже или увеличь GROQ_TIMEOUT_SECONDS."
         elif exc.category == "connection_error":
             detail = "Backend не смог подключиться к Groq. Проверь сетевую доступность API."
