@@ -89,7 +89,7 @@ class PersonalInterpretationServiceTests(unittest.TestCase):
         post.return_value = response
 
         result = generate_personal_interpretation(
-            sample_trends(), api_key="test-secret", model="openai/gpt-oss-20b"
+            sample_trends(), api_key="test-secret"
         )
 
         self.assertEqual(result.headline, VALID_ANALYSIS["headline"])
@@ -97,6 +97,7 @@ class PersonalInterpretationServiceTests(unittest.TestCase):
         self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer test-secret")
         request_body = post.call_args.kwargs["json"]
         self.assertEqual(request_body["response_format"], {"type": "json_object"})
+        self.assertEqual(request_body["model"], "qwen/qwen3.8-27b")
         self.assertEqual(request_body["reasoning_format"], "hidden")
         self.assertEqual(request_body["max_completion_tokens"], 900)
         self.assertEqual(request_body["temperature"], 0.2)

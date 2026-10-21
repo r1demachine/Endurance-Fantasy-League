@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     CRON_SECRET: Optional[str] = None
     # Groq: optional AI interpretation of aggregate personal trends only.
     GROQ_API_KEY: Optional[str] = None
-    GROQ_MODEL: str = "openai/gpt-oss-20b"
+    GROQ_MODEL: str = "qwen/qwen3.8-27b"
     GROQ_TIMEOUT_SECONDS: int = Field(default=20, ge=1, le=60)
     PERSONAL_ANALYSIS_AI_ENABLED: bool = True
 
