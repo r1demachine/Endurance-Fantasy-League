@@ -106,7 +106,7 @@ function importedSleepText(sleep: SleepData): string {
     : "Запись сна из Intervals.icu есть, но в ней нет длительности или Sleep Score.";
 }
 
-export default function CheckInsPanel() {
+export default function CheckInsPanel({ autoPromptActivityIds = [] }: { autoPromptActivityIds?: number[] }) {
   const [morning, setMorning] = useState<MorningCheckIn | null>(null);
   const [sleep, setSleep] = useState<SleepData>(null);
   const [morningOpen, setMorningOpen] = useState(false);
@@ -299,9 +299,10 @@ export default function CheckInsPanel() {
   useEffect(() => {
     if (activitiesLoading || activities.length === 0) return;
     const today = localToday();
+    const requestedIds = new Set(autoPromptActivityIds);
     const newTodayActivities = activities.filter(
       (activity) =>
-        activity.date?.slice(0, 10) === today &&
+        (activity.date?.slice(0, 10) === today || requestedIds.has(activity.id)) &&
         !activity.checkin &&
         !promptedActivityIds.current.has(activity.id),
     );
@@ -311,7 +312,7 @@ export default function CheckInsPanel() {
       const known = new Set(current);
       return [...current, ...newTodayActivities.map((activity) => activity.id).filter((id) => !known.has(id))];
     });
-  }, [activities, activitiesLoading]);
+  }, [activities, activitiesLoading, autoPromptActivityIds]);
 
   useEffect(() => {
     if (editingActivityId !== null || activityQueue.length === 0) return;
