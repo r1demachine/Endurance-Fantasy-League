@@ -89,9 +89,9 @@ test("dashboard hides requested helper copy and shows equal-height compact cards
 
 test("deload eligibility explanation appears only after clicking an unavailable deload action", () => {
   const weekBlock = read("src/components/dashboard/WeekBlock.tsx");
-  assert.match(weekBlock, /const \[showDeloadBlockReason, setShowDeloadBlockReason\] = useState\(false\)/);
+  assert.match(weekBlock, /const \[deloadReasonShownForWeek, setDeloadReasonShownForWeek\] = useState<string \| null>\(null\)/);
   assert.match(weekBlock, /onClick=\{handleEnableDeload\}/);
-  assert.match(weekBlock, /showDeloadBlockReason && weekData\.is_current_week && !weekData\.can_set_deload/);
+  assert.match(weekBlock, /deloadReasonShownForWeek === selectedWeekStart && weekData\.is_current_week && !weekData\.can_set_deload/);
   assert.match(weekBlock, /Не менее 2 из предыдущих 3 недель должны достигать 75% baseline\./);
   assert.doesNotMatch(weekBlock, /\{!weekData\.can_set_deload && weekData\.deload_block_reason &&/);
   assert.match(weekBlock, /flex flex-wrap items-center gap-2/);
