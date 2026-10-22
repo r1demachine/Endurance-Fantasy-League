@@ -120,8 +120,6 @@ export default function CheckInsPanel({ autoPromptActivityIds }: { autoPromptAct
   const [morningBusy, setMorningBusy] = useState(false);
   const [morningError, setMorningError] = useState("");
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [nextActivityOffset, setNextActivityOffset] = useState<number | null>(null);
-  const [visibleActivityCount, setVisibleActivityCount] = useState(5);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
   const [activitiesError, setActivitiesError] = useState("");
   const [editingActivityId, setEditingActivityId] = useState<number | null>(null);
@@ -172,21 +170,15 @@ export default function CheckInsPanel({ autoPromptActivityIds }: { autoPromptAct
     return () => window.clearInterval(timer);
   }, []);
 
-  const loadActivities = useCallback(async (offset = 0) => {
+  const loadActivities = useCallback(async () => {
     setActivitiesLoading(true);
     setActivitiesError("");
     try {
       const response = await authApi.get("/api/check-ins/history/activities", {
-        params: { offset, limit: 20 },
+        params: { offset: 0, limit: 20 },
       });
       const rows = Array.isArray(response.data?.activities) ? response.data.activities as Activity[] : [];
       setActivities(rows);
-      setNextActivityOffset(
-        response.data?.next_offset === null || response.data?.next_offset === undefined
-          ? null
-          : Number(response.data.next_offset),
-      );
-      setVisibleActivityCount(5);
     } catch {
       setActivitiesError("Не удалось загрузить историю тренировок и чек-инов.");
     } finally {
@@ -375,57 +367,24 @@ export default function CheckInsPanel({ autoPromptActivityIds }: { autoPromptAct
     }
   };
 
-  const visibleActivities = activities.slice(0, visibleActivityCount);
-
-  const loadMoreActivities = async () => {
-    if (visibleActivityCount < activities.length) {
-      setVisibleActivityCount(Math.min(activities.length, visibleActivityCount + 15));
-      return;
-    }
-    if (nextActivityOffset === null || activitiesLoading) return;
-    const offset = nextActivityOffset;
-    setActivitiesLoading(true);
-    setActivitiesError("");
-    try {
-      const response = await authApi.get("/api/check-ins/history/activities", {
-        params: { offset, limit: 20 },
-      });
-      const rows = Array.isArray(response.data?.activities) ? response.data.activities as Activity[] : [];
-      const currentIds = new Set(activities.map((activity) => activity.id));
-      const fresh = rows.filter((activity) => !currentIds.has(activity.id));
-      setActivities((current) => [...current, ...fresh]);
-      setVisibleActivityCount((current) => current + fresh.length);
-      setNextActivityOffset(
-        response.data?.next_offset === null || response.data?.next_offset === undefined
-          ? null
-          : Number(response.data.next_offset),
-      );
-    } catch {
-      setActivitiesError("Не удалось загрузить предыдущие тренировки. Попробуй ещё раз.");
-    } finally {
-      setActivitiesLoading(false);
-    }
-  };
+  const visibleActivities = activities.slice(0, 3);
 
   return (
-    <section className="border-b-2 border-black bg-[#f4f4f0]" aria-labelledby="check-ins-title">
-      <header className="border-b-2 border-black bg-[#5866f2] p-4 text-white md:p-5 xl:h-[132px] xl:flex xl:flex-col xl:justify-center">
-        <p className="text-[10px] font-black uppercase tracking-widest text-white/80">Самочувствие · приватные данные</p>
-        <h2 id="check-ins-title" className="mt-1 font-display text-2xl uppercase md:text-3xl">Чек-ины</h2>
-        <p className="mt-1 text-xs leading-relaxed text-white/90">Ответы видны только тебе и не влияют на XP, достижения или рейтинги.</p>
+    <section className="flex h-full min-w-0 flex-col border-b-2 border-black bg-[#f4f4f0]" aria-labelledby="check-ins-title">
+      <header className="flex h-[58px] min-h-[58px] shrink-0 items-center border-b-2 border-black bg-[#5866f2] px-4 text-white md:px-5">
+        <h2 id="check-ins-title" className="font-display text-2xl uppercase md:text-3xl">Чек-ины</h2>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2">
+      <div className="grid flex-1 grid-cols-1 md:grid-cols-2">
         <div className="border-b-2 border-black bg-white p-4 md:border-b-0 md:border-r-2 md:p-5">
           <h3 className="font-display text-xl uppercase">Утро</h3>
           {morning?.status === "completed" ? (
-            <p className="mt-2 text-sm font-bold">Сегодня заполнено. Неизвестные показатели остались пустыми.</p>
+            <p className="mt-2 text-sm font-bold">Сегодня заполнено.</p>
           ) : morning?.status === "skipped" ? (
             <p className="mt-2 text-sm text-[#555]">Сегодня пропущено. Ответы не записывались, оценка самочувствия не подставлялась.</p>
           ) : (
             <p className="mt-2 text-sm text-[#555]">Короткая отметка готовности, усталости, мышечной болезненности и общего самочувствия.</p>
           )}
-          <p className="mt-2 text-xs leading-relaxed text-[#666]">{importedSleepText(sleep)}</p>
           {morningError && !morningOpen && <p role="alert" className="mt-2 text-xs font-bold text-[#b42318]">{morningError}</p>}
           {morningError && !morningOpen && (
             <button type="button" onClick={() => void loadMorning()} className="mt-2 border-2 border-black bg-white px-3 py-2 text-xs font-bold uppercase">Повторить запрос</button>
@@ -485,20 +444,6 @@ export default function CheckInsPanel({ autoPromptActivityIds }: { autoPromptAct
                 );
               })}
             </ul>
-          )}
-          {(visibleActivityCount < activities.length || nextActivityOffset !== null) && (
-            <button
-              type="button"
-              onClick={() => void loadMoreActivities()}
-              disabled={activitiesLoading}
-              className="mt-3 w-full border-2 border-black bg-[#ffd500] px-3 py-3 text-xs font-black uppercase tracking-wide disabled:opacity-50 motion-reduce:transition-none"
-            >
-              {activitiesLoading
-                ? "Загружаем…"
-                : visibleActivityCount < activities.length
-                  ? "Показать более ранние тренировки"
-                  : "Загрузить предыдущие тренировки"}
-            </button>
           )}
         </div>
       </div>
