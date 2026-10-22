@@ -92,6 +92,11 @@ function ScaleButtons({
   );
 }
 
+function localToday(): string {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function importedSleepText(sleep: SleepData): string {
   if (!sleep) return "Автоматические данные сна из Intervals.icu за этот день недоступны. Пропуск данных не заменяется нулём.";
   const bits: string[] = [];
@@ -106,7 +111,7 @@ function importedSleepText(sleep: SleepData): string {
     : "Запись сна из Intervals.icu есть, но в ней нет длительности или Sleep Score.";
 }
 
-export default function CheckInsPanel({ autoPromptActivityIds = [] }: { autoPromptActivityIds?: number[] }) {
+export default function CheckInsPanel({ autoPromptActivityIds }: { autoPromptActivityIds?: number[] }) {
   const [morning, setMorning] = useState<MorningCheckIn | null>(null);
   const [sleep, setSleep] = useState<SleepData>(null);
   const [morningOpen, setMorningOpen] = useState(false);
@@ -289,17 +294,12 @@ export default function CheckInsPanel({ autoPromptActivityIds = [] }: { autoProm
     }
   };
 
-  const localToday = () => {
-    const date = new Date();
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-  };
-
   const editingActivity = activities.find((activity) => activity.id === editingActivityId) ?? null;
 
   useEffect(() => {
     if (activitiesLoading || activities.length === 0) return;
     const today = localToday();
-    const requestedIds = new Set(autoPromptActivityIds);
+    const requestedIds = new Set(autoPromptActivityIds ?? []);
     const newTodayActivities = activities.filter(
       (activity) =>
         (activity.date?.slice(0, 10) === today || requestedIds.has(activity.id)) &&
