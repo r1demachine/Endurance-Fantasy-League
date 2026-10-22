@@ -317,8 +317,18 @@ export default function CheckInsPanel() {
     if (editingActivityId !== null || activityQueue.length === 0) return;
     const nextId = activityQueue[0];
     const nextActivity = activities.find((activity) => activity.id === nextId);
-    if (nextActivity) startActivityEdit(nextActivity);
-    else setActivityQueue((current) => current.slice(1));
+    if (nextActivity) {
+      const existing = nextActivity.checkin;
+      setEditingActivityId(nextActivity.id);
+      setActivityAnswers({
+        rpe: existing ? String(existing.rpe) : "",
+        expectation: existing?.load_expectation ?? "",
+        discomfort: existing?.discomfort ?? "",
+      });
+      setActivityError("");
+    } else {
+      setActivityQueue((current) => current.slice(1));
+    }
   }, [activityQueue, activities, editingActivityId]);
 
   const closeActivityDialog = () => {
@@ -463,7 +473,7 @@ export default function CheckInsPanel() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => editing ? setEditingActivityId(null) : startActivityEdit(activity)}
+                        onClick={() => editing ? closeActivityDialog() : startActivityEdit(activity)}
                         className="shrink-0 border-2 border-black bg-white px-3 py-2 text-[10px] font-black uppercase transition-colors hover:bg-[#ffd500] motion-reduce:transition-none"
                       >
                         {editing ? "Закрыть" : existing ? "Изменить" : "Оценить"}
