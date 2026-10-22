@@ -12,6 +12,7 @@ import { formatWeekRange } from "@/lib/format";
 import { clearUserCache, getCachedUser, refreshUser, subscribeUser } from "@/lib/apiCache";
 import ProfileSettingsModal, { type SettingsTab } from "@/components/ProfileSettingsModal";
 import SocialHub from "@/components/SocialHub";
+import { SeasonRecapCard } from "@/components/dashboard/RecapCards";
 import { sectionItemVariants, sectionStaggerVariants, useTransitionDirection } from "@/components/PageTransition";
 
 type ProfileData = {
@@ -285,6 +286,10 @@ function ProfileContent() {
               <p className="text-sm text-[#666]">Здесь появятся выполненные достижения и значимые спортивные вехи.</p>
             </div>
           )}
+        </motion.section>
+
+        <motion.section variants={sectionItemVariants} custom={transitionDirection} className="border-t-2 border-black bg-white">
+          <SeasonRecapCard userName={typeof user?.name === "string" ? user.name : undefined} />
         </motion.section>
 
         <motion.section variants={sectionItemVariants} custom={transitionDirection} className="border-t-2 border-black bg-white">
