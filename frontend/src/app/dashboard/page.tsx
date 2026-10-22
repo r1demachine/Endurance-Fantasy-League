@@ -19,7 +19,7 @@ import WeekCalendar from "@/components/dashboard/WeekCalendar";
 import TodayCard from "@/components/dashboard/TodayCard";
 import ProfileSettingsModal, { type SettingsTab } from "@/components/ProfileSettingsModal";
 import { useSeason } from "@/lib/seasons";
-import { PreviousWeekRecapBanner, SeasonRecapCard } from "@/components/dashboard/RecapCards";
+import { PreviousWeekRecapBanner } from "@/components/dashboard/RecapCards";
 import CheckInsPanel from "@/components/CheckInsPanel";
 
 export default function Dashboard() {
