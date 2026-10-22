@@ -409,7 +409,7 @@ export default function CheckInsPanel({ autoPromptActivityIds }: { autoPromptAct
 
   return (
     <section className="border-b-2 border-black bg-[#f4f4f0]" aria-labelledby="check-ins-title">
-      <header className="border-b-2 border-black bg-[#5866f2] p-4 text-white md:p-5">
+      <header className="border-b-2 border-black bg-[#5866f2] p-4 text-white md:p-5 xl:h-[132px] xl:flex xl:flex-col xl:justify-center">
         <p className="text-[10px] font-black uppercase tracking-widest text-white/80">Самочувствие · приватные данные</p>
         <h2 id="check-ins-title" className="mt-1 font-display text-2xl uppercase md:text-3xl">Чек-ины</h2>
         <p className="mt-1 text-xs leading-relaxed text-white/90">Ответы видны только тебе и не влияют на XP, достижения или рейтинги.</p>

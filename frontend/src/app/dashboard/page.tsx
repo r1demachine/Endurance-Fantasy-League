@@ -413,7 +413,7 @@ export default function Dashboard() {
             variants={sectionItemVariants}
             custom={transitionDirection}
             aria-label="Сегодня и чек-ины"
-            className="grid min-w-0 border-b-2 border-black bg-white xl:grid-cols-2"
+            className="grid min-w-0 border-b-2 border-black bg-white xl:grid-cols-2 xl:items-start"
           >
             <div className="min-w-0 xl:border-r-2 xl:border-black">
               <TodayCard
@@ -427,8 +427,7 @@ export default function Dashboard() {
               />
             </div>
             <div className="min-w-0">
-              <CheckInsPanel
-                key={Array.isArray(data.recent_activities) ? data.recent_activities.map((activity: { id: number }) => activity.id).join(",") : "none"}
+              <CheckInsPanel key={Array.isArray(data.recent_activities) ? data.recent_activities.map((activity: { id: number }) => activity.id).join(",") : "none"}
                 autoPromptActivityIds={newlySyncedActivityIds}
               />
             </div>

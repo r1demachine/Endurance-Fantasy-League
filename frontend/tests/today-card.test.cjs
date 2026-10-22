@@ -83,7 +83,7 @@ test("dashboard uses only /api/today as the TodayCard data source and keeps the 
   assert.match(dashboard, /<TodayCard[\s\S]*?data=\{todayData\}/);
   assert.match(dashboard, /data-tour="dashboard-level"/);
   assert.match(card, /data-tour="dashboard-streak"/);
-  assert.match(card, /Можно сделать сегодня/);
+  assert.match(card, /Доступные задачи/);
   assert.match(card, /Уже получено на этой неделе/);
   assert.match(card, /Подключить источник/);
   assert.match(sync, /"weekly_achievements": weekly_achievements/);

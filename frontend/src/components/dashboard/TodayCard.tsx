@@ -57,7 +57,6 @@ function checklistTitle(quest: TodayWeeklyAchievement): string {
     case "trainer_week": return "Тренировка на станке";
     case "qualifying_days_5": return "Дни с тренировками";
     case "good_sleep_5": return "Ночи хорошего сна";
-    case "goal_100": return "Цель недели";
     default: return quest.title;
   }
 }
@@ -91,15 +90,6 @@ function ChecklistRow({
   );
 }
 
-function XpRow({ title, amount, color = "text-[#111]" }: { title: string; amount: number; color?: string }) {
-  return (
-    <div className="flex min-w-0 items-center justify-between gap-3 border-b border-black/10 py-2 last:border-b-0">
-      <span className="min-w-0 text-sm text-[#444]">{title}</span>
-      <span className={`shrink-0 font-display text-lg ${color}`}>{amount > 0 ? "+" : ""}{number(amount)} XP</span>
-    </div>
-  );
-}
-
 export default function TodayCard({ data, loading, error, onRetry, onOpenSources, level = 1, totalXp = 0 }: Props) {
   const ledger = data?.ledger;
   const xp = ledger?.xp;
@@ -107,15 +97,28 @@ export default function TodayCard({ data, loading, error, onRetry, onOpenSources
   const dailyBonus = bonuses
     .filter((bonus) => bonus.type === "activity_bonus")
     .reduce((sum, bonus) => sum + Number(bonus.amount || 0), 0);
-  const sleepBonus = bonuses
-    .filter((bonus) => bonus.type === "sleep_bonus")
-    .reduce((sum, bonus) => sum + Number(bonus.amount || 0), 0);
   const achievementBonuses = bonuses.filter((bonus) => bonus.type === "quest" || bonus.type === "achievement");
-  const achievementXp = achievementBonuses.reduce((sum, bonus) => sum + Number(bonus.amount || 0), 0);
   const checklist = todayChecklistModel({
     weekly_achievements: data?.weekly_achievements,
     achievements_today: data?.achievements_today,
   });
+  const alternativeSlugs = new Set(["long_workout_2h", "long_workout_3h", "high_intensity"]);
+  const alternativeQuests = (data?.weekly_achievements ?? []).filter(
+    (quest) => alternativeSlugs.has(quest.slug) &&
+      (quest.actionable_today || quest.completed_today || quest.completed_before_today),
+  );
+  const alternativeDone = alternativeQuests.some((quest) => {
+    const target = Number(quest.progress?.target) || 0;
+    const current = Number(quest.progress?.current) || 0;
+    return quest.status === "earned" || Boolean(quest.completed_today || quest.completed_before_today) ||
+      (target > 0 && current >= target);
+  });
+  const visibleWeekly = checklist.visibleWeekly.filter(
+    (quest) => quest.slug !== "goal_100" && !alternativeSlugs.has(quest.slug),
+  );
+  const completedEarlier = checklist.completedEarlier.filter(
+    (quest) => quest.slug !== "goal_100" && !alternativeSlugs.has(quest.slug),
+  );
   const dailyBonusDone = Boolean(data?.daily_bonus?.done || dailyBonus > 0);
   const sleep = data?.sleep;
   const hasActivities = (ledger?.activities?.length ?? 0) > 0;
@@ -123,7 +126,7 @@ export default function TodayCard({ data, loading, error, onRetry, onOpenSources
 
   return (
     <section data-tour="dashboard-streak" aria-labelledby="today-card-title" className="min-w-0 bg-white">
-      <header className="flex min-w-0 flex-col gap-2 border-b-2 border-black bg-[#ffd500] px-4 py-3 md:flex-row md:items-center md:justify-between md:gap-5 md:px-5 md:py-3">
+      <header className="grid min-w-0 grid-cols-1 gap-3 border-b-2 border-black bg-[#ffd500] px-4 py-3 md:px-5 md:py-3 xl:h-[132px] xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] xl:items-center xl:gap-4">
         <div className="min-w-0">
           <p className="text-[10px] font-black uppercase tracking-widest text-[#444]">Твой план и прогресс</p>
           <h2 id="today-card-title" className="mt-1 break-words font-display text-2xl uppercase md:text-3xl">
@@ -131,23 +134,23 @@ export default function TodayCard({ data, loading, error, onRetry, onOpenSources
           </h2>
         </div>
         {data && (
-          <div className="grid min-w-0 grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center">
-            <div className="border-2 border-black bg-white px-3 py-2">
+          <div className="grid min-w-0 grid-cols-2 gap-2 md:grid-cols-3">
+            <div className="flex min-h-[82px] min-w-0 flex-col justify-center border-2 border-black bg-white px-3 py-2">
               <p className="text-[9px] font-black uppercase tracking-widest text-[#666]">Серия</p>
               <p className="font-display text-lg text-[#ff4b26]">{formatStreak(data.streak)}</p>
             </div>
-            <div className="border-2 border-black bg-white px-3 py-2">
+            <div className="flex min-h-[82px] min-w-0 flex-col justify-center border-2 border-black bg-white px-3 py-2">
               <p className="text-[9px] font-black uppercase tracking-widest text-[#666]">Время на сегодня</p>
-              <p className="flex items-center gap-1.5 font-bold text-sm"><Timer size={14} />{formatSecondsLeftToday(data.seconds_left_today)}</p>
+              <p className="flex min-w-0 items-center gap-1.5 font-bold text-sm"><Timer size={14} className="shrink-0" />{formatSecondsLeftToday(data.seconds_left_today)}</p>
             </div>
-            <div className="min-w-0 border-2 border-black bg-white px-3 py-2 md:max-w-[220px]">
+            <div className="col-span-2 flex min-h-[82px] min-w-0 flex-col justify-center border-2 border-black bg-white px-3 py-2 md:col-span-1">
               <p className="break-words text-[9px] font-black uppercase tracking-widest text-[#666]">Кооперативный стрик</p>
               <p className="mt-1 break-words text-xs font-bold">Совместная серия с другом</p>
               <button
                 type="button"
                 disabled
                 title="Совместные серии появятся позже"
-                className="mt-1 max-w-full border border-black/20 bg-[#f4f4f0] px-2 py-1 text-[10px] font-black uppercase text-[#666] opacity-80"
+                className="mt-1 max-w-full self-start border border-black/20 bg-[#f4f4f0] px-2 py-1 text-[10px] font-black uppercase text-[#666] opacity-80"
               >
                 Скоро
               </button>
@@ -169,12 +172,6 @@ export default function TodayCard({ data, loading, error, onRetry, onOpenSources
                 <p className="mt-1 text-xs font-bold uppercase tracking-wide text-[#555]">Уровень {Math.max(1, number(level))} · {number(totalXp)} XP всего</p>
               </div>
               <span className="flex h-10 w-10 items-center justify-center border-2 border-black bg-white" aria-hidden="true"><Zap size={19} /></span>
-            </div>
-            <div className="mt-2 grid gap-x-4 border-t-2 border-black pt-1 sm:grid-cols-2 xl:grid-cols-4">
-              <XpRow title="Нагрузка" amount={Number(xp?.effort) || 0} color="text-[#ff4b26]" />
-              <XpRow title="Дневной бонус" amount={dailyBonus} color="text-[#16803c]" />
-              <XpRow title="Хороший сон" amount={sleepBonus} color="text-[#5866f2]" />
-              <XpRow title="Достижения сегодня" amount={achievementXp} color="text-[#a855f7]" />
             </div>
             {achievementBonuses.length > 0 && (
               <div className="mt-3 border-t border-black/20 pt-3">
@@ -226,7 +223,17 @@ export default function TodayCard({ data, loading, error, onRetry, onOpenSources
                     trailing={sleep?.waiting_for_data ? "ждём данные" : sleep?.done ? "выполнено" : undefined}
                     accent={Boolean(sleep?.done)}
                   />
-                  {checklist.visibleWeekly.map((quest) => {
+                  {alternativeQuests.length > 0 && (
+                    <ChecklistRow
+                      key="workout-alternatives"
+                      title="Ключевая тренировка"
+                      description="Длинная тренировка · 2 ч, тренировка · 3 ч или высокая интенсивность — достаточно выполнить любую одну."
+                      done={alternativeDone}
+                      trailing={alternativeDone ? "1/1" : "0/1"}
+                      accent={alternativeDone}
+                    />
+                  )}
+                  {visibleWeekly.map((quest) => {
                     const done = Boolean(quest.completed_today);
                     const progress = formatWeeklyProgress(quest);
                     return (
@@ -252,13 +259,13 @@ export default function TodayCard({ data, loading, error, onRetry, onOpenSources
                   ))}
                 </ul>
 
-                {checklist.completedEarlier.length > 0 && (
+                {completedEarlier.length > 0 && (
                   <details className="border-t-2 border-black">
                     <summary className="cursor-pointer list-none bg-[#f4f4f0] px-4 py-3 text-sm font-bold hover:bg-[#fff3ad] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#5866f2]">
-                      Уже получено на этой неделе ({checklist.completedEarlier.length})
+                      Уже получено на этой неделе ({completedEarlier.length})
                     </summary>
                     <ul className="border-t border-black/10">
-                      {checklist.completedEarlier.map((quest) => (
+                      {completedEarlier.map((quest) => (
                         <ChecklistRow
                           key={quest.slug}
                           title={checklistTitle(quest)}

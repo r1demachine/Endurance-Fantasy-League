@@ -48,3 +48,23 @@ test("season recap is on profile and week recap card is no longer rendered on da
   assert.doesNotMatch(dashboard, /<WeekRecapCard/);
   assert.doesNotMatch(dashboard, /<SeasonRecapCard/);
 });
+
+
+test("TodayCard hides the XP breakdown and weekly goal, and groups three training alternatives", () => {
+  assert.doesNotMatch(today, /title="Нагрузка"/);
+  assert.doesNotMatch(today, /title="Дневной бонус"/);
+  assert.doesNotMatch(today, /title="Хороший сон"/);
+  assert.doesNotMatch(today, /title="Достижения сегодня"/);
+  assert.match(today, /quest\.slug !== "goal_100"/);
+  assert.match(today, /title="Ключевая тренировка"/);
+  assert.match(today, /alternativeSlugs\.has\(quest\.slug\)/);
+  assert.match(today, /trailing=\{alternativeDone \? "1\/1" : "0\/1"\}/);
+  assert.match(today, /достаточно выполнить любую одну/);
+});
+
+test("top headers align on desktop, streak cards share a compact grid, and check-ins do not stretch into an empty panel", () => {
+  assert.match(today, /xl:h-\[132px\]/);
+  assert.match(checkins, /xl:h-\[132px\]/);
+  assert.match(today, /grid min-w-0 grid-cols-2 gap-2 md:grid-cols-3/);
+  assert.match(dashboard, /xl:grid-cols-2 xl:items-start/);
+});
