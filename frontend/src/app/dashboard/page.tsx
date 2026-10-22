@@ -449,7 +449,7 @@ export default function Dashboard() {
               />
             </div>
             <div className="h-full min-w-0">
-              <CheckInsPanel key={Array.isArray(data.recent_activities) ? data.recent_activities.map((activity: { id: number }) => activity.id).join(",") : "none"
+              <CheckInsPanel key={Array.isArray(data.recent_activities) ? data.recent_activities.map((activity: { id: number }) => activity.id).join(",") : "none"}
                 autoPromptActivityIds={newlySyncedActivityIds}
               />
             </div>
