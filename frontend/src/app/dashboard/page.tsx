@@ -21,6 +21,7 @@ import ProfileSettingsModal, { type SettingsTab } from "@/components/ProfileSett
 import { useSeason } from "@/lib/seasons";
 import { PreviousWeekRecapBanner } from "@/components/dashboard/RecapCards";
 import CheckInsPanel from "@/components/CheckInsPanel";
+import { formatSecondsLeftToday, formatStreak } from "@/lib/today-card";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -392,11 +393,6 @@ export default function Dashboard() {
               <h1 className="font-display text-4xl uppercase leading-[0.9] md:text-6xl lg:text-7xl">
                 Привет, <span className="text-[#ff4b26]">{data.user.name}</span>.
               </h1>
-              {isAuthed && !isEmpty && (
-                <span data-tour="dashboard-level" className="inline-flex shrink-0 items-center border-2 border-black bg-[#ffd500] px-3 py-2 font-display text-sm uppercase md:text-base">
-                  Ур. {data.user.level} · {currentLevelXp}/100 XP
-                </span>
-              )}
             </div>
           </div>
           <Link href="/profile" className="flex items-center justify-between gap-4 bg-[#5866f2] px-5 py-4 text-[11px] font-bold uppercase tracking-widest text-white transition-colors hover:bg-black">
@@ -409,13 +405,39 @@ export default function Dashboard() {
         {dashboardError && <motion.div variants={sectionItemVariants} custom={transitionDirection}><ErrorState message={dashboardError} onRetry={() => window.location.reload()} /></motion.div>}
 
         {isAuthed && !isEmpty && (
+          <motion.div
+            variants={sectionItemVariants}
+            custom={transitionDirection}
+            aria-label="Показатели спортсмена"
+            className="grid min-w-0 grid-cols-2 gap-1 border-b-2 border-black bg-[#f4f4f0] p-1 sm:grid-cols-4 xl:flex xl:flex-nowrap xl:items-stretch"
+          >
+            <span data-tour="dashboard-level" className="flex min-h-10 min-w-0 items-center justify-center border-2 border-black bg-[#ffd500] px-2 py-1.5 font-display text-xs uppercase sm:text-sm xl:flex-1">
+              Ур. {data.user.level} · {currentLevelXp}/100 XP
+            </span>
+            <div className="flex min-h-10 min-w-0 flex-wrap items-center justify-center gap-x-2 border-2 border-black bg-white px-2 py-1.5 xl:flex-1">
+              <span className="text-[9px] font-black uppercase tracking-widest text-[#666]">Серия</span>
+              <span className="font-display text-sm text-[#ff4b26]">{todayData ? formatStreak(Number(todayData.streak) || 0) : "—"}</span>
+            </div>
+            <div className="flex min-h-10 min-w-0 flex-wrap items-center justify-center gap-x-2 border-2 border-black bg-white px-2 py-1.5 xl:flex-1">
+              <span className="text-[9px] font-black uppercase tracking-widest text-[#666]">Время на сегодня</span>
+              <span className="text-xs font-bold">{todayData ? formatSecondsLeftToday(Number(todayData.seconds_left_today) || 0) : "—"}</span>
+            </div>
+            <div className="flex min-h-10 min-w-0 flex-wrap items-center justify-center gap-x-2 border-2 border-black bg-white px-2 py-1.5 xl:flex-1">
+              <span className="text-[9px] font-black uppercase tracking-widest text-[#666]">Кооперативный стрик</span>
+              <span className="text-[10px] font-bold">Совместная серия с другом</span>
+              <span className="border border-black/20 bg-[#f4f4f0] px-2 py-0.5 text-[9px] font-black uppercase text-[#666]">Скоро</span>
+            </div>
+          </motion.div>
+        )}
+
+        {isAuthed && !isEmpty && (
           <motion.section
             variants={sectionItemVariants}
             custom={transitionDirection}
             aria-label="Сегодня и чек-ины"
-            className="grid min-w-0 border-b-2 border-black bg-white xl:grid-cols-2 xl:items-start"
+            className="grid min-w-0 border-b-2 border-black bg-white xl:grid-cols-2 xl:items-stretch"
           >
-            <div className="min-w-0 xl:border-r-2 xl:border-black">
+            <div className="h-full min-w-0 xl:border-r-2 xl:border-black">
               <TodayCard
                 data={todayData}
                 loading={todayLoading}
@@ -426,7 +448,7 @@ export default function Dashboard() {
                 totalXp={Number(data.user?.total_xp) || 0}
               />
             </div>
-            <div className="min-w-0">
+            <div className="h-full min-w-0">
               <CheckInsPanel key={Array.isArray(data.recent_activities) ? data.recent_activities.map((activity: { id: number }) => activity.id).join(",") : "none"}
                 autoPromptActivityIds={newlySyncedActivityIds}
               />

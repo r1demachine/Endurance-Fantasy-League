@@ -327,9 +327,10 @@ test("manual rest-day token is represented in calendar and cooperative streak re
   assert.ok(calendar.includes("Использовать день отдыха"));
   assert.ok(calendar.includes("День отдыха — стрик сохранён"));
   assert.ok(dashboard.includes('authApi.post("/api/streak/rest-day")'));
-  assert.ok(todayCard.includes("Кооперативный стрик"));
-  assert.ok(todayCard.includes("disabled"));
-  assert.ok(todayCard.includes("Совместные серии появятся позже"));
+  assert.ok(dashboard.includes("Кооперативный стрик"));
+  assert.ok(dashboard.includes("Совместная серия с другом"));
+  assert.ok(dashboard.includes(">Скоро</span>"));
+  assert.equal(todayCard.includes("Кооперативный стрик"), false);
 });
 
 test("calendar uses seven columns only once sufficient horizontal space is available", () => {

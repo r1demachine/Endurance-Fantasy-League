@@ -1,10 +1,8 @@
 "use client";
 
-import { ArrowUpRight, Check, Circle, Timer, Zap } from "lucide-react";
+import { ArrowUpRight, Check, Circle, Zap } from "lucide-react";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import {
-  formatSecondsLeftToday,
-  formatStreak,
   formatTodayDate,
   formatWeeklyProgress,
   todayChecklistModel,
@@ -125,45 +123,18 @@ export default function TodayCard({ data, loading, error, onRetry, onOpenSources
   const showSourcePrompt = Boolean(data && !data.has_source && !hasActivities);
 
   return (
-    <section data-tour="dashboard-streak" aria-labelledby="today-card-title" className="min-w-0 bg-white">
-      <header className="grid min-w-0 grid-cols-1 gap-3 border-b-2 border-black bg-[#ffd500] px-4 py-3 md:px-5 md:py-3 xl:h-[132px] xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] xl:items-center xl:gap-4">
-        <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-widest text-[#444]">Твой план и прогресс</p>
-          <h2 id="today-card-title" className="mt-1 break-words font-display text-2xl uppercase md:text-3xl">
-            Сегодня{data?.date ? ` · ${formatTodayDate(data.date)}` : ""}
-          </h2>
-        </div>
-        {data && (
-          <div className="grid min-w-0 grid-cols-2 gap-2 md:grid-cols-3">
-            <div className="flex min-h-[82px] min-w-0 flex-col justify-center border-2 border-black bg-white px-3 py-2">
-              <p className="text-[9px] font-black uppercase tracking-widest text-[#666]">Серия</p>
-              <p className="font-display text-lg text-[#ff4b26]">{formatStreak(data.streak)}</p>
-            </div>
-            <div className="flex min-h-[82px] min-w-0 flex-col justify-center border-2 border-black bg-white px-3 py-2">
-              <p className="text-[9px] font-black uppercase tracking-widest text-[#666]">Время на сегодня</p>
-              <p className="flex min-w-0 items-center gap-1.5 font-bold text-sm"><Timer size={14} className="shrink-0" />{formatSecondsLeftToday(data.seconds_left_today)}</p>
-            </div>
-            <div className="col-span-2 flex min-h-[82px] min-w-0 flex-col justify-center border-2 border-black bg-white px-3 py-2 md:col-span-1">
-              <p className="break-words text-[9px] font-black uppercase tracking-widest text-[#666]">Кооперативный стрик</p>
-              <p className="mt-1 break-words text-xs font-bold">Совместная серия с другом</p>
-              <button
-                type="button"
-                disabled
-                title="Совместные серии появятся позже"
-                className="mt-1 max-w-full self-start border border-black/20 bg-[#f4f4f0] px-2 py-1 text-[10px] font-black uppercase text-[#666] opacity-80"
-              >
-                Скоро
-              </button>
-            </div>
-          </div>
-        )}
+    <section data-tour="dashboard-streak" aria-labelledby="today-card-title" className="flex h-full min-w-0 flex-col bg-white">
+      <header className="flex h-[58px] min-h-[58px] shrink-0 items-center border-b-2 border-black bg-[#ffd500] px-4 md:px-5">
+        <h2 id="today-card-title" className="font-display text-2xl uppercase md:text-3xl">
+          Сегодня{data?.date ? ` · ${formatTodayDate(data.date)}` : ""}
+        </h2>
       </header>
 
       {loading && !data && <div className="p-4 md:p-6"><Skeleton label="Загружаем сводку за сегодня" rows={5} /></div>}
       {error && !data && <div className="p-4 md:p-6"><ErrorState message={error} onRetry={onRetry} /></div>}
 
       {data && (
-        <div className="grid min-w-0 grid-cols-1">
+        <div className="grid min-w-0 flex-1 grid-cols-1">
           <section aria-labelledby="today-xp-heading" className="min-w-0 border-b-2 border-black bg-[#f4f4f0] px-4 py-3 md:px-5 md:py-3">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -191,7 +162,6 @@ export default function TodayCard({ data, loading, error, onRetry, onOpenSources
           <section aria-labelledby="today-checklist-heading" className="min-w-0">
             <div className="border-b-2 border-black px-4 py-2 md:px-5">
               <h3 id="today-checklist-heading" className="font-display text-lg uppercase">Доступные задачи</h3>
-              <p className="mt-1 text-xs text-[#666]">Задачи и достижения выбранной календарной недели.</p>
             </div>
 
             {showSourcePrompt ? (
