@@ -19,7 +19,7 @@ import WeekCalendar from "@/components/dashboard/WeekCalendar";
 import TodayCard from "@/components/dashboard/TodayCard";
 import ProfileSettingsModal, { type SettingsTab } from "@/components/ProfileSettingsModal";
 import { useSeason } from "@/lib/seasons";
-import { PreviousWeekRecapBanner, SeasonRecapCard, WeekRecapCard } from "@/components/dashboard/RecapCards";
+import { PreviousWeekRecapBanner } from "@/components/dashboard/RecapCards";
 import CheckInsPanel from "@/components/CheckInsPanel";
 
 export default function Dashboard() {
@@ -52,6 +52,7 @@ export default function Dashboard() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
   const [syncError, setSyncError] = useState("");
+  const [newlySyncedActivityIds, setNewlySyncedActivityIds] = useState<number[]>([]);
   const [restDayBusy, setRestDayBusy] = useState(false);
   const [restDayMessage, setRestDayMessage] = useState("");
   const [restDayError, setRestDayError] = useState("");
@@ -305,11 +306,36 @@ export default function Dashboard() {
       return;
     }
 
-    const now = new Date();
-    const since = `${now.getFullYear()}-01-01`;
+    const sinceDate = new Date();
+    sinceDate.setHours(12, 0, 0, 0);
+    sinceDate.setDate(sinceDate.getDate() - 13);
+    const since = `${sinceDate.getFullYear()}-${String(sinceDate.getMonth() + 1).padStart(2, "0")}-${String(sinceDate.getDate()).padStart(2, "0")}`;
     setSyncing(true);
+    setNewlySyncedActivityIds([]);
     try {
+      const knownActivityIds = new Set<number>();
+      try {
+        const before = await authApi.get("/api/check-ins/history/activities", { params: { offset: 0, limit: 20 } });
+        const rows = Array.isArray(before.data?.activities) ? before.data.activities : [];
+        for (const row of rows) {
+          const id = Number(row?.id);
+          if (Number.isSafeInteger(id) && id > 0) knownActivityIds.add(id);
+        }
+      } catch {
+        // Sync must remain available even if the optional pre-sync history check fails.
+      }
+
       const response = await authApi.post("/api/sync", null, { params: { since } });
+      try {
+        const after = await authApi.get("/api/check-ins/history/activities", { params: { offset: 0, limit: 20 } });
+        const rows = Array.isArray(after.data?.activities) ? after.data.activities : [];
+        const newIds = rows
+          .map((row: { id?: number | string }) => Number(row?.id))
+          .filter((id: number) => Number.isSafeInteger(id) && id > 0 && !knownActivityIds.has(id));
+        setNewlySyncedActivityIds(newIds);
+      } catch {
+        // The sync succeeds even if the optional follow-up check-in list refresh fails.
+      }
       setSyncMessage(`Синхронизация завершена: новых ${response.data.synced_count ?? 0}, обновлено ${response.data.updated_count ?? 0}, +${Math.round(Number(response.data.new_xp) || 0)} XP.`);
       await refreshUser(true);
       await refreshDashboardAfterDataChange();
@@ -383,21 +409,30 @@ export default function Dashboard() {
         {dashboardError && <motion.div variants={sectionItemVariants} custom={transitionDirection}><ErrorState message={dashboardError} onRetry={() => window.location.reload()} /></motion.div>}
 
         {isAuthed && !isEmpty && (
-          <motion.div variants={sectionItemVariants} custom={transitionDirection}>
-            <TodayCard
-              data={todayData}
-              loading={todayLoading}
-              error={todayError}
-              onRetry={() => void loadToday()}
-              onOpenSources={openSourceSettings}
-            />
-          </motion.div>
-        )}
-
-        {isAuthed && !isEmpty && (
-          <motion.div variants={sectionItemVariants} custom={transitionDirection}>
-            <CheckInsPanel key={Array.isArray(data.recent_activities) ? data.recent_activities.map((activity: { id: number }) => activity.id).join(",") : "none"} />
-          </motion.div>
+          <motion.section
+            variants={sectionItemVariants}
+            custom={transitionDirection}
+            aria-label="Сегодня и чек-ины"
+            className="grid min-w-0 border-b-2 border-black bg-white xl:grid-cols-2"
+          >
+            <div className="min-w-0 xl:border-r-2 xl:border-black">
+              <TodayCard
+                data={todayData}
+                loading={todayLoading}
+                error={todayError}
+                onRetry={() => void loadToday()}
+                onOpenSources={openSourceSettings}
+                level={Number(data.user?.level) || 1}
+                totalXp={Number(data.user?.total_xp) || 0}
+              />
+            </div>
+            <div className="min-w-0">
+              <CheckInsPanel
+                key={Array.isArray(data.recent_activities) ? data.recent_activities.map((activity: { id: number }) => activity.id).join(",") : "none"}
+                autoPromptActivityIds={newlySyncedActivityIds}
+              />
+            </div>
+          </motion.section>
         )}
 
         {isAuthed && !isEmpty && (
@@ -408,12 +443,6 @@ export default function Dashboard() {
               onWeekChange={setSelectedWeekStart}
             />
             </motion.div>
-
-            <WeekRecapCard
-              key={selectedWeekStart || weekData?.week_start || ""}
-              weekStart={selectedWeekStart || weekData?.week_start || ""}
-              userName={typeof data.user?.name === "string" ? data.user.name : undefined}
-            />
 
             <motion.div data-tour="dashboard-week-summary" variants={sectionItemVariants} custom={transitionDirection}>
             {weekLoading ? (
@@ -445,7 +474,6 @@ export default function Dashboard() {
               onRetry={() => void loadQuests()}
             />
             </motion.div>
-            <SeasonRecapCard userName={typeof data.user?.name === "string" ? data.user.name : undefined} />
             <motion.div data-tour="dashboard-workouts" variants={sectionItemVariants} custom={transitionDirection}>
             <WeekCalendar
               weekLoading={weekLoading}

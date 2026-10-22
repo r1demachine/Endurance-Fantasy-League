@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { authApi } from "@/lib/auth";
 import { Modal } from "@/components/Modal";
 
@@ -92,6 +92,11 @@ function ScaleButtons({
   );
 }
 
+function localToday(): string {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function importedSleepText(sleep: SleepData): string {
   if (!sleep) return "Автоматические данные сна из Intervals.icu за этот день недоступны. Пропуск данных не заменяется нулём.";
   const bits: string[] = [];
@@ -106,7 +111,7 @@ function importedSleepText(sleep: SleepData): string {
     : "Запись сна из Intervals.icu есть, но в ней нет длительности или Sleep Score.";
 }
 
-export default function CheckInsPanel() {
+export default function CheckInsPanel({ autoPromptActivityIds }: { autoPromptActivityIds?: number[] }) {
   const [morning, setMorning] = useState<MorningCheckIn | null>(null);
   const [sleep, setSleep] = useState<SleepData>(null);
   const [morningOpen, setMorningOpen] = useState(false);
@@ -120,6 +125,8 @@ export default function CheckInsPanel() {
   const [activitiesLoading, setActivitiesLoading] = useState(false);
   const [activitiesError, setActivitiesError] = useState("");
   const [editingActivityId, setEditingActivityId] = useState<number | null>(null);
+  const [activityQueue, setActivityQueue] = useState<number[]>([]);
+  const promptedActivityIds = useRef(new Set<number>());
   const [activityAnswers, setActivityAnswers] = useState<ActivityAnswers>({
     rpe: "",
     expectation: "",
@@ -287,6 +294,51 @@ export default function CheckInsPanel() {
     }
   };
 
+  const editingActivity = activities.find((activity) => activity.id === editingActivityId) ?? null;
+
+  useEffect(() => {
+    if (activitiesLoading || activities.length === 0) return;
+    const today = localToday();
+    const requestedIds = new Set(autoPromptActivityIds ?? []);
+    const newTodayActivities = activities.filter(
+      (activity) =>
+        (activity.date?.slice(0, 10) === today || requestedIds.has(activity.id)) &&
+        !activity.checkin &&
+        !promptedActivityIds.current.has(activity.id),
+    );
+    if (newTodayActivities.length === 0) return;
+    for (const activity of newTodayActivities) promptedActivityIds.current.add(activity.id);
+    setActivityQueue((current) => {
+      const known = new Set(current);
+      return [...current, ...newTodayActivities.map((activity) => activity.id).filter((id) => !known.has(id))];
+    });
+  }, [activities, activitiesLoading, autoPromptActivityIds]);
+
+  useEffect(() => {
+    if (editingActivityId !== null || activityQueue.length === 0) return;
+    const nextId = activityQueue[0];
+    const nextActivity = activities.find((activity) => activity.id === nextId);
+    if (nextActivity) {
+      const existing = nextActivity.checkin;
+      setEditingActivityId(nextActivity.id);
+      setActivityAnswers({
+        rpe: existing ? String(existing.rpe) : "",
+        expectation: existing?.load_expectation ?? "",
+        discomfort: existing?.discomfort ?? "",
+      });
+      setActivityError("");
+    } else {
+      setActivityQueue((current) => current.slice(1));
+    }
+  }, [activityQueue, activities, editingActivityId]);
+
+  const closeActivityDialog = () => {
+    if (editingActivityId !== null) {
+      setActivityQueue((current) => current.filter((id) => id !== editingActivityId));
+      setEditingActivityId(null);
+    }
+  };
+
   const startActivityEdit = (activity: Activity) => {
     const existing = activity.checkin;
     setEditingActivityId(activity.id);
@@ -314,6 +366,7 @@ export default function CheckInsPanel() {
       });
       const saved = response.data?.checkin as ActivityCheckIn;
       setActivities((current) => current.map((activity) => activity.id === activityId ? { ...activity, checkin: saved } : activity));
+      setActivityQueue((current) => current.filter((id) => id !== activityId));
       setEditingActivityId(null);
     } catch {
       setActivityError("Не удалось сохранить чек-ин тренировки. Проверь соединение и повтори.");
@@ -421,57 +474,13 @@ export default function CheckInsPanel() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => editing ? setEditingActivityId(null) : startActivityEdit(activity)}
+                        onClick={() => editing ? closeActivityDialog() : startActivityEdit(activity)}
                         className="shrink-0 border-2 border-black bg-white px-3 py-2 text-[10px] font-black uppercase transition-colors hover:bg-[#ffd500] motion-reduce:transition-none"
                       >
                         {editing ? "Закрыть" : existing ? "Изменить" : "Оценить"}
                       </button>
                     </div>
-                    {editing && (
-                      <form onSubmit={(event) => void saveActivity(event, activity.id)} className="mt-3 border-t border-black/15 pt-3">
-                        <label className="block text-xs font-bold" htmlFor={"rpe-" + activity.id}>Тяжесть занятия · RPE</label>
-                        <select
-                          id={"rpe-" + activity.id}
-                          value={activityAnswers.rpe}
-                          onChange={(event) => setActivityAnswers((current) => ({ ...current, rpe: event.target.value }))}
-                          required
-                          className="mt-1 w-full border-2 border-black bg-white px-3 py-2 text-sm"
-                        >
-                          <option value="">Выбери RPE от 1 до 10</option>
-                          {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
-                            <option key={value} value={String(value)}>{value} {value === 1 ? "· очень легко" : value === 10 ? "· максимально тяжело" : ""}</option>
-                          ))}
-                        </select>
-                        <label className="mt-3 block text-xs font-bold" htmlFor={"expectation-" + activity.id}>Нагрузка относительно ожиданий</label>
-                        <select
-                          id={"expectation-" + activity.id}
-                          value={activityAnswers.expectation}
-                          onChange={(event) => setActivityAnswers((current) => ({ ...current, expectation: event.target.value }))}
-                          className="mt-1 w-full border-2 border-black bg-white px-3 py-2 text-sm"
-                        >
-                          <option value="">Не указывать</option>
-                          <option value="easier">Легче ожиданий</option>
-                          <option value="as_expected">Как ожидалось</option>
-                          <option value="harder">Тяжелее ожиданий</option>
-                        </select>
-                        <label className="mt-3 block text-xs font-bold" htmlFor={"discomfort-" + activity.id}>Заметный дискомфорт</label>
-                        <select
-                          id={"discomfort-" + activity.id}
-                          value={activityAnswers.discomfort}
-                          onChange={(event) => setActivityAnswers((current) => ({ ...current, discomfort: event.target.value }))}
-                          className="mt-1 w-full border-2 border-black bg-white px-3 py-2 text-sm"
-                        >
-                          <option value="">Не указывать</option>
-                          <option value="none">Нет</option>
-                          <option value="mild">Небольшой</option>
-                          <option value="significant">Выраженный</option>
-                        </select>
-                        {activityError && <p role="alert" className="mt-2 text-xs font-bold text-[#b42318]">{activityError}</p>}
-                        <button type="submit" disabled={activityBusy} className="mt-3 w-full border-2 border-black bg-[#ffd500] px-3 py-3 text-xs font-black uppercase disabled:opacity-50">
-                          {activityBusy ? "Сохраняем…" : "Сохранить чек-ин"}
-                        </button>
-                      </form>
-                    )}
+
                   </li>
                 );
               })}
@@ -493,6 +502,32 @@ export default function CheckInsPanel() {
           )}
         </div>
       </div>
+
+      {editingActivity && (
+        <Modal title="Чек-ин после тренировки" onClose={closeActivityDialog} portalToBody>
+          <form onSubmit={(event) => void saveActivity(event, editingActivityId!)} className="max-h-[78vh] overflow-y-auto p-4 sm:p-5">
+            <p className="text-sm text-[#555]">{editingActivity?.name || "Тренировка"} · {editingActivity?.date || ""}. Отметь субъективную тяжесть занятия.</p>
+            <label className="mt-3 block text-xs font-bold" htmlFor="activity-rpe">Тяжесть занятия · RPE</label>
+            <select id="activity-rpe" value={activityAnswers.rpe} onChange={(event) => setActivityAnswers((current) => ({ ...current, rpe: event.target.value }))} required className="mt-1 w-full border-2 border-black bg-white px-3 py-2 text-sm">
+              <option value="">Выбери RPE от 1 до 10</option>
+              {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => <option key={value} value={String(value)}>{value} {value === 1 ? "· очень легко" : value === 10 ? "· максимально тяжело" : ""}</option>)}
+            </select>
+            <label className="mt-3 block text-xs font-bold" htmlFor="activity-expectation">Нагрузка относительно ожиданий</label>
+            <select id="activity-expectation" value={activityAnswers.expectation} onChange={(event) => setActivityAnswers((current) => ({ ...current, expectation: event.target.value }))} className="mt-1 w-full border-2 border-black bg-white px-3 py-2 text-sm">
+              <option value="">Не указывать</option><option value="easier">Легче ожиданий</option><option value="as_expected">Как ожидалось</option><option value="harder">Тяжелее ожиданий</option>
+            </select>
+            <label className="mt-3 block text-xs font-bold" htmlFor="activity-discomfort">Заметный дискомфорт</label>
+            <select id="activity-discomfort" value={activityAnswers.discomfort} onChange={(event) => setActivityAnswers((current) => ({ ...current, discomfort: event.target.value }))} className="mt-1 w-full border-2 border-black bg-white px-3 py-2 text-sm">
+              <option value="">Не указывать</option><option value="none">Нет</option><option value="mild">Небольшой</option><option value="significant">Выраженный</option>
+            </select>
+            {activityError && <p role="alert" className="mt-2 text-xs font-bold text-[#b42318]">{activityError}</p>}
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <button type="submit" disabled={activityBusy} className="min-h-11 flex-1 border-2 border-black bg-[#ffd500] px-3 py-3 text-xs font-black uppercase disabled:opacity-50">{activityBusy ? "Сохраняем…" : "Сохранить чек-ин"}</button>
+              <button type="button" onClick={closeActivityDialog} disabled={activityBusy} className="min-h-11 border-2 border-black bg-white px-3 py-3 text-xs font-black uppercase disabled:opacity-50">Позже</button>
+            </div>
+          </form>
+        </Modal>
+      )}
 
       {morningOpen && (
         <Modal title={stage === "warning" ? "Перед пропуском" : "Утренний чек-ин"} onClose={closeMorning} portalToBody>

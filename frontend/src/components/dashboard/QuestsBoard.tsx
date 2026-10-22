@@ -167,6 +167,7 @@ const LIFETIME_EXPANDED_STORAGE_KEY = "efl:lifetime-achievements-expanded";
 const LIFETIME_EARNED_VISIBLE_STORAGE_KEY = "efl:lifetime-achievements-earned-visible";
 
 export default function QuestsBoard({ quests, loading, error, onRetry }: Props) {
+  const [activeTab, setActiveTab] = useState<"weekly" | "lifetime">("weekly");
   const [expandedLifetime, setExpandedLifetime] = useState(false);
   const [showEarnedLifetime, setShowEarnedLifetime] = useState(false);
   const [lifetimePreferencesLoaded, setLifetimePreferencesLoaded] = useState(false);
@@ -290,8 +291,33 @@ export default function QuestsBoard({ quests, loading, error, onRetry }: Props) 
           {loading && <p role="status" className="mb-3 text-xs font-bold uppercase tracking-widest text-[#666]">Обновляем достижения…</p>}
           {error && <div className="mb-3"><ErrorState message={error} onRetry={onRetry} /></div>}
 
-          {weeklyQuests.length > 0 && (
-            <section aria-labelledby="weekly-achievements-heading" className="mb-5">
+          <div role="tablist" aria-label="Категории достижений" className="mb-4 flex border-2 border-black">
+            <button
+              type="button"
+              role="tab"
+              id="weekly-achievements-tab"
+              aria-selected={activeTab === "weekly"}
+              aria-controls="weekly-achievements-panel"
+              onClick={() => setActiveTab("weekly")}
+              className={`min-h-11 flex-1 border-r-2 border-black px-3 py-2 text-xs font-black uppercase tracking-wide ${activeTab === "weekly" ? "bg-[#ffd500]" : "bg-white hover:bg-black/5"}`}
+            >
+              Недельные
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="lifetime-achievements-tab"
+              aria-selected={activeTab === "lifetime"}
+              aria-controls="lifetime-achievements-panel"
+              onClick={() => setActiveTab("lifetime")}
+              className={`min-h-11 flex-1 px-3 py-2 text-xs font-black uppercase tracking-wide ${activeTab === "lifetime" ? "bg-[#ffd500]" : "bg-white hover:bg-black/5"}`}
+            >
+              Разовые
+            </button>
+          </div>
+
+          {activeTab === "weekly" && weeklyQuests.length > 0 && (
+            <section id="weekly-achievements-panel" role="tabpanel" aria-labelledby="weekly-achievements-tab" className="mb-5">
               <div className="mb-3 border-b-2 border-black pb-2">
                 <div className="flex items-center gap-2">
                   <h4 id="weekly-achievements-heading" className="font-display text-lg uppercase md:text-xl">Недельные достижения</h4>
@@ -305,8 +331,8 @@ export default function QuestsBoard({ quests, loading, error, onRetry }: Props) 
             </section>
           )}
 
-          {lifetimeQuests.length > 0 && (
-            <section aria-labelledby="lifetime-achievements-heading">
+          {activeTab === "lifetime" && lifetimeQuests.length > 0 && (
+            <section id="lifetime-achievements-panel" role="tabpanel" aria-labelledby="lifetime-achievements-tab">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b-2 border-black pb-2">
                 <div className="flex items-center gap-2">
                   <h4 id="lifetime-achievements-heading" className="font-display text-lg uppercase md:text-xl">

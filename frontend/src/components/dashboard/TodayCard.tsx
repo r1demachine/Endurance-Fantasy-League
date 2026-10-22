@@ -33,6 +33,8 @@ type Props = {
   error: string;
   onRetry: () => void;
   onOpenSources: () => void;
+  level?: number;
+  totalXp?: number;
 };
 
 const number = (value: unknown) => Math.round(Number(value) || 0);
@@ -98,7 +100,7 @@ function XpRow({ title, amount, color = "text-[#111]" }: { title: string; amount
   );
 }
 
-export default function TodayCard({ data, loading, error, onRetry, onOpenSources }: Props) {
+export default function TodayCard({ data, loading, error, onRetry, onOpenSources, level = 1, totalXp = 0 }: Props) {
   const ledger = data?.ledger;
   const xp = ledger?.xp;
   const bonuses = Array.isArray(xp?.bonuses) ? xp.bonuses : [];
@@ -120,8 +122,8 @@ export default function TodayCard({ data, loading, error, onRetry, onOpenSources
   const showSourcePrompt = Boolean(data && !data.has_source && !hasActivities);
 
   return (
-    <section data-tour="dashboard-streak" aria-labelledby="today-card-title" className="min-w-0 border-b-2 border-black bg-white">
-      <header className="flex min-w-0 flex-col gap-3 border-b-2 border-black bg-[#ffd500] p-4 md:flex-row md:items-center md:justify-between md:gap-5 md:p-6">
+    <section data-tour="dashboard-streak" aria-labelledby="today-card-title" className="min-w-0 bg-white">
+      <header className="flex min-w-0 flex-col gap-2 border-b-2 border-black bg-[#ffd500] px-4 py-3 md:flex-row md:items-center md:justify-between md:gap-5 md:px-5 md:py-3">
         <div className="min-w-0">
           <p className="text-[10px] font-black uppercase tracking-widest text-[#444]">Твой план и прогресс</p>
           <h2 id="today-card-title" className="mt-1 break-words font-display text-2xl uppercase md:text-3xl">
@@ -158,16 +160,17 @@ export default function TodayCard({ data, loading, error, onRetry, onOpenSources
       {error && !data && <div className="p-4 md:p-6"><ErrorState message={error} onRetry={onRetry} /></div>}
 
       {data && (
-        <div className="grid min-w-0 grid-cols-1 xl:grid-cols-[0.85fr_1.4fr]">
-          <section aria-labelledby="today-xp-heading" className="min-w-0 border-b-2 border-black bg-[#f4f4f0] p-4 xl:border-b-0 xl:border-r-2 md:p-5">
+        <div className="grid min-w-0 grid-cols-1">
+          <section aria-labelledby="today-xp-heading" className="min-w-0 border-b-2 border-black bg-[#f4f4f0] px-4 py-3 md:px-5 md:py-3">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-[#666]">Заработано сегодня</p>
-                <h3 id="today-xp-heading" className="font-display text-4xl text-[#ff4b26]">+{number(xp?.total)} XP</h3>
+                <h3 id="today-xp-heading" className="font-display text-3xl text-[#ff4b26]">+{number(xp?.total)} XP</h3>
+                <p className="mt-1 text-xs font-bold uppercase tracking-wide text-[#555]">Уровень {Math.max(1, number(level))} · {number(totalXp)} XP всего</p>
               </div>
               <span className="flex h-10 w-10 items-center justify-center border-2 border-black bg-white" aria-hidden="true"><Zap size={19} /></span>
             </div>
-            <div className="mt-3 border-t-2 border-black pt-2">
+            <div className="mt-2 grid gap-x-4 border-t-2 border-black pt-1 sm:grid-cols-2 xl:grid-cols-4">
               <XpRow title="Нагрузка" amount={Number(xp?.effort) || 0} color="text-[#ff4b26]" />
               <XpRow title="Дневной бонус" amount={dailyBonus} color="text-[#16803c]" />
               <XpRow title="Хороший сон" amount={sleepBonus} color="text-[#5866f2]" />
@@ -189,8 +192,8 @@ export default function TodayCard({ data, loading, error, onRetry, onOpenSources
           </section>
 
           <section aria-labelledby="today-checklist-heading" className="min-w-0">
-            <div className="border-b-2 border-black px-4 py-3 md:px-5">
-              <h3 id="today-checklist-heading" className="font-display text-xl uppercase">Можно сделать сегодня</h3>
+            <div className="border-b-2 border-black px-4 py-2 md:px-5">
+              <h3 id="today-checklist-heading" className="font-display text-lg uppercase">Доступные задачи</h3>
               <p className="mt-1 text-xs text-[#666]">Задачи и достижения выбранной календарной недели.</p>
             </div>
 
