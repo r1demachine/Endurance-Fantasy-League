@@ -65,10 +65,10 @@ test("TodayCard hides the XP breakdown and weekly goal, and groups three trainin
 test("top headers align on desktop, streak cards share a compact grid, and check-ins do not stretch into an empty panel", () => {
   assert.match(today, /h-\[58px\]/);
   assert.match(checkins, /h-\[58px\]/);
-  assert.match(page, /aria-label="Показатели спортсмена"/);
-  assert.match(page, /formatStreak\(Number\(todayData\.streak\)/);
-  assert.match(page, /formatSecondsLeftToday\(Number\(todayData\.seconds_left_today\)/);
-  assert.match(page, /grid min-w-0 grid-cols-2 gap-1 border-b-2 border-black bg-\[#f4f4f0\] p-1 sm:grid-cols-4 xl:flex xl:flex-nowrap/);
+  assert.match(dashboard, /aria-label="Показатели спортсмена"/);
+  assert.match(dashboard, /formatStreak\(Number\(todayData\.streak\)/);
+  assert.match(dashboard, /formatSecondsLeftToday\(Number\(todayData\.seconds_left_today\)/);
+  assert.match(dashboard, /grid min-w-0 grid-cols-2 gap-1 border-b-2 border-black bg-\[#f4f4f0\] p-1 sm:grid-cols-4 xl:flex xl:flex-nowrap/);
   assert.match(dashboard, /xl:grid-cols-2 xl:items-stretch/);
 });
 
