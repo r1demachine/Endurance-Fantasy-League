@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { formatWeekRange } from "@/lib/format";
 import { HelpTip } from "@/components/ui";
 import ShareButton from "@/components/ShareButton";
@@ -21,20 +21,17 @@ export default function WeekBlock({
   deloadError: string;
   userName?: string;
 }) {
-  const [showDeloadBlockReason, setShowDeloadBlockReason] = useState(false);
-  useEffect(() => {
-    setShowDeloadBlockReason(false);
-  }, [selectedWeekStart, weekData?.can_set_deload, weekData?.deload_block_reason]);
+  const [deloadReasonShownForWeek, setDeloadReasonShownForWeek] = useState<string | null>(null);
 
   if (!weekData) return null;
   const pct = Math.min(Math.max(weekData.completion_ratio || 0, 0), 150);
   const handleEnableDeload = () => {
     if (deloadBusy) return;
     if (!weekData.can_set_deload) {
-      setShowDeloadBlockReason(true);
+      setDeloadReasonShownForWeek(selectedWeekStart);
       return;
     }
-    setShowDeloadBlockReason(false);
+    setDeloadReasonShownForWeek(null);
     onDeloadAction(true);
   };
   const isReady = weekData.state === "ready";
@@ -173,7 +170,7 @@ export default function WeekBlock({
             ⏸ Пауза (болезнь / отпуск)
           </button>
         </div>
-        {showDeloadBlockReason && weekData.is_current_week && !weekData.can_set_deload && (
+        {deloadReasonShownForWeek === selectedWeekStart && weekData.is_current_week && !weekData.can_set_deload && (
           <p role="status" className="mt-2 text-xs text-[#666]">
             {weekData.deload_block_reason || "Не менее 2 из предыдущих 3 недель должны достигать 75% baseline."}
           </p>
