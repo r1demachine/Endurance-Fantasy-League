@@ -130,7 +130,12 @@ export default function RatingPanel() {
               {entries.map((entry, index) => (
                 <div key={entry.id ?? entry.username ?? index} className={`flex items-center justify-between gap-3 border-b border-black/10 px-3 py-3 ${entry.is_you ? "bg-[#ffd500]/20" : "hover:bg-black/5"}`}>
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="w-8 shrink-0 font-display text-lg text-[#999]">{String(entry.rank ?? index + 1).padStart(2, "0")}</span>
+                    <span
+                      className="inline-flex w-8 shrink-0 items-center justify-center font-display text-lg tabular-nums whitespace-nowrap leading-none text-[#999]"
+                      style={{ whiteSpace: "nowrap", wordBreak: "normal", overflowWrap: "normal" }}
+                    >
+                      {String(entry.rank ?? index + 1).padStart(2, "0")}
+                    </span>
                     <div className="min-w-0">
                       {entry.username ? (
                         <Link href={`/u/${encodeURIComponent(entry.username)}`} className="block truncate text-sm font-bold uppercase hover:text-[#5866f2]">
