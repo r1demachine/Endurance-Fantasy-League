@@ -450,7 +450,7 @@ export default function CheckInsPanel({ autoPromptActivityIds }: { autoPromptAct
 
       {editingActivity && (
         <Modal title="Чек-ин после тренировки" onClose={closeActivityDialog} portalToBody>
-          <form onSubmit={(event) => void saveActivity(event, editingActivityId!)} className="max-h-[78vh] overflow-y-auto p-4 sm:p-5">
+          <form onSubmit={(event) => void saveActivity(event, editingActivityId!)} data-lenis-prevent className="max-h-[78vh] overflow-y-auto p-4 sm:p-5">
             <p className="text-sm text-[#555]">{editingActivity?.name || "Тренировка"} · {editingActivity?.date || ""}. Отметь субъективную тяжесть занятия.</p>
             <label className="mt-3 block text-xs font-bold" htmlFor="activity-rpe">Тяжесть занятия · RPE</label>
             <select id="activity-rpe" value={activityAnswers.rpe} onChange={(event) => setActivityAnswers((current) => ({ ...current, rpe: event.target.value }))} required className="mt-1 w-full border-2 border-black bg-white px-3 py-2 text-sm">
@@ -477,7 +477,7 @@ export default function CheckInsPanel({ autoPromptActivityIds }: { autoPromptAct
       {morningOpen && (
         <Modal title={stage === "warning" ? "Перед пропуском" : "Утренний чек-ин"} onClose={closeMorning} portalToBody>
           {stage === "form" ? (
-            <form onSubmit={(event) => void saveMorning(event)} className="max-h-[78vh] overflow-y-auto p-4 sm:p-5">
+            <form onSubmit={(event) => void saveMorning(event)} data-lenis-prevent className="max-h-[78vh] overflow-y-auto p-4 sm:p-5">
               <p className="text-sm text-[#555]">Оцени только то, что действительно знаешь. Неизвестные показатели можно не указывать.</p>
               <ScaleButtons title="Готовность к тренировке" lowLabel="1 · совсем не готов" highLabel="5 · полностью готов" value={answers.readiness} onChange={(value) => updateAnswer("readiness", value)} />
               <ScaleButtons title="Усталость" lowLabel="1 · нет усталости" highLabel="5 · очень сильная" value={answers.fatigue} onChange={(value) => updateAnswer("fatigue", value)} />

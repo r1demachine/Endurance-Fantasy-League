@@ -122,8 +122,8 @@ export default function ProfileSettingsModal({
     <>
       <Modal title="Настройки" closeLabel="Закрыть" onClose={onClose} variant="settings">
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <nav aria-label="Разделы настроек" className="shrink-0 scroll-smooth border-b-2 border-black bg-white p-2 md:w-60 md:overflow-y-auto md:border-b-0 md:border-r-2 md:p-3">
-            <div className="flex gap-2 overflow-x-auto md:flex-col">
+          <nav aria-label="Разделы настроек" data-lenis-prevent className="shrink-0 scroll-smooth border-b-2 border-black bg-white p-2 md:w-60 md:overflow-y-auto md:border-b-0 md:border-r-2 md:p-3">
+            <div data-lenis-prevent className="flex gap-2 overflow-x-auto md:flex-col">
               {TABS.map((item) => {
                 const active = item.id === tab;
                 return (
@@ -147,7 +147,7 @@ export default function ProfileSettingsModal({
             </div>
           </nav>
 
-          <section role="tabpanel" aria-label={selected.label} className="min-h-0 min-w-0 flex-1 overflow-y-auto scroll-smooth p-3 sm:p-5 md:p-6">
+          <section role="tabpanel" aria-label={selected.label} data-lenis-prevent className="min-h-0 min-w-0 flex-1 overflow-y-auto scroll-smooth p-3 sm:p-5 md:p-6">
             <div className="mb-5 border-b-2 border-black pb-4">
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#5866f2]">Profile settings</p>
               <h3 className="mt-1 font-display text-2xl uppercase md:text-3xl">{selected.label}</h3>
