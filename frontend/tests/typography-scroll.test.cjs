@@ -13,6 +13,15 @@ const dashboard = read("src/app/dashboard/page.tsx");
 const layout = read("src/app/layout.tsx");
 const smoothScroll = read("src/components/SmoothScroll.tsx");
 const pageTransition = read("src/components/PageTransition.tsx");
+const profileSettings = read("src/components/ProfileSettingsModal.tsx");
+const modal = read("src/components/Modal.tsx");
+const notificationBell = read("src/components/NotificationBell.tsx");
+const trainingGlossary = read("src/components/dashboard/TrainingGlossary.tsx");
+const floatingTooltip = read("src/components/ui/FloatingTooltip.tsx");
+const checkInsPanel = read("src/components/CheckInsPanel.tsx");
+const shareButton = read("src/components/ShareButton.tsx");
+const yearWeeksChart = read("src/components/dashboard/YearWeeksChart.tsx");
+const guidedTour = read("src/components/GuidedTour.tsx");
 const packageJson = JSON.parse(read("package.json"));
 const packageLock = JSON.parse(read("package-lock.json"));
 
@@ -49,7 +58,7 @@ test("home explainer uses the available flex width rather than a fixed 240px lim
   assert.ok(home.includes('className="flex items-center gap-3 shrink-0"'));
 });
 
-test("Lenis provides eased global wheel and anchor scrolling while respecting reduced motion", () => {
+test("Lenis uses lerp for wheel input and leaves touch inertia native", () => {
   assert.equal(packageJson.dependencies.lenis, "1.3.27");
   assert.equal(packageLock.packages[""].dependencies.lenis, "1.3.27");
   assert.equal(packageLock.packages["node_modules/lenis"].version, "1.3.27");
@@ -58,20 +67,30 @@ test("Lenis provides eased global wheel and anchor scrolling while respecting re
   assert.ok(layout.includes("<SmoothScroll />"));
   assert.ok(smoothScroll.includes('import Lenis from "lenis"'));
   assert.ok(smoothScroll.includes("autoRaf: false"));
-  assert.ok(smoothScroll.includes("duration: 1.35"));
-  assert.ok(smoothScroll.includes("wheelMultiplier: 0.85"));
-  assert.ok(smoothScroll.includes("touchMultiplier: 1.1"));
-  assert.ok(smoothScroll.includes("syncTouch: true"));
-  assert.ok(smoothScroll.includes("t < 0.5"));
-  assert.ok(smoothScroll.includes("lenis?.raf(time)"));
+  assert.ok(smoothScroll.includes("lerp: 0.085"));
+  assert.ok(smoothScroll.includes("wheelMultiplier: 1"));
+  assert.ok(smoothScroll.includes("smoothWheel: true"));
+  assert.ok(smoothScroll.includes("syncTouch: false"));
+  assert.equal(smoothScroll.includes("syncTouch: true"), false);
+  assert.equal(smoothScroll.includes("touchMultiplier"), false);
+  assert.equal(smoothScroll.includes("duration: 1.35"), false);
+  assert.equal(smoothScroll.includes("easing:"), false);
+  assert.ok(smoothScroll.includes("activeLenis?.raf(time)"));
   assert.ok(smoothScroll.includes("window.requestAnimationFrame(tick)"));
   assert.ok(smoothScroll.includes("window.cancelAnimationFrame(rafId)"));
   assert.ok(smoothScroll.includes("smoothWheel: true"));
   assert.ok(smoothScroll.includes("anchors: true"));
-  assert.ok(smoothScroll.includes("allowNestedScroll: true"));
+  assert.equal(smoothScroll.includes("allowNestedScroll"), false);
   assert.ok(smoothScroll.includes('window.matchMedia("(prefers-reduced-motion: reduce)")'));
-  assert.ok(smoothScroll.includes('reducedMotion.addEventListener("change", sync)'));
-  assert.ok(smoothScroll.includes("lenis?.destroy()"));
+  assert.ok(smoothScroll.includes("SMOOTH_SCROLL_MODE_CHANGE_EVENT"));
+  assert.ok(smoothScroll.includes("readSmoothScrollMode"));
+  assert.ok(smoothScroll.includes("applySmoothScrollMode"));
+  assert.ok(smoothScroll.includes("getActiveLenis"));
+  assert.ok(smoothScroll.includes("pauseSmoothScroll"));
+  assert.ok(smoothScroll.includes("resumeSmoothScroll"));
+  assert.ok(smoothScroll.includes('reducedMotionQuery.addEventListener("change", onReducedMotionChange)'));
+  assert.ok(smoothScroll.includes("respectReducedMotion: mode !== \"enabled\""));
+  assert.ok(smoothScroll.includes("activeLenis?.destroy()"));
   assert.equal(pageTransition.includes('window.addEventListener("wheel", onWheel'), false);
   assert.equal(pageTransition.includes("canInnerPanelScroll"), false);
   assert.ok(css.includes("scroll-behavior: auto"));
@@ -82,4 +101,35 @@ test("Lenis provides eased global wheel and anchor scrolling while respecting re
   assert.equal(css.includes("hyphens: auto"), false);
   assert.equal(css.includes("overflow-x: hidden;"), false);
   assert.ok(css.includes("@media (prefers-reduced-motion: reduce)"));
+});
+
+
+test("smooth-scroll preference offers auto, enabled, and disabled modes without reload", () => {
+  assert.ok(profileSettings.includes('useState<SmoothScrollMode>("auto")'));
+  assert.ok(profileSettings.includes('label: "Авто"'));
+  assert.ok(profileSettings.includes('label: "Включена"'));
+  assert.ok(profileSettings.includes('label: "Выключена"'));
+  assert.ok(profileSettings.includes('aria-label="Режим плавной прокрутки"'));
+  assert.ok(profileSettings.includes("Если колесо мыши прыгает по строкам"));
+  assert.ok(profileSettings.includes("changeSmoothScrollMode(option.value)"));
+  assert.ok(smoothScroll.includes('SMOOTH_SCROLL_STORAGE_KEY = "efl:smooth-scroll-mode"'));
+  assert.ok(smoothScroll.includes("window.localStorage.getItem(SMOOTH_SCROLL_STORAGE_KEY)"));
+  assert.ok(smoothScroll.includes("window.localStorage.setItem(SMOOTH_SCROLL_STORAGE_KEY, mode)"));
+  assert.ok(smoothScroll.includes("window.dispatchEvent("));
+});
+
+test("nested scroll regions opt out of Lenis and dialogs pause it", () => {
+  for (const source of [
+    modal, profileSettings, notificationBell, trainingGlossary,
+    floatingTooltip, calendar, checkInsPanel, shareButton,
+    yearWeeksChart, guidedTour
+  ]) {
+    assert.ok(source.includes("data-lenis-prevent"));
+  }
+  assert.ok(modal.includes("pauseSmoothScroll()"));
+  assert.ok(modal.includes("resumeSmoothScroll()"));
+  assert.ok(smoothScroll.includes("modalPauseCount"));
+  assert.ok(smoothScroll.includes("modalPauseCount > 0"));
+  assert.ok(guidedTour.includes("lenis.scrollTo(found, { offset, duration: 1 })"));
+  assert.ok(smoothScroll.includes("export function getActiveLenis()"));
 });

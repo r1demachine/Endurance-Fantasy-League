@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 import { motion } from "framer-motion";
+import { pauseSmoothScroll, resumeSmoothScroll } from "./SmoothScroll";
 import { createPortal } from "react-dom";
 import {
   buildConfirmPayload,
@@ -63,6 +64,7 @@ export function Modal({
   useEffect(() => {
     if (portalToBody && !portalRoot) return;
 
+    pauseSmoothScroll();
     const previousOverflow = document.body.style.overflow;
     previousActiveRef.current = document.activeElement instanceof HTMLElement
       ? document.activeElement
@@ -96,6 +98,7 @@ export function Modal({
       window.cancelAnimationFrame(frame);
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
+      resumeSmoothScroll();
       if (previousActiveRef.current?.isConnected) previousActiveRef.current.focus();
     };
   }, [portalRoot, portalToBody]);
@@ -142,7 +145,7 @@ export function Modal({
             {closeLabel}
           </button>
         </div>
-        <div className={isSettings ? "flex min-h-0 flex-1 overflow-hidden p-0" : "overflow-y-auto scroll-smooth p-4"}>{children}</div>
+        <div data-lenis-prevent={isSettings ? undefined : true} className={isSettings ? "flex min-h-0 flex-1 overflow-hidden p-0" : "overflow-y-auto scroll-smooth p-4"}>{children}</div>
       </motion.div>
     </motion.div>
   );

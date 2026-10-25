@@ -14,6 +14,7 @@ import { Modal, PauseDialog } from "@/components/Modal";
 import TrainingDataActions from "@/components/TrainingDataActions";
 import { getApiErrorMessage } from "@/components/dialog-utils";
 import { useTheme } from "@/lib/theme";
+import { applySmoothScrollMode, readSmoothScrollMode, type SmoothScrollMode } from "@/components/SmoothScroll";
 
 export type SettingsTab = "account" | "appearance" | "sources" | "training" | "privacy" | "danger";
 
@@ -59,11 +60,21 @@ export default function ProfileSettingsModal({
   const [pauseBusy, setPauseBusy] = useState(false);
   const [pauseError, setPauseError] = useState("");
   const [pauseNow, setPauseNow] = useState(Date.now());
+  const [smoothScrollMode, setSmoothScrollMode] = useState<SmoothScrollMode>("auto");
   const { theme, toggle } = useTheme();
 
   useEffect(() => {
     setDisplayName(userData?.user?.name ?? "");
   }, [userData?.user?.name]);
+
+  useEffect(() => {
+    setSmoothScrollMode(readSmoothScrollMode());
+  }, []);
+
+  const changeSmoothScrollMode = (mode: SmoothScrollMode) => {
+    setSmoothScrollMode(mode);
+    applySmoothScrollMode(mode);
+  };
 
   const saveName = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -111,8 +122,8 @@ export default function ProfileSettingsModal({
     <>
       <Modal title="Настройки" closeLabel="Закрыть" onClose={onClose} variant="settings">
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <nav aria-label="Разделы настроек" className="shrink-0 scroll-smooth border-b-2 border-black bg-white p-2 md:w-60 md:overflow-y-auto md:border-b-0 md:border-r-2 md:p-3">
-            <div className="flex gap-2 overflow-x-auto md:flex-col">
+          <nav aria-label="Разделы настроек" data-lenis-prevent className="shrink-0 scroll-smooth border-b-2 border-black bg-white p-2 md:w-60 md:overflow-y-auto md:border-b-0 md:border-r-2 md:p-3">
+            <div data-lenis-prevent className="flex gap-2 overflow-x-auto md:flex-col">
               {TABS.map((item) => {
                 const active = item.id === tab;
                 return (
@@ -136,7 +147,7 @@ export default function ProfileSettingsModal({
             </div>
           </nav>
 
-          <section role="tabpanel" aria-label={selected.label} className="min-h-0 min-w-0 flex-1 overflow-y-auto scroll-smooth p-3 sm:p-5 md:p-6">
+          <section role="tabpanel" aria-label={selected.label} data-lenis-prevent className="min-h-0 min-w-0 flex-1 overflow-y-auto scroll-smooth p-3 sm:p-5 md:p-6">
             <div className="mb-5 border-b-2 border-black pb-4">
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#5866f2]">Profile settings</p>
               <h3 className="mt-1 font-display text-2xl uppercase md:text-3xl">{selected.label}</h3>
@@ -265,6 +276,33 @@ export default function ProfileSettingsModal({
                     <span>☾ Тёмная</span>
                     {theme === "dark" && <span aria-hidden="true">✓</span>}
                   </button>
+                </div>
+
+                <div className="mt-8 border-t-2 border-black pt-5">
+                  <h4 className="font-display text-lg uppercase">Плавная прокрутка</h4>
+                  <p className="mt-2 text-sm leading-relaxed text-[#666]">
+                    Если колесо мыши прыгает по строкам, включи этот пункт: в системе может быть включено “уменьшить движение”.
+                  </p>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-3" role="group" aria-label="Режим плавной прокрутки">
+                    {([
+                      { value: "auto", label: "Авто" },
+                      { value: "enabled", label: "Включена" },
+                      { value: "disabled", label: "Выключена" },
+                    ] as const).map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => changeSmoothScrollMode(option.value)}
+                        aria-pressed={smoothScrollMode === option.value}
+                        className={"min-h-11 border-2 px-3 py-3 text-xs font-bold uppercase tracking-wide transition-colors " +
+                          (smoothScrollMode === option.value
+                            ? "border-black bg-[#ffd500] text-[#111]"
+                            : "border-black/20 bg-[#f4f4f0] text-[#111] hover:border-black")}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
