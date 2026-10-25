@@ -390,7 +390,7 @@ export default function Dashboard() {
           <div className="flex flex-col gap-3 p-5 md:border-r-2 md:border-black md:p-8">
             <Label className="text-[#666]">ТВОЙ ПРОГРЕСС · SEASON {String(season.num).padStart(3, "0")}</Label>
             <div className="flex min-w-0 flex-wrap items-center gap-3">
-              <h1 className="font-display text-4xl uppercase leading-[0.9] md:text-6xl lg:text-7xl">
+              <h1 className="font-display font-display-wrap text-4xl uppercase leading-[0.9] md:text-6xl lg:text-7xl">
                 Привет, <span className="text-[#ff4b26]">{data.user.name}</span>.
               </h1>
             </div>
