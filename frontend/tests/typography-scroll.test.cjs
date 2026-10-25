@@ -90,7 +90,7 @@ test("Lenis uses lerp for wheel input and leaves touch inertia native", () => {
   assert.ok(smoothScroll.includes("resumeSmoothScroll"));
   assert.ok(smoothScroll.includes('reducedMotionQuery.addEventListener("change", onReducedMotionChange)'));
   assert.ok(smoothScroll.includes("respectReducedMotion: mode !== \"enabled\""));
-  assert.ok(smoothScroll.includes("lenis?.destroy()"));
+  assert.ok(smoothScroll.includes("activeLenis?.destroy()"));
   assert.equal(pageTransition.includes('window.addEventListener("wheel", onWheel'), false);
   assert.equal(pageTransition.includes("canInnerPanelScroll"), false);
   assert.ok(css.includes("scroll-behavior: auto"));
