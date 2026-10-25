@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import { isAuthenticated } from "@/lib/auth";
+import { getActiveLenis } from "@/components/SmoothScroll";
 
 type TourStep = {
   href: string;
@@ -346,8 +347,14 @@ export default function GuidedTour() {
 
       target = found;
       targetRef.current = found;
-      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      found.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center", inline: "nearest" });
+      const lenis = getActiveLenis();
+      if (lenis) {
+        const offset = -window.innerHeight / 2 + found.getBoundingClientRect().height / 2;
+        lenis.scrollTo(found, { offset, duration: 1 });
+      } else {
+        const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        found.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center", inline: "nearest" });
+      }
       positionOverlay();
 
       window.addEventListener("scroll", schedulePosition, true);
@@ -485,6 +492,7 @@ export default function GuidedTour() {
         aria-labelledby="guided-tour-title"
         aria-describedby="guided-tour-description"
         className="fixed z-[10002] max-h-[calc(100vh-24px)] w-[min(360px,calc(100vw-24px))] overflow-y-auto border-2 border-black bg-[#f4f4f0] p-4 text-[#171a38] shadow-[5px_5px_0_#000] sm:p-5"
+        data-lenis-prevent
         style={{ left: panelPosition.left, top: panelPosition.top }}
       >
         <div className="flex items-start justify-between gap-3">
