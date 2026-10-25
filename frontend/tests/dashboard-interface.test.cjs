@@ -241,7 +241,7 @@ test("typography uses original Tailwind sizes with wrapping and bounded display 
   assert.equal(css.includes("font-size: calc(1rem + 2pt)"), false);
   assert.ok(css.includes(".font-display {\n  overflow-wrap: break-word;\n  word-break: normal;"));
   assert.ok(css.includes(".font-display-wrap {\n  overflow-wrap: anywhere;"));
-  assert.equal(css.includes('[class~="whitespace-nowrap"]'), false);
+  assert.ok(css.includes('[class~="whitespace-nowrap"]'));
   assert.ok(css.includes("font-size: clamp(1.75rem, 4vw + 0.75rem, 3.75rem) !important"));
   assert.ok(css.includes(":where(.flex, .grid) > *"));
   assert.ok(css.includes("hyphens: auto"));
