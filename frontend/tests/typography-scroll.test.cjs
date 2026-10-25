@@ -75,7 +75,7 @@ test("Lenis uses lerp for wheel input and leaves touch inertia native", () => {
   assert.equal(smoothScroll.includes("touchMultiplier"), false);
   assert.equal(smoothScroll.includes("duration: 1.35"), false);
   assert.equal(smoothScroll.includes("easing:"), false);
-  assert.ok(smoothScroll.includes("lenis?.raf(time)"));
+  assert.ok(smoothScroll.includes("activeLenis?.raf(time)"));
   assert.ok(smoothScroll.includes("window.requestAnimationFrame(tick)"));
   assert.ok(smoothScroll.includes("window.cancelAnimationFrame(rafId)"));
   assert.ok(smoothScroll.includes("smoothWheel: true"));
