@@ -288,8 +288,12 @@ html {
   hyphens: auto;
 }
 
-/* Keep nowrap utilities meaningful on narrow screens; relax letter spacing only. */
+/* Allow long utility labels to wrap on narrow screens; numeric badges opt out inline. */
 @media (max-width: 1023px) {
+  [class~="whitespace-nowrap"] {
+    white-space: normal;
+  }
+
   .tracking-widest {
     letter-spacing: 0.08em;
   }
