@@ -129,6 +129,7 @@ test("nested scroll regions opt out of Lenis and dialogs pause it", () => {
   assert.ok(modal.includes("pauseSmoothScroll()"));
   assert.ok(modal.includes("resumeSmoothScroll()"));
   assert.ok(smoothScroll.includes("modalPauseCount"));
+  assert.ok(smoothScroll.includes("modalPauseCount > 0"));
   assert.ok(guidedTour.includes("lenis.scrollTo(found, { offset, duration: 1 })"));
   assert.ok(smoothScroll.includes("export function getActiveLenis()"));
 });
