@@ -113,7 +113,7 @@ export default function NotificationBell({ variant }: { variant: "top" | "bottom
               <div className="px-4 py-3 border-b-2 border-black bg-[#ffd500] font-display uppercase text-lg leading-none">
                 Notifications
               </div>
-              <div className="overflow-y-auto">
+              <div data-lenis-prevent className="overflow-y-auto">
                 {items.length === 0 && (
                   <p className="p-6 text-center text-[10px] font-bold tracking-widest uppercase text-[#666]">
                     Empty. Sweet dreams 🌙

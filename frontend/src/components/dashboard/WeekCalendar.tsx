@@ -496,6 +496,7 @@ export default function WeekCalendar({
               aria-modal="true"
               aria-labelledby="activity-xp-dialog-title"
               className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto border-2 border-black bg-white text-[#111] shadow-[6px_6px_0_#111] sm:max-h-[88dvh]"
+              data-lenis-prevent
               initial={reduceMotion ? false : { y: 12, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 8, opacity: 0 }}

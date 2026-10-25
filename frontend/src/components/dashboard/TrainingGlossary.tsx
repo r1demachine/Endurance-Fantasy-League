@@ -145,7 +145,7 @@ export default function TrainingGlossary() {
               </div>
               <p className="mt-2 text-[11px] text-[#666]">Поиск проверяет название, альтернативные слова и полный текст пояснения.</p>
             </div>
-            <div className="min-h-0 overflow-y-auto p-3 sm:p-4">
+            <div data-lenis-prevent className="min-h-0 overflow-y-auto p-3 sm:p-4">
               {entries.length === 0 ? <p className="py-8 text-center text-sm text-[#666]">Ничего не найдено. Попробуй другое слово.</p> : (
                 <div className="space-y-3">
                   {entries.map((entry) => (

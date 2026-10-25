@@ -63,6 +63,7 @@ export default function FloatingTooltip({
       ref={tooltipRef}
       id={id}
       role="tooltip"
+      data-lenis-prevent
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       style={{ left: position.left, top: position.top, pointerEvents: interactive ? "auto" : "none" }}
