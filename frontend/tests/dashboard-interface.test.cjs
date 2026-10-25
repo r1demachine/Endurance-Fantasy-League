@@ -180,7 +180,7 @@ test("global gradient stays fixed while dashboard and profile sections stagger t
   assert.ok(layout.includes('import "lenis/dist/lenis.css"'));
   assert.ok(smoothScroll.includes('import Lenis from "lenis"'));
   assert.ok(smoothScroll.includes("prefers-reduced-motion: reduce"));
-  assert.ok(smoothScroll.includes("duration: 1.1"));
+  assert.ok(smoothScroll.includes("duration: 1.35"));
   assert.ok(smoothScroll.includes("smoothWheel: true"));
   assert.ok(smoothScroll.includes("allowNestedScroll: true"));
   assert.ok(smoothScroll.includes("anchors: true"));

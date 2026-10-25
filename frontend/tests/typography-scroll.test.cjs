@@ -70,7 +70,7 @@ test("Lenis provides eased global wheel and anchor scrolling while respecting re
   assert.ok(smoothScroll.includes("anchors: true"));
   assert.ok(smoothScroll.includes("allowNestedScroll: true"));
   assert.ok(smoothScroll.includes('window.matchMedia("(prefers-reduced-motion: reduce)")'));
-  assert.ok(smoothScroll.includes('reducedMotion.addEventListener("change", syncMotionPreference)'));
+  assert.ok(smoothScroll.includes('reducedMotion.addEventListener("change", sync)'));
   assert.ok(smoothScroll.includes("lenis?.destroy()"));
   assert.equal(pageTransition.includes('window.addEventListener("wheel", onWheel'), false);
   assert.equal(pageTransition.includes("canInnerPanelScroll"), false);
