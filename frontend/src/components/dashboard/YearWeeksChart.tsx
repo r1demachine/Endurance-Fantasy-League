@@ -152,7 +152,7 @@ export default function YearWeeksChart({ selectedWeekStart, onWeekChange }: Prop
           <p className="py-8 text-sm text-[#666]">Нет данных за выбранный год.</p>
         ) : (
           <>
-            <div className="overflow-x-auto overscroll-x-contain px-1 pb-2 pt-2">
+            <div data-lenis-prevent className="overflow-x-auto overscroll-x-contain px-1 pb-2 pt-2">
               <div className="min-w-[980px] lg:min-w-0">
                 <div
                   className="grid h-52 items-end gap-[3px] border-b-2 border-black/20 pb-1"

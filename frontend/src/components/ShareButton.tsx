@@ -135,6 +135,7 @@ export default function ShareButton({ data, label = "Поделиться" }: Pr
             role="dialog"
             aria-modal="true"
             aria-labelledby="share-image-dialog-title"
+            data-lenis-prevent
             className="max-h-[94dvh] w-full max-w-xl overflow-y-auto border-2 border-black bg-[#f4f4f0] text-[#111] shadow-[6px_6px_0_#111] sm:max-h-[90dvh]"
           >
             <header className="flex items-center justify-between gap-3 border-b-2 border-black bg-[#ffd500] px-4 py-3">
