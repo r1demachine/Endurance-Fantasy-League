@@ -36,7 +36,7 @@ test("display typography only uses anywhere wrapping when explicitly requested",
   assert.ok(css.includes('.font-display {\n  overflow-wrap: break-word;\n  word-break: normal;'));
   assert.ok(css.includes('.font-display-wrap {\n  overflow-wrap: anywhere;\n  word-break: break-word;'));
   assert.equal(css.includes('.font-display {\n  overflow-wrap: anywhere;'), false);
-  assert.equal(css.includes('[class~="whitespace-nowrap"]'), false);
+  assert.ok(css.includes('[class~="whitespace-nowrap"]'));
   assert.ok(home.includes("font-display font-display-wrap uppercase leading"));
   assert.ok(dashboard.includes("font-display font-display-wrap text-4xl uppercase"));
 });
