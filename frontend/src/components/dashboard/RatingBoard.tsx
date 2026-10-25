@@ -80,7 +80,10 @@ export default function RatingBoard({
                         )}
                         <div className={`flex justify-between items-center px-4 py-3 border-t border-black/10 ${p.is_you ? "bg-[#ffd500]/20" : "hover:bg-black/5"} transition-colors`}>
                           <div className="flex items-center gap-3 min-w-0">
-                            <span className="font-display text-lg w-8 text-[#999]">
+                            <span
+                              className="inline-flex w-8 shrink-0 items-center justify-center font-display text-lg tabular-nums whitespace-nowrap leading-none text-[#999]"
+                              style={{ whiteSpace: "nowrap", wordBreak: "normal", overflowWrap: "normal" }}
+                            >
                               {String(p.rank).padStart(2, "0")}
                             </span>
                             <Link href={`/u/${p.username}`} className="font-bold uppercase tracking-wide text-sm hover:text-[#5866f2] transition-colors truncate">
@@ -102,7 +105,10 @@ export default function RatingBoard({
                       } ${player.is_you ? "bg-[#5866f2]/15 border-l-4 border-l-[#5866f2]" : "hover:bg-black/5"} transition-colors`}
                     >
                       <div className="flex items-center gap-3 md:gap-4">
-                        <span className={`font-display text-lg w-8 ${player.rank <= 3 ? "text-[#ff4b26]" : "text-[#999]"}`}>
+                        <span
+                          className={`inline-flex w-8 shrink-0 items-center justify-center font-display text-lg tabular-nums whitespace-nowrap leading-none ${player.rank <= 3 ? "text-[#ff4b26]" : "text-[#999]"}`}
+                          style={{ whiteSpace: "nowrap", wordBreak: "normal", overflowWrap: "normal" }}
+                        >
                           {String(player.rank).padStart(2, "0")}
                         </span>
                         <div className="min-w-0">

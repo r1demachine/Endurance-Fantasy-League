@@ -125,7 +125,8 @@ function DayHeading({ day, isToday, userName }: { day: DayLedger; isToday: boole
         </div>
       </div>
       <span
-        className={`flex h-8 w-8 shrink-0 items-center justify-center border-2 border-black font-display text-lg ${isToday ? "bg-white" : "bg-white"}`}
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center border-2 border-black bg-white font-display text-base tabular-nums whitespace-nowrap leading-none"
+        style={{ whiteSpace: "nowrap", wordBreak: "normal", overflowWrap: "normal" }}
         aria-label={isToday ? "Сегодня" : dayNumber}
         title={isToday ? "Сегодня" : undefined}
       >
