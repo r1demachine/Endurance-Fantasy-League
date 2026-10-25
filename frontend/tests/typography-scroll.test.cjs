@@ -42,7 +42,9 @@ test("display typography only uses anywhere wrapping when explicitly requested",
 });
 
 test("home explainer uses the available flex width rather than a fixed 240px limit", () => {
-  assert.ok(home.includes('className="min-w-0 flex-1 text-xs md:text-sm font-bold uppercase tracking-wide leading-snug"'));
+  assert.ok(home.includes('className="min-w-0 flex-1 text-xs md:text-sm font-bold uppercase tracking-wide leading-snug hyphens-none [overflow-wrap:break-word] [word-break:normal]"'));
+  assert.ok(home.includes('<main className="min-h-screen p-2 sm:p-4 md:p-6 text-[#111] relative flex flex-col overflow-x-clip">'));
+  assert.ok(home.includes('className="relative flex-1 min-w-0 max-w-full bg-[#ff4b26] overflow-hidden flex items-center justify-center"'));
   assert.equal(home.includes("max-w-[240px]"), false);
   assert.ok(home.includes('className="flex items-center gap-3 shrink-0"'));
 });
@@ -55,9 +57,15 @@ test("Lenis provides eased global wheel and anchor scrolling while respecting re
   assert.ok(layout.includes('import "lenis/dist/lenis.css"'));
   assert.ok(layout.includes("<SmoothScroll />"));
   assert.ok(smoothScroll.includes('import Lenis from "lenis"'));
-  assert.ok(smoothScroll.includes("autoRaf: true"));
-  assert.ok(smoothScroll.includes("duration: 1.1"));
-  assert.ok(smoothScroll.includes("easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t))"));
+  assert.ok(smoothScroll.includes("autoRaf: false"));
+  assert.ok(smoothScroll.includes("duration: 1.35"));
+  assert.ok(smoothScroll.includes("wheelMultiplier: 0.85"));
+  assert.ok(smoothScroll.includes("touchMultiplier: 1.1"));
+  assert.ok(smoothScroll.includes("syncTouch: true"));
+  assert.ok(smoothScroll.includes("t < 0.5"));
+  assert.ok(smoothScroll.includes("lenis?.raf(time)"));
+  assert.ok(smoothScroll.includes("window.requestAnimationFrame(tick)"));
+  assert.ok(smoothScroll.includes("window.cancelAnimationFrame(rafId)"));
   assert.ok(smoothScroll.includes("smoothWheel: true"));
   assert.ok(smoothScroll.includes("anchors: true"));
   assert.ok(smoothScroll.includes("allowNestedScroll: true"));
@@ -67,5 +75,11 @@ test("Lenis provides eased global wheel and anchor scrolling while respecting re
   assert.equal(pageTransition.includes('window.addEventListener("wheel", onWheel'), false);
   assert.equal(pageTransition.includes("canInnerPanelScroll"), false);
   assert.ok(css.includes("scroll-behavior: auto"));
+  assert.ok(css.includes("hyphens: none"));
+  assert.ok(css.includes("word-break: normal"));
+  assert.ok(css.includes("overflow-wrap: break-word"));
+  assert.ok(css.includes("overflow-x: clip"));
+  assert.equal(css.includes("hyphens: auto"), false);
+  assert.equal(css.includes("overflow-x: hidden;"), false);
   assert.ok(css.includes("@media (prefers-reduced-motion: reduce)"));
 });

@@ -66,7 +66,7 @@ export default function Home() {
   ];
 
   return (
-    <main className="min-h-screen p-2 sm:p-4 md:p-6 text-[#111] relative overflow-hidden flex flex-col">
+    <main className="min-h-screen p-2 sm:p-4 md:p-6 text-[#111] relative flex flex-col overflow-x-clip">
       {/* ✦ Звёзды на мечтательном фоне (Dream) */}
       <Star className="absolute w-6 h-6 text-white/80 top-[5%] left-[4%] animate-pulse" />
       <Star className="absolute w-4 h-4 text-white/70 top-[14%] right-[7%] animate-pulse" />
@@ -141,7 +141,7 @@ export default function Home() {
           {/* Правая колонка: оранжевый блок + спящий атлет + пузыри снов */}
           <div className="relative flex flex-col min-h-[300px] md:min-h-0">
             <div className="p-5 md:p-8 flex items-start justify-between gap-4 border-b-2 border-black">
-              <p className="min-w-0 flex-1 text-xs md:text-sm font-bold uppercase tracking-wide leading-snug">
+              <p className="min-w-0 flex-1 text-xs md:text-sm font-bold uppercase tracking-wide leading-snug hyphens-none [overflow-wrap:break-word] [word-break:normal]">
                 Каждая тренировка приносит XP за нагрузку, а регулярность и восстановление прокачивают уровень каждую неделю.
               </p>
               <div className="flex items-center gap-3 shrink-0">

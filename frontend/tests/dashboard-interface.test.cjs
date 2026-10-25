@@ -187,7 +187,7 @@ test("global gradient stays fixed while dashboard and profile sections stagger t
   assert.equal(pageTransition.includes('window.addEventListener("wheel", onWheel, { passive: false })'), false);
   assert.equal(pageTransition.includes("requestAnimationFrame(animateScroll)"), false);
   assert.equal(pageTransition.includes("canInnerPanelScroll"), false);
-  assert.ok(globalCss.includes("overflow-x: hidden"));
+  assert.ok(globalCss.includes("overflow-x: clip"));
   assert.ok(modalComponent.includes("overflow-y-auto scroll-smooth"));
   assert.ok(settingsModal.includes("overflow-y-auto scroll-smooth"));
   assert.equal(globalCss.includes("scroll-snap-"), false);
@@ -244,9 +244,10 @@ test("typography uses original Tailwind sizes with wrapping and bounded display 
   assert.ok(css.includes('[class~="whitespace-nowrap"]'));
   assert.ok(css.includes("font-size: clamp(1.75rem, 4vw + 0.75rem, 3.75rem) !important"));
   assert.ok(css.includes(":where(.flex, .grid) > *"));
-  assert.ok(css.includes("hyphens: auto"));
+  assert.ok(css.includes("hyphens: none"));
   assert.ok(css.includes("word-break: normal"));
-  assert.equal(css.includes("overflow-x: hidden;"), true);
+  assert.equal(css.includes("overflow-x: hidden;"), false);
+  assert.ok(css.includes("overflow-x: clip;"));
 });
 
 
