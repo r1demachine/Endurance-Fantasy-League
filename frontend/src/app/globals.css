@@ -14,7 +14,7 @@
 
 
 html {
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
 }
 
 html,
@@ -264,6 +264,11 @@ b, strong, .font-bold, .font-extrabold, .font-black {
 }
 
 .font-display {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.font-display-wrap {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -283,12 +288,8 @@ html {
   hyphens: auto;
 }
 
-/* At narrow widths, let utility labels wrap instead of overflowing a card. */
+/* Keep nowrap utilities meaningful on narrow screens; relax letter spacing only. */
 @media (max-width: 1023px) {
-  [class~="whitespace-nowrap"] {
-    white-space: normal;
-  }
-
   .tracking-widest {
     letter-spacing: 0.08em;
   }
