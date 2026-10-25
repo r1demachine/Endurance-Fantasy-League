@@ -7,33 +7,52 @@ export default function SmoothScroll() {
   useEffect(() => {
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let lenis: Lenis | null = null;
+    let rafId = 0;
 
-    const syncMotionPreference = () => {
-      if (reducedMotion.matches) {
-        lenis?.destroy();
-        lenis = null;
-        return;
-      }
+    const stop = () => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+      rafId = 0;
+      lenis?.destroy();
+      lenis = null;
+    };
 
-      if (lenis) return;
+    const start = () => {
+      if (reducedMotion.matches || lenis) return;
+
       lenis = new Lenis({
-        autoRaf: true,
-        anchors: true,
-        allowNestedScroll: true,
-        duration: 1.1,
-        easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+        duration: 1.35,
+        easing: (t) => t < 0.5
+          ? 4 * t * t * t
+          : 1 - Math.pow(-2 * t + 2, 3) / 2,
         smoothWheel: true,
+        wheelMultiplier: 0.85,
+        touchMultiplier: 1.1,
+        syncTouch: true,
+        anchors: true,
+        autoRaf: false,
+        allowNestedScroll: true,
         stopInertiaOnNavigate: true,
         respectReducedMotion: true,
       });
+
+      const tick = (time: number) => {
+        lenis?.raf(time);
+        rafId = window.requestAnimationFrame(tick);
+      };
+      rafId = window.requestAnimationFrame(tick);
     };
 
-    syncMotionPreference();
-    reducedMotion.addEventListener("change", syncMotionPreference);
+    const sync = () => {
+      stop();
+      start();
+    };
+
+    sync();
+    reducedMotion.addEventListener("change", sync);
 
     return () => {
-      reducedMotion.removeEventListener("change", syncMotionPreference);
-      lenis?.destroy();
+      reducedMotion.removeEventListener("change", sync);
+      stop();
     };
   }, []);
 

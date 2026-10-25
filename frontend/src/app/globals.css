@@ -15,6 +15,7 @@
 
 html {
   scroll-behavior: auto;
+  hyphens: none;
 }
 
 html,
@@ -23,8 +24,8 @@ body {
   background-color: #171a38;
 
   color: white;
-  /* Запрещаем горизонтальный скролл, чтобы фон не растягивался */
-  overflow-x: hidden; 
+  /* Clip horizontal overflow without creating another scroll container. */
+  overflow-x: clip;
 }
 
 
@@ -284,9 +285,12 @@ b, strong, .font-bold, .font-extrabold, .font-black {
   overflow-wrap: break-word;
 }
 
-html {
-  hyphens: auto;
+:where(p, a, li, span, label) {
+  hyphens: none;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
+
 
 /* Allow long utility labels to wrap on narrow screens; numeric badges opt out inline. */
 @media (max-width: 1023px) {
