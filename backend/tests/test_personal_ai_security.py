@@ -106,12 +106,12 @@ class TestPersonalAIConsent(unittest.TestCase):
 
     @patch("app.routers.personal_analysis.generate_personal_interpretation")
     @patch("app.routers.personal_analysis.generate_custom_interpretation")
-    @patch("httpx.post")
-    def test_interpretation_without_consent_is_403_and_never_calls_http(self, http_post, custom, server):
+    @patch("httpx.Client")
+    def test_interpretation_without_consent_is_403_and_never_calls_http(self, http_client, custom, server):
         response = self.client.post("/api/personal-analysis/interpretation")
         assert response.status_code == 403
         assert "соглас" in response.json()["detail"].lower() or "разреш" in response.json()["detail"].lower()
-        http_post.assert_not_called()
+        http_client.assert_not_called()
         custom.assert_not_called()
         server.assert_not_called()
 
