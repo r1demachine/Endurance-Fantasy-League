@@ -95,6 +95,27 @@ type InterpretationResponse = {
   disclaimer?: string;
 };
 
+type AIProvider = "server" | "openai_compatible" | "anthropic";
+
+type ConsentResponse = {
+  enabled: boolean;
+  consent_at: string | null;
+};
+
+type ProviderResponse = {
+  provider: AIProvider;
+  base_url: string | null;
+  model: string | null;
+  has_key: boolean;
+  key_last4: string | null;
+};
+
+const PROVIDER_LABELS: Record<AIProvider, string> = {
+  server: "Серверный Groq",
+  openai_compatible: "Свой ключ (OpenAI-совместимый)",
+  anthropic: "Свой ключ (Claude)",
+};
+
 const DAY_OPTIONS = [
   { value: 14, label: "14 дней" },
   { value: 28, label: "28 дней" },
@@ -169,6 +190,18 @@ function isInterpretation(value: unknown): value is Interpretation {
   return stringFields.every((field) => typeof value[field] === "string")
     && listFields.every((field) => Array.isArray(value[field])
       && (value[field] as unknown[]).every((entry) => typeof entry === "string"));
+}
+
+function safeProviderError(error: unknown, fallback: string): string {
+  if (!isRecord(error)) return fallback;
+  const response = isRecord(error.response) ? error.response : null;
+  const data = response && isRecord(response.data) ? response.data : null;
+  const detail = data && isRecord(data.detail) ? data.detail : null;
+  if (detail && typeof detail.message === "string") return detail.message;
+  if (response?.status === 429) return "Слишком много запросов к AI-сервису. Подожди немного.";
+  if (response?.status === 401 || response?.status === 403) return "Сервис отклонил ключ или доступ.";
+  if (response?.status === 422) return "Проверь адрес, модель и сохранённый API-ключ.";
+  return fallback;
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -266,6 +299,155 @@ function AnalysisContent() {
   const [interpretationError, setInterpretationError] = useState("");
   const [showMethodology, setShowMethodology] = useState(false);
   const [showCoverage, setShowCoverage] = useState(false);
+
+  const [consentLoaded, setConsentLoaded] = useState(false);
+  const [aiConsent, setAiConsent] = useState(false);
+  const [consentSaving, setConsentSaving] = useState(false);
+  const [consentError, setConsentError] = useState("");
+  const [showPayloadPreview, setShowPayloadPreview] = useState(false);
+  const [payloadPreview, setPayloadPreview] = useState<Record<string, unknown> | null>(null);
+  const [payloadPreviewLoading, setPayloadPreviewLoading] = useState(false);
+  const [payloadPreviewError, setPayloadPreviewError] = useState("");
+
+  const [selectedProvider, setSelectedProvider] = useState<AIProvider>("server");
+  const [savedProvider, setSavedProvider] = useState<ProviderResponse | null>(null);
+  const [providerBaseUrl, setProviderBaseUrl] = useState("");
+  const [providerModel, setProviderModel] = useState("");
+  const [providerApiKey, setProviderApiKey] = useState("");
+  const [providerSaving, setProviderSaving] = useState(false);
+  const [providerTesting, setProviderTesting] = useState(false);
+  const [providerDeleting, setProviderDeleting] = useState(false);
+  const [providerMessage, setProviderMessage] = useState("");
+  const [providerError, setProviderError] = useState("");
+
+  const refreshAISettings = useCallback(async () => {
+    try {
+      const [consentResponse, providerResponse] = await Promise.all([
+        authApi.get("/api/personal-analysis/consent"),
+        authApi.get("/api/personal-analysis/provider"),
+      ]);
+      const consent = consentResponse.data as ConsentResponse;
+      const provider = providerResponse.data as ProviderResponse;
+      setAiConsent(Boolean(consent.enabled));
+      setSavedProvider(provider);
+      setSelectedProvider(provider.provider);
+      setProviderBaseUrl(provider.base_url ?? "");
+      setProviderModel(provider.model ?? "");
+      setConsentError("");
+    } catch {
+      setConsentError("Не удалось загрузить настройки ИИ. Попробуй обновить страницу.");
+    } finally {
+      setConsentLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshAISettings();
+  }, [refreshAISettings]);
+
+  const changeConsent = async (enabled: boolean) => {
+    setConsentSaving(true);
+    setConsentError("");
+    try {
+      const response = await authApi.put("/api/personal-analysis/consent", { enabled });
+      const result = response.data as ConsentResponse;
+      setAiConsent(Boolean(result.enabled));
+      setInterpretation(null);
+      setInterpretationError("");
+      setPayloadPreview(null);
+      if (!result.enabled) {
+        setSelectedProvider("server");
+        setProviderBaseUrl("");
+        setProviderModel("");
+        setProviderApiKey("");
+        setProviderMessage("");
+        setProviderError("");
+        await refreshAISettings();
+      }
+    } catch {
+      setConsentError("Не удалось сохранить согласие. Настройка не изменена.");
+    } finally {
+      setConsentSaving(false);
+    }
+  };
+
+  const togglePayloadPreview = async () => {
+    if (showPayloadPreview) {
+      setShowPayloadPreview(false);
+      return;
+    }
+    setShowPayloadPreview(true);
+    setPayloadPreviewError("");
+    if (payloadPreview) return;
+    setPayloadPreviewLoading(true);
+    try {
+      const response = await authApi.get("/api/personal-analysis/payload-preview", { params: { days } });
+      if (!isRecord(response.data)) {
+        setPayloadPreviewError("Сервер вернул JSON неожиданного формата.");
+        return;
+      }
+      setPayloadPreview(response.data);
+    } catch {
+      setPayloadPreviewError("Не удалось загрузить точный пример отправляемого JSON.");
+    } finally {
+      setPayloadPreviewLoading(false);
+    }
+  };
+
+  const saveAIProvider = async () => {
+    setProviderSaving(true);
+    setProviderError("");
+    setProviderMessage("");
+    try {
+      const body: Record<string, string> = { provider: selectedProvider };
+      if (selectedProvider === "openai_compatible") body.base_url = providerBaseUrl.trim();
+      if (selectedProvider !== "server") body.model = providerModel.trim();
+      if (providerApiKey.trim()) body.api_key = providerApiKey.trim();
+      const response = await authApi.put("/api/personal-analysis/provider", body);
+      const result = response.data as ProviderResponse;
+      setSavedProvider(result);
+      setSelectedProvider(result.provider);
+      setProviderBaseUrl(result.base_url ?? "");
+      setProviderModel(result.model ?? "");
+      setProviderApiKey("");
+      setProviderMessage("Источник ИИ сохранён. Ключ не отображается и хранится только в зашифрованном виде.");
+    } catch (error: unknown) {
+      setProviderError(safeProviderError(error, "Не удалось сохранить источник ИИ."));
+    } finally {
+      setProviderSaving(false);
+    }
+  };
+
+  const testAIProvider = async () => {
+    setProviderTesting(true);
+    setProviderError("");
+    setProviderMessage("");
+    try {
+      await authApi.post("/api/personal-analysis/provider/test");
+      setProviderMessage("OK — соединение и ответ сервиса проверены. Данные пользователя в тестовом запросе не отправлялись.");
+    } catch (error: unknown) {
+      setProviderError(safeProviderError(error, "Проверка не удалась."));
+    } finally {
+      setProviderTesting(false);
+    }
+  };
+
+  const deleteAIProviderKey = async () => {
+    setProviderDeleting(true);
+    setProviderError("");
+    setProviderMessage("");
+    try {
+      const response = await authApi.delete("/api/personal-analysis/provider");
+      const result = response.data as ProviderResponse;
+      setSavedProvider(result);
+      setProviderApiKey("");
+      setProviderMessage("Ключ удалён.");
+    } catch {
+      setProviderError("Не удалось удалить сохранённый ключ.");
+    } finally {
+      setProviderDeleting(false);
+    }
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -487,18 +669,113 @@ function AnalysisContent() {
                   <h2 className="mt-1 font-display text-2xl uppercase md:text-3xl">Что это может означать?</h2>
                   <p className="mt-2 text-sm leading-relaxed text-white/90">AI объяснит только наблюдения по имеющимся данным. Это не диагноз и не персональное назначение тренировочного плана.</p>
                 </div>
-                <div className="p-4 md:p-5">
-                  <button type="button" onClick={() => void runInterpretation()} disabled={interpretationLoading || trends.status !== "ready"}
-                    className="min-h-12 w-full border-2 border-black bg-[#ffd500] px-4 py-3 text-xs font-black uppercase tracking-wide hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">
-                    {interpretationLoading ? "Готовим интерпретацию…" : interpretation ? "Сгенерировать заново" : "Получить AI-интерпретацию"}
-                  </button>
-                  <p className="mt-2 text-[11px] leading-relaxed text-[#666]">Запрос выполняется только по кнопке. При повторе может расходоваться дополнительный лимит AI-сервиса.</p>
+                <div className="space-y-5 p-4 md:p-5">
+                  <section className="border-2 border-black bg-[#f4f4f0] p-4">
+                    <h3 className="font-display text-lg uppercase">Источник ИИ</h3>
+                    <label htmlFor="analysis-ai-provider" className="mt-3 block text-xs font-bold uppercase tracking-wide text-[#555]">Выбери, какой сервис будет создавать интерпретацию</label>
+                    <select id="analysis-ai-provider" value={selectedProvider} onChange={(event) => {
+                      setSelectedProvider(event.target.value as AIProvider);
+                      setProviderError("");
+                      setProviderMessage("");
+                    }} className="mt-2 min-h-11 w-full border-2 border-black bg-white px-3 py-2 text-sm font-bold">
+                      <option value="server">Сервер (по умолчанию)</option>
+                      <option value="openai_compatible">Свой ключ (OpenAI-совместимый: OpenAI, Groq, OpenRouter, Together…)</option>
+                      <option value="anthropic">Свой ключ (Claude)</option>
+                    </select>
+
+                    {selectedProvider !== "server" && (
+                      <div className="mt-4 space-y-3">
+                        {selectedProvider === "openai_compatible" && (
+                          <div>
+                            <label htmlFor="analysis-ai-base-url" className="block text-xs font-bold uppercase tracking-wide text-[#555]">Адрес API (только HTTPS, порт 443)</label>
+                            <input id="analysis-ai-base-url" type="url" value={providerBaseUrl} onChange={(event) => setProviderBaseUrl(event.target.value)} autoComplete="off" spellCheck={false} placeholder="https://api.openai.com/v1" className="mt-1 min-h-11 w-full border-2 border-black bg-white px-3 py-2 text-sm" />
+                            <p className="mt-1 text-[11px] leading-relaxed text-[#666]">Примеры: https://api.openai.com/v1 · https://api.groq.com/openai/v1 · https://openrouter.ai/api/v1</p>
+                          </div>
+                        )}
+                        <div>
+                          <label htmlFor="analysis-ai-model" className="block text-xs font-bold uppercase tracking-wide text-[#555]">Модель</label>
+                          <input id="analysis-ai-model" value={providerModel} onChange={(event) => setProviderModel(event.target.value)} maxLength={128} autoComplete="off" placeholder={selectedProvider === "anthropic" ? "Укажи доступную модель Claude" : "Укажи модель, доступную у провайдера"} className="mt-1 min-h-11 w-full border-2 border-black bg-white px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label htmlFor="analysis-ai-key" className="block text-xs font-bold uppercase tracking-wide text-[#555]">API-ключ</label>
+                          <input id="analysis-ai-key" type="password" value={providerApiKey} onChange={(event) => setProviderApiKey(event.target.value)} maxLength={512} autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder={savedProvider?.has_key ? "Оставь пустым, чтобы сохранить текущий ключ" : "Вставь ключ; он не будет показан повторно"} className="mt-1 min-h-11 w-full border-2 border-black bg-white px-3 py-2 text-sm" />
+                          {savedProvider?.has_key && <p className="mt-1 text-[11px] text-[#666]">Ключ сохранён в зашифрованном виде; последние символы: …{savedProvider.key_last4 ?? "****"}.</p>}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button type="button" onClick={() => void saveAIProvider()} disabled={providerSaving || (selectedProvider !== "server" && !providerModel.trim())}
+                        className="min-h-10 border-2 border-black bg-[#5866f2] px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-50">
+                        {providerSaving ? "Сохраняем…" : "Сохранить источник"}
+                      </button>
+                      {selectedProvider !== "server" && (
+                        <button type="button" onClick={() => void testAIProvider()} disabled={providerTesting || !savedProvider?.has_key || savedProvider.provider !== selectedProvider}
+                          className="min-h-10 border-2 border-black bg-white px-4 py-2 text-xs font-black uppercase disabled:opacity-50">
+                          {providerTesting ? "Проверяем…" : "Проверить"}
+                        </button>
+                      )}
+                      {savedProvider?.has_key && (
+                        <button type="button" onClick={() => void deleteAIProviderKey()} disabled={providerDeleting}
+                          className="min-h-10 border-2 border-[#ff4b26] bg-white px-4 py-2 text-xs font-black uppercase text-[#a62910] disabled:opacity-50">
+                          {providerDeleting ? "Удаляем…" : "Удалить ключ"}
+                        </button>
+                      )}
+                    </div>
+                    {providerMessage && <p role="status" className="mt-3 text-sm text-[#166534]">{providerMessage}</p>}
+                    {providerError && <p role="alert" className="mt-3 text-sm text-[#a62910]">{providerError}</p>}
+                    <p className="mt-3 text-[11px] leading-relaxed text-[#666]">Проверка отправляет только короткий тестовый запрос без статистики пользователя. Адрес OpenAI-совместимого сервиса проверяется перед каждым запросом; внутренние и локальные IP запрещены.</p>
+                  </section>
+
+                  {!consentLoaded ? (
+                    <p role="status" className="text-sm text-[#666]">Загружаем настройки согласия…</p>
+                  ) : !aiConsent ? (
+                    <section className="border-2 border-black bg-white p-4">
+                      <h3 className="font-display text-lg uppercase">Согласие на ИИ-анализ</h3>
+                      <p className="mt-2 text-sm leading-relaxed text-[#444]">Разрешить отправлять агрегированную статистику (средние значения сна, нагрузки, самочувствия за период, без отдельных тренировок, дат, имён и ключей) во внешний ИИ-сервис.</p>
+                      <button type="button" onClick={() => void togglePayloadPreview()} aria-expanded={showPayloadPreview}
+                        className="mt-3 border-2 border-black bg-white px-3 py-2 text-xs font-bold uppercase hover:bg-[#ffd500]">
+                        {showPayloadPreview ? "Скрыть пример JSON" : "Показать, что именно будет отправлено"}
+                      </button>
+                      {showPayloadPreview && (
+                        <div className="mt-3 border-2 border-black bg-[#f4f4f0] p-3">
+                          {payloadPreviewLoading && <p role="status" className="text-sm">Загружаем точный JSON…</p>}
+                          {payloadPreviewError && <p role="alert" className="text-sm text-[#a62910]">{payloadPreviewError}</p>}
+                          {payloadPreview && <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed" aria-label="Точный JSON для AI-сервиса">{JSON.stringify(payloadPreview, null, 2)}</pre>}
+                        </div>
+                      )}
+                      <label className="mt-4 flex cursor-pointer items-start gap-3 border-t border-black/15 pt-4">
+                        <input type="checkbox" checked={aiConsent} disabled={consentSaving} onChange={(event) => void changeConsent(event.target.checked)} className="mt-1 h-5 w-5 shrink-0 accent-[#5866f2]" />
+                        <span className="text-sm font-bold">Я прочитал(а) пример данных и разрешаю отправку агрегированной статистики во внешний ИИ-сервис.</span>
+                      </label>
+                      {consentSaving && <p role="status" className="mt-2 text-xs text-[#666]">Сохраняем согласие…</p>}
+                      {consentError && <p role="alert" className="mt-2 text-sm text-[#a62910]">{consentError}</p>}
+                    </section>
+                  ) : (
+                    <section className="border-2 border-black bg-white p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h3 className="font-display text-lg uppercase">ИИ-анализ разрешён</h3>
+                          <p className="mt-1 text-sm text-[#666]">Источник: {PROVIDER_LABELS[selectedProvider]}. Запрос отправится только после нажатия кнопки ниже.</p>
+                        </div>
+                        <label className="flex items-center gap-2 text-xs font-bold">
+                          <input type="checkbox" checked={aiConsent} disabled={consentSaving} onChange={(event) => void changeConsent(event.target.checked)} className="h-5 w-5 accent-[#5866f2]" />
+                          Согласие
+                        </label>
+                      </div>
+                      <button type="button" onClick={() => void runInterpretation()} disabled={interpretationLoading || trends.status !== "ready" || consentSaving}
+                        className="mt-4 min-h-12 w-full border-2 border-black bg-[#ffd500] px-4 py-3 text-xs font-black uppercase tracking-wide hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">
+                        {interpretationLoading ? "Готовим интерпретацию…" : interpretation ? "Сгенерировать заново" : "Получить AI-интерпретацию"}
+                      </button>
+                      <p className="mt-2 text-[11px] leading-relaxed text-[#666]">Можно отозвать согласие в любой момент. При отзыве сохранённый ключ и настройки собственного провайдера удаляются.</p>
+                    </section>
+                  )}
                   {trends.status !== "ready" && <p className="mt-3 text-sm text-[#666]">Сначала нужны пригодные сравнения в обеих неделях. Сейчас AI-запрос отключён.</p>}
                   {interpretationLoading && <p role="status" className="mt-4 border-l-4 border-[#5866f2] bg-[#5866f2]/5 px-3 py-3 text-sm">Запрашиваем интерпретацию. Повторный запрос не нужен — подожди ответа.</p>}
-                  {interpretationError && (
+                  {interpretationError && aiConsent && (
                     <div role="alert" className="mt-4 border-2 border-[#ff4b26] p-4">
                       <p className="text-sm leading-relaxed">{interpretationError}</p>
-                      <button type="button" onClick={() => void runInterpretation()} disabled={interpretationLoading || trends.status !== "ready"} className="mt-3 border-2 border-black bg-white px-3 py-2 text-xs font-bold uppercase hover:bg-[#ffd500] disabled:opacity-50">Повторить AI-запрос</button>
+                      <button type="button" onClick={() => void runInterpretation()} disabled={interpretationLoading || trends.status !== "ready" || !aiConsent} className="mt-3 border-2 border-black bg-white px-3 py-2 text-xs font-bold uppercase hover:bg-[#ffd500] disabled:opacity-50">Повторить AI-запрос</button>
                     </div>
                   )}
                   {interpretation?.status === "insufficient_data" && (
