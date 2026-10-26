@@ -280,7 +280,8 @@ def put_personal_analysis_provider(
         user.ai_provider = "server"
         user.ai_base_url = None
         user.ai_model = None
-        # Keep a configured personal key until the owner explicitly removes it or withdraws consent.
+        # Selecting server mode also deletes the personal key so it cannot be reused accidentally.
+        user.ai_api_key_encrypted = None
     else:
         model = payload.model or user.ai_model
         if not model or len(model) > 128:
@@ -304,6 +305,20 @@ def put_personal_analysis_provider(
         if supplied_key:
             if len(supplied_key) > 512 or any(ord(char) < 32 or ord(char) == 127 for char in supplied_key):
                 raise HTTPException(status_code=422, detail="API-ключ должен быть не длиннее 512 символов и не содержать управляющие символы.")
+
+        endpoint_changed = (
+            (user.ai_provider or "server") != payload.provider
+            or (
+                payload.provider == "openai_compatible"
+                and (user.ai_base_url or "") != (base_url or "")
+            )
+        )
+        if endpoint_changed and not supplied_key:
+            raise HTTPException(
+                status_code=422,
+                detail="При смене провайдера или адреса требуется новый API-ключ, чтобы не отправить прежний ключ другому сервису.",
+            )
+        if supplied_key:
             user.ai_api_key_encrypted = encrypt_secret(supplied_key)
         if not user.ai_api_key_encrypted:
             raise HTTPException(status_code=422, detail="Добавь API-ключ для выбранного ИИ-сервиса.")
