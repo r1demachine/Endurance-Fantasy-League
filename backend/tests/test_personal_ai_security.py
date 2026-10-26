@@ -28,7 +28,7 @@ from app.services.personal_ai_provider import (
     resolve_public_addresses,
     validate_provider_base_url,
 )
-from app.services.personal_interpretation import _model_input
+from app.services.personal_interpretation import PersonalInterpretationError, _model_input
 
 TEST_ENGINE = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
 TestSession = sessionmaker(autocommit=False, autoflush=False, bind=TEST_ENGINE)
@@ -150,6 +150,23 @@ class TestPersonalAIConsent:
             user = db.query(User).filter(User.id == self.user_id).one()
             assert user.ai_api_key_encrypted != key
             assert decrypt_secret(user.ai_api_key_encrypted) == key
+
+    @patch("app.routers.personal_analysis.test_custom_provider")
+    def test_provider_error_does_not_leak_api_key_in_response_or_logs(self, test_provider):
+        key = "sk-super-secret-credential"
+        self.client.put("/api/personal-analysis/provider", json={
+            "provider": "openai_compatible", "base_url": "https://api.openai.com/v1",
+            "model": "gpt-test", "api_key": key,
+        })
+        test_provider.side_effect = PersonalInterpretationError(
+            "provider failure included " + key, category="connection_error"
+        )
+        with self.assertLogs("app.routers.personal_analysis", level="WARNING") as captured:
+            response = self.client.post("/api/personal-analysis/provider/test")
+        assert response.status_code == 502
+        assert key not in response.text
+        assert all(key not in line for line in captured.output)
+        assert "connection_error" in "\n".join(captured.output)
 
     def test_revoking_consent_deletes_key_and_provider_configuration(self):
         enabled = self.client.put("/api/personal-analysis/consent", json={"consent": True})

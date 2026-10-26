@@ -178,6 +178,7 @@ def _request_json(url: str, *, headers: dict[str, str], payload: dict[str, Any],
         raise PersonalInterpretationError("Provider destination rejected", category="unsafe_destination") from exc
     timeout = min(max(float(timeout_seconds), 1.0), MAX_PROVIDER_TIMEOUT_SECONDS)
     transport = _PinnedHttpxTransport(parsed.hostname.rstrip(".").lower(), approved)
+    headers = {**headers, "Accept-Encoding": "identity"}
     try:
         with httpx.Client(transport=transport, follow_redirects=False, timeout=httpx.Timeout(timeout), trust_env=False) as client:
             with client.stream("POST", url, headers=headers, json=payload) as response:
