@@ -330,7 +330,7 @@ def post_personal_interpretation(
             "provider": provider,
             "model": current.ai_model,
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "period": {"days": trends["period"]["days"]},
+            "period": trends["period"],
             "analysis": analysis.model_dump(),
             "data_quality": {"coverage": trends["coverage"], "data_gaps": trends["data_gaps"]},
             "disclaimer": trends["disclaimer"],
