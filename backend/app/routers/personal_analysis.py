@@ -283,6 +283,8 @@ def put_personal_analysis_provider(
         # Selecting server mode also deletes the personal key so it cannot be reused accidentally.
         user.ai_api_key_encrypted = None
     else:
+        previous_provider = user.ai_provider or "server"
+        previous_base_url = user.ai_base_url
         model = payload.model or user.ai_model
         if not model or len(model) > 128:
             raise HTTPException(status_code=422, detail="Укажи название модели длиной до 128 символов.")
@@ -307,10 +309,10 @@ def put_personal_analysis_provider(
                 raise HTTPException(status_code=422, detail="API-ключ должен быть не длиннее 512 символов и не содержать управляющие символы.")
 
         endpoint_changed = (
-            (user.ai_provider or "server") != payload.provider
+            previous_provider != payload.provider
             or (
                 payload.provider == "openai_compatible"
-                and (user.ai_base_url or "") != (base_url or "")
+                and (previous_base_url or "") != (base_url or "")
             )
         )
         if endpoint_changed and not supplied_key:
