@@ -276,7 +276,7 @@ def test_ai_provider_configuration(current: User = Depends(get_current_user)):
         )
     except PersonalInterpretationError as exc:
         logger.warning("Personal AI provider test failed: category=%s status=%s", exc.category, exc.upstream_status)
-        raise HTTPException(status_code=502, detail=_safe_provider_detail(exc.category)) from exc
+        raise HTTPException(status_code=502, detail=f"Проверка не пройдена ({exc.category}): {_safe_provider_detail(exc.category)}") from exc
     except Exception as exc:
         logger.warning("Personal AI provider test failed: category=configuration_error")
         raise HTTPException(status_code=502, detail="Не удалось проверить конфигурацию провайдера.") from exc

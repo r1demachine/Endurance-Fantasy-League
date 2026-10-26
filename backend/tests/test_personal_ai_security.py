@@ -165,6 +165,7 @@ class TestPersonalAIConsent(unittest.TestCase):
         with self.assertLogs("app.routers.personal_analysis", level="WARNING") as captured:
             response = self.client.post("/api/personal-analysis/provider/test")
         assert response.status_code == 502
+        assert "connection_error" in response.text
         assert key not in response.text
         assert all(key not in line for line in captured.output)
         assert "connection_error" in "\n".join(captured.output)
