@@ -399,7 +399,8 @@ function AnalysisContent() {
     }
   }, []);
 
-  const runInterpretation = useCallback(async () => {
+  useEffect(() => {
+    const controller = new AbortController();
     setTrendsLoading(true);
     setTrendsError("");
     setTrends(null);
