@@ -477,7 +477,7 @@ function AnalysisContent() {
   }, [days, refreshKey]);
 
   const runInterpretation = useCallback(async () => {
-    if (interpretationLoading || !trends || trends.status !== "ready") return;
+    if (!aiConsent || interpretationLoading || !trends || trends.status !== "ready") return;
     setInterpretationLoading(true);
     setInterpretation(null);
     setInterpretationError("");
@@ -524,7 +524,7 @@ function AnalysisContent() {
     } finally {
       setInterpretationLoading(false);
     }
-  }, [days, interpretationLoading, trends]);
+  }, [aiConsent, days, interpretationLoading, trends]);
 
   const handleDaysChange = (value: string) => {
     const nextDays = Number(value);
@@ -532,10 +532,18 @@ function AnalysisContent() {
     setDays(nextDays);
     setInterpretation(null);
     setInterpretationError("");
+    setPayloadPreview(null);
+    setPayloadPreviewError("");
+    setShowPayloadPreview(false);
   };
 
   const coverage = trends?.coverage;
   const relationship = trends?.training_load_relationship;
+  const providerConfigurationDirty = !savedProvider
+    || selectedProvider !== savedProvider.provider
+    || (selectedProvider !== "server" && providerModel.trim() !== (savedProvider.model ?? ""))
+    || (selectedProvider === "openai_compatible" && providerBaseUrl.trim() !== (savedProvider.base_url ?? ""))
+    || Boolean(providerApiKey.trim());
 
   return (
     <main className="relative flex min-h-screen flex-col overflow-hidden px-2 pb-24 text-[#111] sm:px-4 md:px-6 md:pb-6">
@@ -756,14 +764,15 @@ function AnalysisContent() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <h3 className="font-display text-lg uppercase">ИИ-анализ разрешён</h3>
-                          <p className="mt-1 text-sm text-[#666]">Источник: {PROVIDER_LABELS[selectedProvider]}. Запрос отправится только после нажатия кнопки ниже.</p>
+                          <p className="mt-1 text-sm text-[#666]">Источник: {PROVIDER_LABELS[savedProvider?.provider ?? "server"]}. Запрос отправится только после нажатия кнопки ниже.</p>
+                          {providerConfigurationDirty && <p className="mt-2 text-sm font-bold text-[#a62910]">Есть несохранённые изменения источника ИИ. Сохрани их перед анализом.</p>}
                         </div>
                         <label className="flex items-center gap-2 text-xs font-bold">
                           <input type="checkbox" checked={aiConsent} disabled={consentSaving} onChange={(event) => void changeConsent(event.target.checked)} className="h-5 w-5 accent-[#5866f2]" />
                           Согласие
                         </label>
                       </div>
-                      <button type="button" onClick={() => void runInterpretation()} disabled={interpretationLoading || trends.status !== "ready" || consentSaving}
+                      <button type="button" onClick={() => void runInterpretation()} disabled={interpretationLoading || trends.status !== "ready" || consentSaving || providerConfigurationDirty}
                         className="mt-4 min-h-12 w-full border-2 border-black bg-[#ffd500] px-4 py-3 text-xs font-black uppercase tracking-wide hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">
                         {interpretationLoading ? "Готовим интерпретацию…" : interpretation ? "Сгенерировать заново" : "Получить AI-интерпретацию"}
                       </button>
