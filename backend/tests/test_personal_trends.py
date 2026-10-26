@@ -337,7 +337,7 @@ class PersonalTrendApiTests(unittest.TestCase):
                 ])
             db.commit()
 
-        self.current_user = SimpleNamespace(id=self.owner_id, timezone_name="UTC")
+        self.current_user = SimpleNamespace(id=self.owner_id, timezone_name="UTC", ai_analysis_consent=True, ai_provider="server", ai_api_key_encrypted=None)
         self.app = FastAPI()
         self.app.state.limiter = limiter
         self.app.include_router(personal_analysis.router)
@@ -397,6 +397,7 @@ class PersonalTrendApiTests(unittest.TestCase):
             GROQ_API_KEY="test-key",
             GROQ_MODEL="openai/gpt-oss-20b",
             GROQ_TIMEOUT_SECONDS=20,
+            PERSONAL_ANALYSIS_AI_ENABLED=True,
         )
         generate.return_value = PersonalInterpretation(
             headline="Покрытие уже позволяет сравнение",
@@ -427,6 +428,7 @@ class PersonalTrendApiTests(unittest.TestCase):
             GROQ_API_KEY=None,
             GROQ_MODEL="openai/gpt-oss-20b",
             GROQ_TIMEOUT_SECONDS=20,
+            PERSONAL_ANALYSIS_AI_ENABLED=True,
         )
 
         with patch("app.routers.personal_analysis.local_today", return_value=TODAY):
@@ -458,6 +460,7 @@ class PersonalTrendApiTests(unittest.TestCase):
             GROQ_API_KEY="test-key",
             GROQ_MODEL="openai/gpt-oss-20b",
             GROQ_TIMEOUT_SECONDS=20,
+            PERSONAL_ANALYSIS_AI_ENABLED=True,
         )
         generate.side_effect = PersonalInterpretationError("provider raw response and secret", category="upstream_http_error", upstream_status=401)
         with patch("app.routers.personal_analysis.local_today", return_value=TODAY):
