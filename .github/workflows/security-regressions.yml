@@ -29,7 +29,10 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - name: Install backend dependencies
-        run: python -m pip install -r backend/requirements.txt
+        run: python -m pip install -r backend/requirements.txt pytest
       - name: Run security and validation regression tests
         working-directory: backend
         run: python -m unittest discover -s tests -v
+      - name: Run focused personal-analysis pytest suite
+        working-directory: backend
+        run: python -m pytest tests/test_personal_ai_security.py tests/test_personal_interpretation.py tests/test_personal_trends.py -q
