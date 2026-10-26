@@ -29,7 +29,8 @@ test("trend and interpretation APIs use authenticated client and explicit user a
   assert.match(page, /authApi\.post\("\/api\/personal-analysis\/interpretation"/);
   assert.match(page, /onClick=\{\(\) => void runInterpretation\(\)\}/);
   assert.match(backend, /Depends\(get_current_user\)/);
-  assert.match(backend, /@limiter\.limit\("5\/minute", key_func=_personal_analysis_user_key\)/);\n  assert.match(backend, /@limiter\.limit\("30\/day", key_func=_personal_analysis_user_key\)/);
+  assert.match(backend, /@limiter\.limit\("5\/minute", key_func=_personal_analysis_user_key\)/);
+  assert.match(backend, /@limiter\.limit\("30\/day", key_func=_personal_analysis_user_key\)/);
 });
 
 test("UI includes loading, retry, insufficient-data, rate-limit, upstream-failure and missing-value states", () => {
