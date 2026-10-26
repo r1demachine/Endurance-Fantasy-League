@@ -264,6 +264,21 @@ class PersonalAnalysisAIPrivacyAPITests(unittest.TestCase):
         self.assertIn('"mean": 4.0', serialized)
         self.assertIn('"activities_in_period": 5', serialized)
 
+    def test_overlong_api_key_is_rejected_without_echoing_the_key(self):
+        secret = "sk-too-long-secret-" + ("x" * 600)
+        response = self.client.put(
+            "/api/personal-analysis/provider",
+            json={
+                "provider": "openai_compatible",
+                "base_url": "https://api.example.com/v1",
+                "model": "test-model",
+                "api_key": secret,
+            },
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertNotIn(secret, response.text)
+        self.assertNotIn(secret[-30:], response.text)
+
     def test_provider_failures_never_return_or_log_the_users_key(self):
         secret = "sk-never-log-this-key-9282"
         with TestSession() as db:
@@ -298,10 +313,15 @@ class SSRFPreventionTests(unittest.TestCase):
     def test_local_and_non_https_urls_are_rejected_before_http_request(self):
         urls = (
             "https://localhost/v1",
+            "https://service.localhost/v1",
             "https://127.0.0.1/v1",
             "https://10.10.0.7/v1",
+            "https://192.168.1.5/v1",
             "https://169.254.169.254/latest",
+            "https://[::1]/v1",
+            "https://[fc00::1]/v1",
             "https://[::ffff:127.0.0.1]/v1",
+            "https://240.0.0.1/v1",
             "http://api.example.com/v1",
             "https://user:pass@api.example.com/v1",
             "https://api.example.com:8443/v1",
