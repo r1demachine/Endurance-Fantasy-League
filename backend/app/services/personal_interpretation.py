@@ -3,12 +3,19 @@
 Only aggregate trends are sent to the provider. No account identifiers, raw activities,
 per-day dates, or check-in records are included in the model input.
 """
+import ipaddress
 import json
 import logging
+import math
 import re
+import socket
+import ssl
 from typing import Annotated, Any
+from urllib.parse import urlsplit, urlunsplit
 
+import httpcore
 import httpx
+from httpcore._backends.sync import SyncStream
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
@@ -597,3 +604,472 @@ def generate_personal_interpretation(
     )
     _validate_interpretation_claims(analysis, trends)
     return analysis
+
+
+MAX_PROVIDER_RESPONSE_BYTES = 256 * 1024
+MAX_PROVIDER_TIMEOUT_SECONDS = 30.0
+ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_VERSION = "2023-06-01"
+
+
+def validate_openai_base_url_syntax(base_url: str) -> str:
+    """Validate a user-supplied base URL without making any network request."""
+    if not isinstance(base_url, str) or not base_url.strip() or len(base_url) > 2048:
+        raise PersonalInterpretationError("Invalid provider URL", category="invalid_endpoint")
+    value = base_url.strip()
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        raise PersonalInterpretationError("Invalid provider URL", category="invalid_endpoint") from None
+    if (
+        parsed.scheme.lower() != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or (port is not None and port != 443)
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise PersonalInterpretationError("Invalid provider URL", category="invalid_endpoint")
+    host = parsed.hostname.rstrip(".").lower()
+    if not host or host in {"localhost"} or host.endswith((".localhost", ".local", ".internal", ".lan", ".home.arpa")):
+        raise PersonalInterpretationError("Provider host is not public", category="ssrf_blocked")
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        try:
+            host = host.encode("idna").decode("ascii")
+        except UnicodeError:
+            raise PersonalInterpretationError("Invalid provider host", category="invalid_endpoint") from None
+    else:
+        if not _is_public_ip(ip):
+            raise PersonalInterpretationError("Provider host is not public", category="ssrf_blocked")
+
+    display_host = f"[{host}]" if ":" in host else host
+    netloc = display_host if port is None else f"{display_host}:443"
+    path = parsed.path.rstrip("/")
+    return urlunsplit(("https", netloc, path, "", ""))
+
+
+def _is_public_ip(value: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Require globally routable unicast IPs, unwrapping IPv4-mapped IPv6 explicitly."""
+    ip = value
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return bool(
+        ip.is_global
+        and not ip.is_private
+        and not ip.is_loopback
+        and not ip.is_link_local
+        and not ip.is_multicast
+        and not ip.is_reserved
+        and not ip.is_unspecified
+    )
+
+
+def _resolve_public_endpoint(base_url: str) -> tuple[str, str, tuple[str, ...]]:
+    """Resolve and pin every public destination IP; reject mixed or non-public DNS answers."""
+    normalized = validate_openai_base_url_syntax(base_url)
+    parsed = urlsplit(normalized)
+    host = (parsed.hostname or "").rstrip(".").lower()
+    try:
+        literal = ipaddress.ip_address(host)
+    except ValueError:
+        try:
+            records = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+        except (OSError, socket.gaierror):
+            raise PersonalInterpretationError("Provider host resolution failed", category="dns_resolution_failed") from None
+        resolved: set[str] = set()
+        for record in records:
+            try:
+                ip = ipaddress.ip_address(record[4][0])
+            except (ValueError, TypeError, IndexError):
+                raise PersonalInterpretationError("Provider host resolution failed", category="dns_resolution_failed") from None
+            if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+                ip = ip.ipv4_mapped
+            if not _is_public_ip(ip):
+                raise PersonalInterpretationError("Provider host is not public", category="ssrf_blocked")
+            resolved.add(ip.compressed)
+        if not resolved:
+            raise PersonalInterpretationError("Provider host resolution returned no addresses", category="dns_resolution_failed")
+        addresses = tuple(sorted(resolved))
+    else:
+        if isinstance(literal, ipaddress.IPv6Address) and literal.ipv4_mapped is not None:
+            literal = literal.ipv4_mapped
+        if not _is_public_ip(literal):
+            raise PersonalInterpretationError("Provider host is not public", category="ssrf_blocked")
+        addresses = (literal.compressed,)
+    return normalized, host, addresses
+
+
+class _PinnedNetworkBackend(httpcore.SyncBackend):
+    """Connect only to pre-resolved numeric IPs while preserving the original TLS SNI host."""
+
+    def __init__(self, expected_host: str, addresses: tuple[str, ...]):
+        self.expected_host = expected_host.lower().rstrip(".")
+        self.addresses = addresses
+
+    def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        request_host = host.decode("ascii", errors="ignore") if isinstance(host, bytes) else str(host)
+        if request_host.lower().rstrip(".") != self.expected_host or port != 443:
+            raise httpcore.ConnectError("Pinned host or port mismatch")
+        last_error = None
+        for address in self.addresses:
+            sock = None
+            try:
+                source_address = (local_address, 0) if local_address else None
+                sock = socket.create_connection(
+                    (address, port),
+                    timeout=timeout,
+                    source_address=source_address,
+                )
+                if socket_options:
+                    for option in socket_options:
+                        sock.setsockopt(*option)
+                return SyncStream(sock)
+            except OSError:
+                last_error = True
+                if sock is not None:
+                    sock.close()
+        raise httpcore.ConnectError("Pinned provider connection failed" if last_error else "No pinned provider IPs")
+
+
+class _PinnedHTTPTransport(httpx.HTTPTransport):
+    """httpx transport whose TCP backend cannot perform a fresh, attacker-controlled DNS lookup."""
+
+    def __init__(self, host: str, addresses: tuple[str, ...]):
+        super().__init__(verify=True, trust_env=False, retries=0)
+        self._pool.close()
+        self._pool = httpcore.ConnectionPool(
+            ssl_context=ssl.create_default_context(),
+            max_connections=4,
+            max_keepalive_connections=0,
+            keepalive_expiry=0,
+            network_backend=_PinnedNetworkBackend(host, addresses),
+        )
+
+
+def _safe_provider_post_json(
+    url: str,
+    *,
+    host: str,
+    addresses: tuple[str, ...],
+    headers: dict[str, str],
+    payload: dict[str, Any],
+    timeout_seconds: float,
+) -> tuple[int, dict[str, Any], int | None]:
+    """POST bounded JSON to a pre-validated, IP-pinned HTTPS endpoint, never following redirects."""
+    timeout = min(max(float(timeout_seconds or 20), 1.0), MAX_PROVIDER_TIMEOUT_SECONDS)
+    transport = _PinnedHTTPTransport(host, addresses)
+    try:
+        with httpx.Client(
+            transport=transport,
+            timeout=httpx.Timeout(timeout),
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            with client.stream("POST", url, headers=headers, json=payload) as response:
+                status = response.status_code
+                retry_after = None
+                retry_value = response.headers.get("Retry-After", "").strip()
+                if re.fullmatch(r"\d{1,5}", retry_value):
+                    retry_after = min(int(retry_value), 86400)
+                if 300 <= status < 400:
+                    raise PersonalInterpretationError(
+                        "Provider redirects are disabled",
+                        category="redirect_blocked",
+                        upstream_status=status,
+                    )
+                content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+                if content_type != "application/json":
+                    raise PersonalInterpretationError(
+                        "Provider must return application/json",
+                        category="invalid_content_type",
+                        upstream_status=status,
+                    )
+                chunks: list[bytes] = []
+                total = 0
+                for chunk in response.iter_bytes():
+                    total += len(chunk)
+                    if total > MAX_PROVIDER_RESPONSE_BYTES:
+                        raise PersonalInterpretationError(
+                            "Provider response exceeded the maximum size",
+                            category="response_too_large",
+                            upstream_status=status,
+                        )
+                    chunks.append(chunk)
+                try:
+                    decoded = json.loads(b"".join(chunks).decode("utf-8"))
+                except (UnicodeDecodeError, ValueError):
+                    raise PersonalInterpretationError(
+                        "Provider returned invalid JSON",
+                        category="invalid_response",
+                        upstream_status=status,
+                    ) from None
+                if not isinstance(decoded, dict):
+                    raise PersonalInterpretationError(
+                        "Provider returned an unexpected JSON structure",
+                        category="invalid_response",
+                        upstream_status=status,
+                    )
+                return status, decoded, retry_after
+    except PersonalInterpretationError:
+        raise
+    except httpx.TimeoutException:
+        raise PersonalInterpretationError("Provider request timed out", category="timeout") from None
+    except (httpx.HTTPError, OSError, ValueError):
+        raise PersonalInterpretationError("Provider connection failed", category="connection_error") from None
+    finally:
+        transport.close()
+
+
+def _raise_safe_provider_status(status: int, retry_after: int | None) -> None:
+    if status < 400:
+        return
+    if status == 401:
+        category = "provider_unauthorized"
+    elif status == 403:
+        category = "provider_forbidden"
+    elif status == 404:
+        category = "provider_model_not_found"
+    elif status == 429:
+        category = "provider_rate_limited"
+    elif status == 400:
+        category = "provider_invalid_request"
+    elif status >= 500:
+        category = "provider_unavailable"
+    else:
+        category = "provider_http_error"
+    raise PersonalInterpretationError(
+        "External AI provider returned an HTTP error",
+        category=category,
+        upstream_status=status,
+        retry_after_seconds=retry_after,
+    )
+
+
+def _parse_personal_interpretation(content: Any) -> PersonalInterpretation:
+    if not isinstance(content, str) or not content.strip():
+        raise PersonalInterpretationError("Provider returned an empty interpretation", category="invalid_response")
+    try:
+        decoded = json.loads(content)
+    except (TypeError, ValueError):
+        raise PersonalInterpretationError("Provider returned invalid interpretation JSON", category="invalid_response") from None
+    try:
+        return PersonalInterpretation.model_validate(decoded)
+    except ValidationError as exc:
+        raise PersonalInterpretationError(
+            "Provider returned an unexpected interpretation schema",
+            category="invalid_schema",
+            quality_check=_schema_quality_check(exc),
+        ) from None
+
+
+def _openai_compatible_content(
+    *,
+    trends: dict[str, Any] | None,
+    model: str,
+    api_key: str,
+    base_url: str,
+    timeout_seconds: float,
+    test_only: bool = False,
+) -> tuple[str, str]:
+    normalized, host, addresses = _resolve_public_endpoint(base_url)
+    endpoint = normalized.rstrip("/") + "/chat/completions"
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                'Верни только JSON {"ok":true}. Это проверка подключения; данных пользователя нет.'
+                if test_only
+                else json.dumps(_model_input(trends or {}), ensure_ascii=False, separators=(",", ":"))
+            ),
+        },
+    ]
+    request_body: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "personal_interpretation",
+                "strict": True,
+                "schema": PERSONAL_INTERPRETATION_JSON_SCHEMA,
+            },
+        },
+        "max_tokens": 900 if not test_only else 64,
+        "temperature": 0.7,
+    }
+    status, payload, retry_after = _safe_provider_post_json(
+        endpoint,
+        host=host,
+        addresses=addresses,
+        headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"},
+        payload=request_body,
+        timeout_seconds=timeout_seconds,
+    )
+    schema_supported = True
+    if status == 400 and not test_only:
+        # Some OpenAI-compatible providers do not implement json_schema; retry once as json_object.
+        request_body = {
+            **request_body,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT
+                    + "\n\nВерни один строгий JSON-объект со всеми ключами схемы: "
+                    + "headline, summary, positive_signals, caution_signals, practical_next_steps, data_limitations. "
+                    + "Не добавляй дополнительных ключей.",
+                },
+                messages[1],
+            ],
+            "response_format": {"type": "json_object"},
+        }
+        status, payload, retry_after = _safe_provider_post_json(
+            endpoint,
+            host=host,
+            addresses=addresses,
+            headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"},
+            payload=request_body,
+            timeout_seconds=timeout_seconds,
+        )
+        schema_supported = False
+    elif status == 400 and test_only:
+        # Connection tests intentionally use json_object and contain no personal data.
+        raise PersonalInterpretationError(
+            "Provider rejected the connection test request",
+            category="provider_invalid_request",
+            upstream_status=status,
+            retry_after_seconds=retry_after,
+        )
+
+    _raise_safe_provider_status(status, retry_after)
+    try:
+        content = payload["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError):
+        raise PersonalInterpretationError("Provider returned an unexpected response", category="invalid_response") from None
+    return content, "json_schema" if schema_supported else "json_object"
+
+
+def _anthropic_content(
+    *,
+    trends: dict[str, Any] | None,
+    model: str,
+    api_key: str,
+    timeout_seconds: float,
+    test_only: bool = False,
+) -> str:
+    _, host, addresses = _resolve_public_endpoint("https://api.anthropic.com/")
+    message = (
+        'Верни только JSON {"ok":true}. Это проверка подключения; данных пользователя нет.'
+        if test_only
+        else json.dumps(_model_input(trends or {}), ensure_ascii=False, separators=(",", ":"))
+    )
+    status, payload, retry_after = _safe_provider_post_json(
+        ANTHROPIC_MESSAGES_URL,
+        host=host,
+        addresses=addresses,
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": ANTHROPIC_VERSION,
+            "content-type": "application/json",
+        },
+        payload={
+            "model": model,
+            "max_tokens": 64 if test_only else 900,
+            "system": SYSTEM_PROMPT,
+            "messages": [{"role": "user", "content": message}],
+        },
+        timeout_seconds=timeout_seconds,
+    )
+    _raise_safe_provider_status(status, retry_after)
+    try:
+        blocks = payload["content"]
+        return "\n".join(block["text"] for block in blocks if isinstance(block, dict) and block.get("type") == "text")
+    except (KeyError, TypeError):
+        raise PersonalInterpretationError("Provider returned an unexpected response", category="invalid_response") from None
+
+
+def generate_custom_personal_interpretation(
+    trends: dict[str, Any],
+    *,
+    provider: str,
+    api_key: str,
+    model: str,
+    base_url: str | None = None,
+    timeout_seconds: float = 20.0,
+) -> PersonalInterpretation:
+    """Generate and validate an aggregate-only interpretation with the user's selected provider."""
+    if not isinstance(api_key, str) or not api_key or len(api_key) > 512:
+        raise PersonalInterpretationError("Provider key is missing or invalid", category="invalid_configuration")
+    if not isinstance(model, str) or not model.strip() or len(model) > 128:
+        raise PersonalInterpretationError("Provider model is missing or invalid", category="invalid_configuration")
+    if provider == "openai_compatible":
+        if not base_url:
+            raise PersonalInterpretationError("Provider URL is missing", category="invalid_configuration")
+        content, _ = _openai_compatible_content(
+            trends=trends,
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+        )
+    elif provider == "anthropic":
+        content = _anthropic_content(
+            trends=trends,
+            model=model,
+            api_key=api_key,
+            timeout_seconds=timeout_seconds,
+        )
+    else:
+        raise PersonalInterpretationError("Unsupported provider", category="invalid_configuration")
+
+    analysis = _parse_personal_interpretation(content)
+    _validate_interpretation_claims(analysis, trends)
+    return analysis
+
+
+def test_custom_personal_ai_provider(
+    *,
+    provider: str,
+    api_key: str,
+    model: str,
+    base_url: str | None = None,
+    timeout_seconds: float = 20.0,
+) -> None:
+    """Test credentials with a generic prompt only; never include user trends or identifiers."""
+    if not isinstance(api_key, str) or not api_key or len(api_key) > 512:
+        raise PersonalInterpretationError("Provider key is missing or invalid", category="invalid_configuration")
+    if not isinstance(model, str) or not model.strip() or len(model) > 128:
+        raise PersonalInterpretationError("Provider model is missing or invalid", category="invalid_configuration")
+
+    if provider == "openai_compatible":
+        if not base_url:
+            raise PersonalInterpretationError("Provider URL is missing", category="invalid_configuration")
+        content, _ = _openai_compatible_content(
+            trends=None,
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+            test_only=True,
+        )
+    elif provider == "anthropic":
+        content = _anthropic_content(
+            trends=None,
+            model=model,
+            api_key=api_key,
+            timeout_seconds=timeout_seconds,
+            test_only=True,
+        )
+    else:
+        raise PersonalInterpretationError("Unsupported provider", category="invalid_configuration")
+
+    try:
+        decoded = json.loads(content)
+    except (TypeError, ValueError):
+        raise PersonalInterpretationError("Provider test returned invalid JSON", category="invalid_response") from None
+    if not isinstance(decoded, dict) or decoded.get("ok") is not True:
+        raise PersonalInterpretationError("Provider test response did not match expected shape", category="invalid_response")
