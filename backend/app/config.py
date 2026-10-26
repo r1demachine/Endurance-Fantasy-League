@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: Optional[str] = None
     GROQ_MODEL: str = "qwen/qwen3.8-27b"
     GROQ_TIMEOUT_SECONDS: int = Field(default=20, ge=1, le=60)
-    PERSONAL_ANALYSIS_AI_ENABLED: bool = True
+    PERSONAL_ANALYSIS_AI_ENABLED: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

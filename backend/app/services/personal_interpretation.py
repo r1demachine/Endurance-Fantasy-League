@@ -204,7 +204,7 @@ def _model_input(trends: dict[str, Any]) -> dict[str, Any]:
             },
         },
         "data_gaps": [
-            re.sub(r"\\b\\d{4}-\\d{2}-\\d{2}\\b", "этот день", str(item))
+            re.sub(r"\b\d{4}-\d{2}-\d{2}\b", "этот день", str(item))
             for item in (trends.get("data_gaps") or []) if isinstance(item, str)
         ],
         "methodology": [str(item) for item in (trends.get("methodology") or []) if isinstance(item, str)],
