@@ -67,7 +67,7 @@ test("AI interpretation requires explicit consent and exposes the exact payload 
   assert.match(page, /\/api\/personal-analysis\/payload-preview/);
   assert.match(page, /Показать, что именно будет отправлено/);
   assert.match(page, /Я разрешаю отправку указанной агрегированной статистики/);
-  assert.match(page, /Сначала разреши отправку агрегированной статистики/);
+  assert.match(page, /Пока согласие не дано, анализ не отправляет запросы/);
   assert.match(page, /setAiConsent\(response\.data\?\.consent === true\)/);
   assert.match(backend, /if not bool\(getattr\(current, "ai_analysis_consent", False\)\):[\s\S]*?status_code=403/);
 });
