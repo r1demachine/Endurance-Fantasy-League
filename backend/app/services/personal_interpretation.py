@@ -130,57 +130,158 @@ headline, summary, positive_signals, caution_signals, practical_next_steps, data
 
 
 def _model_input(trends: dict[str, Any]) -> dict[str, Any]:
-    """Minimize shared data: aggregate counts only, never identity or item-level dates."""
-    coverage = trends.get("coverage") or {}
-    morning = coverage.get("morning_checkins") or {}
-    sleep = coverage.get("sleep") or {}
-    activities = coverage.get("activities") or {}
+    """Build an allow-listed aggregate payload. Never include identities, dates, or item-level text."""
+    coverage = trends.get("coverage") if isinstance(trends.get("coverage"), dict) else {}
+    morning = coverage.get("morning_checkins") if isinstance(coverage.get("morning_checkins"), dict) else {}
+    sleep = coverage.get("sleep") if isinstance(coverage.get("sleep"), dict) else {}
+    activities = coverage.get("activities") if isinstance(coverage.get("activities"), dict) else {}
+    relationship = trends.get("training_load_relationship")
+    relationship = relationship if isinstance(relationship, dict) else {}
+    period = trends.get("period") if isinstance(trends.get("period"), dict) else {}
+    windows = trends.get("comparison_windows") if isinstance(trends.get("comparison_windows"), dict) else {}
+
+    def count(source: dict[str, Any], name: str, default: int = 0) -> int:
+        value = source.get(name, default)
+        return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else default
+
+    def number(source: dict[str, Any], name: str) -> int | float | None:
+        value = source.get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        if not math.isfinite(float(value)):
+            return None
+        return value
+
+    def daily_stats(value: Any) -> dict[str, int | float | None]:
+        stats = value if isinstance(value, dict) else {}
+        return {
+            "mean": number(stats, "mean"),
+            "days_with_data": count(stats, "days_with_data"),
+            "samples": count(stats, "samples"),
+        }
+
+    metric_labels = {
+        "readiness": "readiness",
+        "fatigue": "fatigue",
+        "soreness": "soreness",
+        "wellbeing": "wellbeing",
+        "sleep_quality": "sleep_quality",
+        "sleep_duration_hours": "sleep_duration_hours",
+        "rpe": "rpe",
+        "harder_than_expected_share": "harder_than_expected_share",
+    }
+    observations = []
+    raw_observations = trends.get("observations")
+    if isinstance(raw_observations, list):
+        for item in raw_observations:
+            if not isinstance(item, dict):
+                continue
+            key = item.get("key")
+            if key not in metric_labels:
+                continue
+            status = item.get("status")
+            trend = item.get("trend")
+            observations.append({
+                "key": metric_labels[key],
+                "status": status if status in {"ready", "insufficient_data"} else "insufficient_data",
+                "trend": trend if trend in {"upward", "downward", "stable", "insufficient_data"} else "insufficient_data",
+                "current": daily_stats(item.get("current")),
+                "previous": daily_stats(item.get("previous")),
+                "change": number(item, "change"),
+            })
+
+    period_days = count(period, "days")
+    current_window = windows.get("current") if isinstance(windows.get("current"), dict) else {}
+    previous_window = windows.get("previous") if isinstance(windows.get("previous"), dict) else {}
+    sleep_quality_days = count(sleep, "days_with_quality_value")
+    sleep_duration_days = count(sleep, "days_with_duration_value")
+    activities_total = count(activities, "activities_in_period")
+    gaps: list[str] = []
+
+    skipped = count(morning, "skipped_days")
+    pending = count(morning, "pending_days")
+    no_record = count(morning, "no_record_days")
+    if skipped:
+        gaps.append(f"Утренний чек-ин явно пропущен за {skipped} дн.")
+    if pending:
+        gaps.append(f"Есть незавершённый утренний чек-ин за {pending} дн.")
+    if no_record:
+        gaps.append(f"Нет записи о статусе утреннего чек-ина за {no_record} дн.")
+    if sleep_quality_days < period_days:
+        gaps.append(f"Автоматическое качество сна доступно за {sleep_quality_days} из {period_days} календарных дней.")
+    if sleep_duration_days < period_days:
+        gaps.append(f"Продолжительность сна доступна за {sleep_duration_days} из {period_days} календарных дней.")
+    no_tss = count(activities, "activities_without_tss")
+    estimated_tss = count(activities, "activities_with_estimated_tss")
+    no_rpe = count(activities, "activities_without_rpe")
+    no_expectation = count(activities, "activities_without_load_expectation")
+    if no_tss and activities_total:
+        gaps.append(f"У {no_tss} из {activities_total} сохранённых тренировок нет пригодного значения TSS.")
+    if estimated_tss:
+        gaps.append(f"TSS помечен как оценочный у {estimated_tss} тренировок.")
+    if no_rpe and activities_total:
+        gaps.append(f"Нет послетренировочного RPE для {no_rpe} из {activities_total} сохранённых тренировок в периоде.")
+    if no_expectation and activities_total:
+        gaps.append(f"Для {no_expectation} из {activities_total} тренировок не указано сравнение нагрузки с ожиданиями.")
+    if relationship.get("status") != "ready":
+        gaps.append("Связь TSS и RPE не рассчитана из-за недостаточного числа парных дней.")
 
     return {
-        "period": trends.get("period"),
-        "comparison_windows": trends.get("comparison_windows"),
-        "observations": trends.get("observations") or [],
-        "training_load_relationship": trends.get("training_load_relationship"),
+        "period": {"days": period_days},
+        "comparison_windows": {
+            "current": {"days": count(current_window, "days")},
+            "previous": {"days": count(previous_window, "days")},
+        },
+        "observations": observations,
+        "training_load_relationship": {
+            "status": relationship.get("status") if relationship.get("status") in {"ready", "insufficient_data"} else "insufficient_data",
+            "paired_days": count(relationship, "paired_days"),
+            "days_excluded_due_to_missing_tss": count(relationship, "days_excluded_due_to_missing_tss"),
+            "days_excluded_due_to_estimated_tss": count(relationship, "days_excluded_due_to_estimated_tss"),
+            "median_daily_tss": number(relationship, "median_daily_tss"),
+            "lower_or_equal_load": {
+                "days": count(relationship.get("lower_or_equal_load") or {}, "days"),
+                "mean_daily_rpe": number(relationship.get("lower_or_equal_load") or {}, "mean_daily_rpe"),
+            },
+            "above_median_load": {
+                "days": count(relationship.get("above_median_load") or {}, "days"),
+                "mean_daily_rpe": number(relationship.get("above_median_load") or {}, "mean_daily_rpe"),
+            },
+            "rpe_difference_high_minus_low": number(relationship, "rpe_difference_high_minus_low"),
+        },
         "coverage": {
             "morning_checkins": {
-                key: morning.get(key)
+                key: count(morning, key)
                 for key in (
-                    "period_days",
-                    "completed_days",
-                    "skipped_days",
-                    "pending_days",
-                    "days_without_completed_checkin",
-                    "no_record_days",
+                    "period_days", "completed_days", "skipped_days", "pending_days",
+                    "days_without_completed_checkin", "no_record_days",
                 )
             },
             "sleep": {
-                key: sleep.get(key)
-                for key in (
-                    "source",
-                    "quality_field_used",
-                    "days_with_wellness_record",
-                    "days_with_quality_value",
-                    "days_with_duration_value",
-                )
+                "source": "Intervals.icu Wellness",
+                "quality_field_used": sleep.get("quality_field_used") if sleep.get("quality_field_used") in {"sleep_score", "sleep_quality"} else None,
+                "days_with_wellness_record": count(sleep, "days_with_wellness_record"),
+                "days_with_quality_value": sleep_quality_days,
+                "days_with_duration_value": sleep_duration_days,
             },
             "activities": {
-                key: activities.get(key)
+                key: count(activities, key)
                 for key in (
-                    "activities_in_period",
-                    "activities_with_measured_tss",
-                    "activities_with_estimated_tss",
-                    "activities_without_tss",
-                    "activities_with_rpe",
-                    "activities_without_rpe",
-                    "activities_with_load_expectation",
-                    "activities_without_load_expectation",
+                    "activities_in_period", "activities_with_measured_tss",
+                    "activities_with_estimated_tss", "activities_without_tss",
+                    "activities_with_rpe", "activities_without_rpe",
+                    "activities_with_load_expectation", "activities_without_load_expectation",
                     "days_with_activities",
                 )
             },
         },
-        "data_gaps": trends.get("data_gaps") or [],
-        "methodology": trends.get("methodology") or [],
-        "disclaimer": trends.get("disclaimer"),
+        "data_gaps": gaps,
+        "methodology": [
+            "Показаны агрегированные средние, количество наблюдений и покрытие данных; пропуски не заменяются нулями.",
+            "Последние и предыдущие окна сравниваются отдельно; каждый день имеет одинаковый вес.",
+            "Связь TSS и RPE носит описательный характер и не доказывает причинность.",
+        ],
+        "disclaimer": "Это описательная тренировочная аналитика, не медицинская оценка, диагноз или прогноз.",
     }
 
 
