@@ -2,7 +2,7 @@
 import logging
 import re
 from datetime import datetime, time, timedelta, timezone
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
@@ -117,9 +117,10 @@ class ProviderUpdate(BaseModel):
     provider: Literal["server", "openai_compatible", "anthropic"]
     base_url: str | None = Field(default=None, max_length=2048)
     model: str | None = Field(default=None, max_length=128)
-    api_key: str | None = Field(default=None, max_length=512)
+    # Any avoids Pydantic echoing a rejected secret in validation errors; validate it manually below.
+    api_key: Any = None
 
-    @field_validator("base_url", "model", "api_key", mode="before")
+    @field_validator("base_url", "model", mode="before")
     @classmethod
     def trim_optional_values(cls, value):
         if value is None:
@@ -297,10 +298,12 @@ def put_personal_analysis_provider(
             # Anthropic endpoint is fixed in backend; never accept a user-controlled base URL.
             user.ai_base_url = None
 
-        supplied_key = payload.api_key.strip() if payload.api_key else ""
+        if payload.api_key is not None and not isinstance(payload.api_key, str):
+            raise HTTPException(status_code=422, detail="API-ключ должен быть текстовой строкой.")
+        supplied_key = payload.api_key.strip() if isinstance(payload.api_key, str) else ""
         if supplied_key:
-            if len(supplied_key) > 512:
-                raise HTTPException(status_code=422, detail="API-ключ должен быть не длиннее 512 символов.")
+            if len(supplied_key) > 512 or any(ord(char) < 32 or ord(char) == 127 for char in supplied_key):
+                raise HTTPException(status_code=422, detail="API-ключ должен быть не длиннее 512 символов и не содержать управляющие символы.")
             user.ai_api_key_encrypted = encrypt_secret(supplied_key)
         if not user.ai_api_key_encrypted:
             raise HTTPException(status_code=422, detail="Добавь API-ключ для выбранного ИИ-сервиса.")
