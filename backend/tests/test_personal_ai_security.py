@@ -66,7 +66,7 @@ def sample_trends():
     }
 
 
-class PersonalAIConsentTests:
+class TestPersonalAIConsent:
     def setup_method(self):
         Base.metadata.drop_all(bind=TEST_ENGINE)
         Base.metadata.create_all(bind=TEST_ENGINE)

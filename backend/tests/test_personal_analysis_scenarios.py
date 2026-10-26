@@ -479,7 +479,7 @@ class PersonalAnalysisApiScenarioTests(unittest.TestCase):
                 ])
             db.commit()
 
-        self.current_user = SimpleNamespace(id=self.owner_id, timezone_name="UTC")
+        self.current_user = SimpleNamespace(id=self.owner_id, timezone_name="UTC", ai_analysis_consent=True, ai_provider="server", ai_api_key_encrypted=None)
         self.app = FastAPI()
         self.app.state.limiter = limiter
         self.app.include_router(personal_analysis.router)

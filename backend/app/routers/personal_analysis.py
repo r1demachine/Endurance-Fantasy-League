@@ -39,7 +39,7 @@ class ProviderUpdate(BaseModel):
     provider: Literal["server", "openai_compatible", "anthropic"]
     base_url: str | None = Field(default=None, max_length=500)
     model: str | None = Field(default=None, max_length=120)
-    api_key: str | None = Field(default=None, max_length=512)
+    api_key: str | None = None
 
 
 def _personal_analysis_user_key(request: Request) -> str:
