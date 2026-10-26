@@ -237,7 +237,7 @@ def put_ai_provider(
         if len(model_name) > 120 or not model_name:
             raise HTTPException(status_code=422, detail="Название модели должно содержать 1–120 символов.")
         current.ai_model = model_name
-    if payload.api_key is not None and payload.api_key.strip():
+    if payload.provider != "server" and payload.api_key is not None and payload.api_key.strip():
         if len(payload.api_key) > 512:
             raise HTTPException(status_code=422, detail="API-ключ слишком длинный.")
         current.ai_api_key_encrypted = encrypt_secret(payload.api_key.strip())

@@ -356,7 +356,7 @@ function AnalysisContent() {
       const payload: { provider: string; base_url?: string; model?: string; api_key?: string } = { provider: aiProvider };
       if (aiProvider === "openai_compatible") payload.base_url = providerBaseUrl.trim();
       if (aiProvider !== "server") payload.model = providerModel.trim();
-      if (providerApiKey.trim()) payload.api_key = providerApiKey;
+      if (aiProvider !== "server" && providerApiKey.trim()) payload.api_key = providerApiKey;
       const response = await authApi.put("/api/personal-analysis/provider", payload);
       setProviderHasKey(response.data?.has_key === true);
       setProviderKeyLast4(typeof response.data?.key_last4 === "string" ? response.data.key_last4 : null);
