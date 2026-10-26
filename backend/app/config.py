@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # Разрешённые браузерные origins, разделённые запятыми; не используем wildcard.
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,https://endurance-fantasy-league.vercel.app"
     # Increment when the data-processing consent text changes materially.
-    PRIVACY_CONSENT_VERSION: str = "2026-10-11-v1"
+    PRIVACY_CONSENT_VERSION: str = "2026-10-26-v1"
     # Telegram bot (optional). Without token webhook is disabled.
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_WEBHOOK_SECRET: Optional[str] = None
