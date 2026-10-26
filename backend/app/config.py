@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # Разрешённые браузерные origins, разделённые запятыми; не используем wildcard.
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,https://endurance-fantasy-league.vercel.app"
     # Increment when the data-processing consent text changes materially.
-    PRIVACY_CONSENT_VERSION: str = "2026-10-11-v1"
+    PRIVACY_CONSENT_VERSION: str = "2026-10-26-v1"
     # Telegram bot (optional). Without token webhook is disabled.
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_WEBHOOK_SECRET: Optional[str] = None
@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: Optional[str] = None
     GROQ_MODEL: str = "qwen/qwen3.8-27b"
     GROQ_TIMEOUT_SECONDS: int = Field(default=20, ge=1, le=60)
-    PERSONAL_ANALYSIS_AI_ENABLED: bool = True
+    PERSONAL_ANALYSIS_AI_ENABLED: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

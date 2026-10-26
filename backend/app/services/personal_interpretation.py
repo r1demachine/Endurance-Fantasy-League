@@ -130,57 +130,85 @@ headline, summary, positive_signals, caution_signals, practical_next_steps, data
 
 
 def _model_input(trends: dict[str, Any]) -> dict[str, Any]:
-    """Minimize shared data: aggregate counts only, never identity or item-level dates."""
+    """Return the exact privacy-minimized JSON sent to any AI provider."""
     coverage = trends.get("coverage") or {}
     morning = coverage.get("morning_checkins") or {}
     sleep = coverage.get("sleep") or {}
     activities = coverage.get("activities") or {}
+    relationship = trends.get("training_load_relationship") or {}
+
+    def stat(value: Any) -> dict[str, Any]:
+        value = value if isinstance(value, dict) else {}
+        return {
+            "mean": value.get("mean"),
+            "days_with_data": value.get("days_with_data", value.get("days", 0)),
+            "samples": value.get("samples", 0),
+        }
+
+    observations = []
+    for item in trends.get("observations") or []:
+        if not isinstance(item, dict):
+            continue
+        observations.append({
+            "key": item.get("key"),
+            "label": item.get("label"),
+            "source": item.get("source"),
+            "unit": item.get("unit"),
+            "status": item.get("status"),
+            "trend": item.get("trend"),
+            "current": stat(item.get("current")),
+            "previous": stat(item.get("previous")),
+            "change": item.get("change"),
+            "minimum_days_required_per_period": item.get("minimum_days_required_per_period"),
+        })
+
+    def group(value: Any) -> dict[str, Any]:
+        value = value if isinstance(value, dict) else {}
+        return {"days": value.get("days"), "mean_daily_rpe": value.get("mean_daily_rpe")}
 
     return {
-        "period": trends.get("period"),
-        "comparison_windows": trends.get("comparison_windows"),
-        "observations": trends.get("observations") or [],
-        "training_load_relationship": trends.get("training_load_relationship"),
+        "period": {"days": (trends.get("period") or {}).get("days")},
+        "comparison_windows": {
+            name: {"days": ((trends.get("comparison_windows") or {}).get(name) or {}).get("days")}
+            for name in ("current", "previous")
+        },
+        "observations": observations,
+        "training_load_relationship": {
+            "status": relationship.get("status"),
+            "paired_days": relationship.get("paired_days"),
+            "median_daily_tss": relationship.get("median_daily_tss"),
+            "lower_or_equal_load": group(relationship.get("lower_or_equal_load")),
+            "above_median_load": group(relationship.get("above_median_load")),
+            "rpe_difference_high_minus_low": relationship.get("rpe_difference_high_minus_low"),
+        },
         "coverage": {
             "morning_checkins": {
-                key: morning.get(key)
-                for key in (
-                    "period_days",
-                    "completed_days",
-                    "skipped_days",
-                    "pending_days",
-                    "days_without_completed_checkin",
-                    "no_record_days",
+                key: morning.get(key) for key in (
+                    "period_days", "completed_days", "skipped_days", "pending_days",
+                    "days_without_completed_checkin", "no_record_days",
                 )
             },
             "sleep": {
-                key: sleep.get(key)
-                for key in (
-                    "source",
-                    "quality_field_used",
-                    "days_with_wellness_record",
-                    "days_with_quality_value",
-                    "days_with_duration_value",
+                key: sleep.get(key) for key in (
+                    "days_with_wellness_record", "days_with_quality_value", "days_with_duration_value",
                 )
             },
             "activities": {
-                key: activities.get(key)
-                for key in (
-                    "activities_in_period",
-                    "activities_with_measured_tss",
-                    "activities_with_estimated_tss",
-                    "activities_without_tss",
-                    "activities_with_rpe",
-                    "activities_without_rpe",
-                    "activities_with_load_expectation",
-                    "activities_without_load_expectation",
+                key: activities.get(key) for key in (
+                    "activities_in_period", "activities_with_measured_tss",
+                    "activities_with_estimated_tss", "activities_without_tss",
+                    "activities_with_rpe", "activities_without_rpe",
+                    "activities_with_load_expectation", "activities_without_load_expectation",
                     "days_with_activities",
                 )
             },
         },
-        "data_gaps": trends.get("data_gaps") or [],
-        "methodology": trends.get("methodology") or [],
-        "disclaimer": trends.get("disclaimer"),
+        "data_gaps": [
+            re.sub(r"\b\d{4}-\d{2}-\d{2}\b", "этот день", str(item))
+            for item in (trends.get("data_gaps") or []) if isinstance(item, str)
+        ],
+        "methodology": [str(item) for item in (trends.get("methodology") or []) if isinstance(item, str)],
+        "disclaimer": trends.get("disclaimer") if isinstance(trends.get("disclaimer"), str) else None,
     }
 
 

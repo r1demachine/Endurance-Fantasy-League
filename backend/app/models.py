@@ -28,6 +28,14 @@ class User(Base):
     privacy_consent_version = Column(String(64), nullable=True)
     privacy_consent_at = Column(DateTime, nullable=True)
 
+    # Explicit consent and per-user BYOK configuration for AI interpretation.
+    ai_analysis_consent = Column(Boolean, nullable=False, default=False, server_default="false")
+    ai_analysis_consent_at = Column(DateTime, nullable=True)
+    ai_provider = Column(String(32), nullable=False, default="server", server_default="server")
+    ai_base_url = Column(String(500), nullable=True)
+    ai_model = Column(String(120), nullable=True)
+    ai_api_key_encrypted = Column(String(1200), nullable=True)
+
     # Telegram-бот
     telegram_chat_id = Column(String(32), unique=True, nullable=True, index=True)
     telegram_notify = Column(Boolean, nullable=False, default=False, server_default="false")
