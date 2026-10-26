@@ -267,8 +267,139 @@ function AnalysisContent() {
   const [showMethodology, setShowMethodology] = useState(false);
   const [showCoverage, setShowCoverage] = useState(false);
 
+  const [aiConsent, setAiConsent] = useState(false);
+  const [consentLoading, setConsentLoading] = useState(true);
+  const [consentSaving, setConsentSaving] = useState(false);
+  const [showPayloadPreview, setShowPayloadPreview] = useState(false);
+  const [payloadPreview, setPayloadPreview] = useState<unknown>(null);
+  const [payloadPreviewLoading, setPayloadPreviewLoading] = useState(false);
+  const [payloadPreviewError, setPayloadPreviewError] = useState("");
+  const [aiProvider, setAiProvider] = useState<"server" | "openai_compatible" | "anthropic">("server");
+  const [providerBaseUrl, setProviderBaseUrl] = useState("https://api.openai.com/v1");
+  const [providerModel, setProviderModel] = useState("");
+  const [providerApiKey, setProviderApiKey] = useState("");
+  const [providerHasKey, setProviderHasKey] = useState(false);
+  const [providerKeyLast4, setProviderKeyLast4] = useState<string | null>(null);
+  const [providerSaving, setProviderSaving] = useState(false);
+  const [providerTesting, setProviderTesting] = useState(false);
+  const [providerMessage, setProviderMessage] = useState("");
+
   useEffect(() => {
-    const controller = new AbortController();
+    let cancelled = false;
+    Promise.all([
+      authApi.get("/api/personal-analysis/consent"),
+      authApi.get("/api/personal-analysis/provider"),
+    ]).then(([consentResponse, providerResponse]) => {
+      if (cancelled) return;
+      setAiConsent(consentResponse.data?.consent === true);
+      const config = providerResponse.data;
+      if (config && (config.provider === "server" || config.provider === "openai_compatible" || config.provider === "anthropic")) {
+        setAiProvider(config.provider);
+        setProviderBaseUrl(typeof config.base_url === "string" ? config.base_url : "https://api.openai.com/v1");
+        setProviderModel(typeof config.model === "string" ? config.model : "");
+        setProviderHasKey(config.has_key === true);
+        setProviderKeyLast4(typeof config.key_last4 === "string" ? config.key_last4 : null);
+      }
+    }).catch(() => {
+      if (!cancelled) setProviderMessage("Не удалось загрузить настройки ИИ. Обнови страницу.");
+    }).finally(() => {
+      if (!cancelled) setConsentLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const changeAiConsent = useCallback(async (consent: boolean) => {
+    setConsentSaving(true);
+    setProviderMessage("");
+    try {
+      const response = await authApi.put("/api/personal-analysis/consent", { consent });
+      setAiConsent(response.data?.consent === true);
+      if (!consent) {
+        setProviderApiKey("");
+        setProviderHasKey(false);
+        setProviderKeyLast4(null);
+        setAiProvider("server");
+        setProviderBaseUrl("https://api.openai.com/v1");
+        setProviderModel("");
+        setInterpretation(null);
+        setInterpretationError("");
+      }
+    } catch (error: unknown) {
+      setProviderMessage(errorMessage(error, "Не удалось сохранить согласие."));
+    } finally {
+      setConsentSaving(false);
+    }
+  }, []);
+
+  const loadPayloadPreview = useCallback(async () => {
+    if (showPayloadPreview && payloadPreview !== null) {
+      setShowPayloadPreview(false);
+      return;
+    }
+    setPayloadPreviewLoading(true);
+    setPayloadPreviewError("");
+    try {
+      const response = await authApi.get("/api/personal-analysis/payload-preview", { params: { days } });
+      setPayloadPreview(response.data as unknown);
+      setShowPayloadPreview(true);
+    } catch (error: unknown) {
+      setPayloadPreviewError(errorMessage(error, "Не удалось загрузить точный состав данных."));
+    } finally {
+      setPayloadPreviewLoading(false);
+    }
+  }, [days, payloadPreview, showPayloadPreview]);
+
+  const saveProvider = useCallback(async () => {
+    setProviderSaving(true);
+    setProviderMessage("");
+    try {
+      const payload: { provider: string; base_url?: string; model?: string; api_key?: string } = { provider: aiProvider };
+      if (aiProvider === "openai_compatible") payload.base_url = providerBaseUrl.trim();
+      if (aiProvider !== "server") payload.model = providerModel.trim();
+      if (providerApiKey.trim()) payload.api_key = providerApiKey;
+      const response = await authApi.put("/api/personal-analysis/provider", payload);
+      setProviderHasKey(response.data?.has_key === true);
+      setProviderKeyLast4(typeof response.data?.key_last4 === "string" ? response.data.key_last4 : null);
+      setProviderApiKey("");
+      setProviderMessage("Настройки источника сохранены. Ключ не возвращается сервером.");
+      return true;
+    } catch (error: unknown) {
+      setProviderMessage(errorMessage(error, "Не удалось сохранить настройки источника."));
+      return false;
+    } finally {
+      setProviderSaving(false);
+    }
+  }, [aiProvider, providerApiKey, providerBaseUrl, providerModel]);
+
+  const testProvider = useCallback(async () => {
+    if (aiProvider === "server") return;
+    setProviderTesting(true);
+    setProviderMessage("");
+    try {
+      const saved = await saveProvider();
+      if (!saved) return;
+      await authApi.post("/api/personal-analysis/provider/test");
+      setProviderMessage("OK — тестовый запрос без пользовательских данных прошёл.");
+    } catch (error: unknown) {
+      setProviderMessage(errorMessage(error, "Проверка провайдера не пройдена."));
+    } finally {
+      setProviderTesting(false);
+    }
+  }, [aiProvider, saveProvider]);
+
+  const deleteProviderKey = useCallback(async () => {
+    try {
+      const response = await authApi.delete("/api/personal-analysis/provider");
+      setProviderHasKey(response.data?.has_key === true);
+      setProviderKeyLast4(null);
+      setProviderApiKey("");
+      setProviderMessage("Сохранённый ключ удалён.");
+    } catch (error: unknown) {
+      setProviderMessage(errorMessage(error, "Не удалось удалить ключ."));
+    }
+  }, []);
+
+  const runInterpretation = useCallback(async () => {
     setTrendsLoading(true);
     setTrendsError("");
     setTrends(null);
@@ -487,49 +618,126 @@ function AnalysisContent() {
                   <h2 className="mt-1 font-display text-2xl uppercase md:text-3xl">Что это может означать?</h2>
                   <p className="mt-2 text-sm leading-relaxed text-white/90">AI объяснит только наблюдения по имеющимся данным. Это не диагноз и не персональное назначение тренировочного плана.</p>
                 </div>
-                <div className="p-4 md:p-5">
-                  <button type="button" onClick={() => void runInterpretation()} disabled={interpretationLoading || trends.status !== "ready"}
-                    className="min-h-12 w-full border-2 border-black bg-[#ffd500] px-4 py-3 text-xs font-black uppercase tracking-wide hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">
-                    {interpretationLoading ? "Готовим интерпретацию…" : interpretation ? "Сгенерировать заново" : "Получить AI-интерпретацию"}
-                  </button>
-                  <p className="mt-2 text-[11px] leading-relaxed text-[#666]">Запрос выполняется только по кнопке. При повторе может расходоваться дополнительный лимит AI-сервиса.</p>
-                  {trends.status !== "ready" && <p className="mt-3 text-sm text-[#666]">Сначала нужны пригодные сравнения в обеих неделях. Сейчас AI-запрос отключён.</p>}
-                  {interpretationLoading && <p role="status" className="mt-4 border-l-4 border-[#5866f2] bg-[#5866f2]/5 px-3 py-3 text-sm">Запрашиваем интерпретацию. Повторный запрос не нужен — подожди ответа.</p>}
-                  {interpretationError && (
-                    <div role="alert" className="mt-4 border-2 border-[#ff4b26] p-4">
-                      <p className="text-sm leading-relaxed">{interpretationError}</p>
-                      <button type="button" onClick={() => void runInterpretation()} disabled={interpretationLoading || trends.status !== "ready"} className="mt-3 border-2 border-black bg-white px-3 py-2 text-xs font-bold uppercase hover:bg-[#ffd500] disabled:opacity-50">Повторить AI-запрос</button>
-                    </div>
-                  )}
-                  {interpretation?.status === "insufficient_data" && (
-                    <div role="status" className="mt-4 border-2 border-black bg-[#f4f4f0] p-4">
-                      <h3 className="font-display text-xl uppercase">Мало данных</h3>
-                      <p className="mt-2 text-sm">{interpretation.message}</p>
-                      <StringList items={interpretation.data_gaps ?? []} emptyText="Сервер не вернул дополнительные пояснения." />
-                    </div>
-                  )}
-                  {interpretation?.status === "ready" && interpretation.analysis && (
-                    <div className="mt-5 space-y-4">
-                      <article className="border-2 border-black bg-[#f4f4f0] p-4 md:p-5">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-[#666]">Итог</p>
-                        <h3 className="mt-1 font-display text-2xl uppercase">{interpretation.analysis.headline}</h3>
-                        <p className="mt-3 text-sm leading-relaxed">{interpretation.analysis.summary}</p>
-                        {interpretation.generated_at && <p className="mt-3 text-[10px] text-[#666]">Создано: {new Date(interpretation.generated_at).toLocaleString("ru-RU")}</p>}
-                      </article>
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <article className="border-2 border-black bg-white p-4"><h3 className="mb-3 font-display text-lg uppercase">Положительные сигналы</h3><StringList items={interpretation.analysis.positive_signals} emptyText="Не выделены." /></article>
-                        <article className="border-2 border-black bg-white p-4"><h3 className="mb-3 font-display text-lg uppercase">На что обратить внимание</h3><StringList items={interpretation.analysis.caution_signals} emptyText="Не выделены." /></article>
-                        <article className="border-2 border-black bg-white p-4"><h3 className="mb-3 font-display text-lg uppercase">Следующие шаги</h3><StringList items={interpretation.analysis.practical_next_steps} emptyText="Нет рекомендаций." /></article>
-                        <article className="border-2 border-black bg-white p-4"><h3 className="mb-3 font-display text-lg uppercase">Ограничения</h3><StringList items={interpretation.analysis.data_limitations} emptyText="Не выделены." /></article>
-                      </div>
-                      {(interpretation.data_quality?.data_gaps?.length || interpretation.disclaimer) && (
-                        <div className="border-l-4 border-[#5866f2] bg-white p-4">
-                          <h3 className="font-bold">Качество данных</h3>
-                          <StringList items={interpretation.data_quality?.data_gaps ?? []} emptyText="Сервер не отметил дополнительные пробелы." />
-                          {interpretation.disclaimer && <p className="mt-3 text-xs leading-relaxed text-[#666]">{interpretation.disclaimer}</p>}
+                <div className="space-y-5 p-4 md:p-5">
+                  <div className="border-2 border-black bg-[#f4f4f0] p-4">
+                    <h3 className="font-display text-lg uppercase">Согласие на внешний ИИ-сервис</h3>
+                    <p className="mt-2 text-sm leading-relaxed">Разрешить отправлять агрегированную статистику (средние значения сна, нагрузки, самочувствия за период, без отдельных тренировок, дат, имён и ключей) во внешний ИИ-сервис.</p>
+                    <button type="button" onClick={() => void loadPayloadPreview()} disabled={payloadPreviewLoading}
+                      className="mt-3 border-2 border-black bg-white px-3 py-2 text-xs font-bold uppercase hover:bg-[#ffd500] disabled:opacity-50">
+                      {payloadPreviewLoading ? "Загружаем JSON…" : showPayloadPreview ? "Скрыть JSON" : "Показать, что именно будет отправлено"}
+                    </button>
+                    {payloadPreviewError && <p role="alert" className="mt-2 text-sm text-[#b42318]">{payloadPreviewError}</p>}
+                    {showPayloadPreview && payloadPreview !== null && (
+                      <pre className="mt-3 max-h-96 overflow-auto border border-black bg-white p-3 text-xs leading-relaxed" data-lenis-prevent>{JSON.stringify(payloadPreview, null, 2)}</pre>
+                    )}
+                    <label className="mt-4 flex items-start gap-3 border-t border-black/20 pt-4 text-sm font-bold">
+                      <input type="checkbox" checked={aiConsent} disabled={consentLoading || consentSaving}
+                        onChange={(event) => void changeAiConsent(event.target.checked)}
+                        className="mt-1 h-5 w-5 shrink-0 accent-[#5866f2]" />
+                      <span>{consentLoading ? "Проверяем согласие…" : aiConsent ? "Согласие включено. Нажми, чтобы отозвать." : "Я разрешаю отправку указанной агрегированной статистики во внешний ИИ-сервис."}</span>
+                    </label>
+                    {!aiConsent && <p className="mt-3 text-xs leading-relaxed text-[#666]">Пока согласие не дано, анализ не отправляет запросы к внешним ИИ-сервисам.</p>}
+                  </div>
+
+                  {aiConsent && (
+                    <div className="border-2 border-black bg-white p-4">
+                      <h3 className="font-display text-lg uppercase">Источник ИИ</h3>
+                      <label htmlFor="ai-provider" className="mt-3 block text-xs font-bold uppercase">Провайдер</label>
+                      <select id="ai-provider" value={aiProvider} onChange={(event) => setAiProvider(event.target.value as typeof aiProvider)}
+                        className="mt-1 min-h-11 w-full border-2 border-black bg-white px-3 py-2 text-sm">
+                        <option value="server">Сервер (по умолчанию)</option>
+                        <option value="openai_compatible">Свой ключ (OpenAI-совместимый: OpenAI, Groq, OpenRouter, Together…)</option>
+                        <option value="anthropic">Свой ключ (Claude)</option>
+                      </select>
+                      {aiProvider !== "server" && (
+                        <div className="mt-4 space-y-3">
+                          {aiProvider === "openai_compatible" && (
+                            <div>
+                              <label htmlFor="ai-base-url" className="block text-xs font-bold uppercase">Адрес API</label>
+                              <input id="ai-base-url" type="url" value={providerBaseUrl} onChange={(event) => setProviderBaseUrl(event.target.value)}
+                                placeholder="https://api.openai.com/v1" className="mt-1 min-h-11 w-full border-2 border-black px-3 py-2 text-sm" />
+                              <p className="mt-1 text-[11px] leading-relaxed text-[#666]">Примеры: https://api.openai.com/v1 · https://api.groq.com/openai/v1 · https://openrouter.ai/api/v1</p>
+                            </div>
+                          )}
+                          <div>
+                            <label htmlFor="ai-model" className="block text-xs font-bold uppercase">Модель</label>
+                            <input id="ai-model" value={providerModel} onChange={(event) => setProviderModel(event.target.value)}
+                              maxLength={120} autoComplete="off" className="mt-1 min-h-11 w-full border-2 border-black px-3 py-2 text-sm" placeholder={aiProvider === "anthropic" ? "claude-sonnet-4-5" : "Модель провайдера"} />
+                          </div>
+                          <div>
+                            <label htmlFor="ai-api-key" className="block text-xs font-bold uppercase">API-ключ</label>
+                            <input id="ai-api-key" type="password" value={providerApiKey} onChange={(event) => setProviderApiKey(event.target.value)}
+                              maxLength={512} autoComplete="off" className="mt-1 min-h-11 w-full border-2 border-black px-3 py-2 text-sm" placeholder={providerHasKey ? "Ключ сохранён — введи новый только для замены" : "Вставь API-ключ"} />
+                            {providerHasKey && <p className="mt-1 text-[11px] text-[#666]">Ключ сохранён зашифрованным{providerKeyLast4 ? `; последние символы: •••• ${providerKeyLast4}` : ""}.</p>}
+                          </div>
                         </div>
                       )}
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button type="button" onClick={() => void saveProvider()} disabled={providerSaving || providerTesting}
+                          className="border-2 border-black bg-[#ffd500] px-3 py-2 text-xs font-bold uppercase hover:bg-black hover:text-white disabled:opacity-50">
+                          {providerSaving ? "Сохраняем…" : "Сохранить источник"}
+                        </button>
+                        {aiProvider !== "server" && (
+                          <button type="button" onClick={() => void testProvider()} disabled={providerSaving || providerTesting}
+                            className="border-2 border-black bg-white px-3 py-2 text-xs font-bold uppercase hover:bg-[#ffd500] disabled:opacity-50">
+                            {providerTesting ? "Проверяем…" : "Проверить"}
+                          </button>
+                        )}
+                        {providerHasKey && (
+                          <button type="button" onClick={() => void deleteProviderKey()} className="border-2 border-black bg-white px-3 py-2 text-xs font-bold uppercase hover:bg-[#ff4b26] hover:text-white">
+                            Удалить ключ
+                          </button>
+                        )}
+                      </div>
+                      {providerMessage && <p role="status" className="mt-3 text-sm leading-relaxed">{providerMessage}</p>}
                     </div>
+                  )}
+
+                  {aiConsent && (
+                    <>
+                      <button type="button" onClick={() => void runInterpretation()} disabled={interpretationLoading || trends.status !== "ready" || consentLoading}
+                        className="min-h-12 w-full border-2 border-black bg-[#ffd500] px-4 py-3 text-xs font-black uppercase tracking-wide hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">
+                        {interpretationLoading ? "Готовим интерпретацию…" : interpretation ? "Сгенерировать заново" : "Получить AI-интерпретацию"}
+                      </button>
+                      {trends.status !== "ready" && <p className="text-sm text-[#666]">Сначала нужны пригодные сравнения в обеих неделях. Сейчас AI-запрос отключён.</p>}
+                      {interpretationLoading && <p role="status" className="border-l-4 border-[#5866f2] bg-[#5866f2]/5 px-3 py-3 text-sm">Запрашиваем интерпретацию. Повторный запрос не нужен — подожди ответа.</p>}
+                      {interpretationError && (
+                        <div role="alert" className="border-2 border-[#ff4b26] p-4">
+                          <p className="text-sm leading-relaxed">{interpretationError}</p>
+                          <button type="button" onClick={() => void runInterpretation()} disabled={interpretationLoading || trends.status !== "ready"} className="mt-3 border-2 border-black bg-white px-3 py-2 text-xs font-bold uppercase hover:bg-[#ffd500] disabled:opacity-50">Повторить AI-запрос</button>
+                        </div>
+                      )}
+                      {interpretation?.status === "insufficient_data" && (
+                        <div role="status" className="border-2 border-black bg-[#f4f4f0] p-4">
+                          <h3 className="font-display text-xl uppercase">Мало данных</h3>
+                          <p className="mt-2 text-sm">{interpretation.message}</p>
+                          <StringList items={interpretation.data_gaps ?? []} emptyText="Сервер не вернул дополнительные пояснения." />
+                        </div>
+                      )}
+                      {interpretation?.status === "ready" && interpretation.analysis && (
+                        <div className="space-y-4">
+                          <article className="border-2 border-black bg-[#f4f4f0] p-4 md:p-5">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-[#666]">Итог</p>
+                            <h3 className="mt-1 font-display text-2xl uppercase">{interpretation.analysis.headline}</h3>
+                            <p className="mt-3 text-sm leading-relaxed">{interpretation.analysis.summary}</p>
+                            {interpretation.generated_at && <p className="mt-3 text-[10px] text-[#666]">Создано: {new Date(interpretation.generated_at).toLocaleString("ru-RU")}</p>}
+                          </article>
+                          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                            <article className="border-2 border-black bg-white p-4"><h3 className="mb-3 font-display text-lg uppercase">Положительные сигналы</h3><StringList items={interpretation.analysis.positive_signals} emptyText="Не выделены." /></article>
+                            <article className="border-2 border-black bg-white p-4"><h3 className="mb-3 font-display text-lg uppercase">На что обратить внимание</h3><StringList items={interpretation.analysis.caution_signals} emptyText="Не выделены." /></article>
+                            <article className="border-2 border-black bg-white p-4"><h3 className="mb-3 font-display text-lg uppercase">Следующие шаги</h3><StringList items={interpretation.analysis.practical_next_steps} emptyText="Нет рекомендаций." /></article>
+                            <article className="border-2 border-black bg-white p-4"><h3 className="mb-3 font-display text-lg uppercase">Ограничения</h3><StringList items={interpretation.analysis.data_limitations} emptyText="Не выделены." /></article>
+                          </div>
+                          {(interpretation.data_quality?.data_gaps?.length || interpretation.disclaimer) && (
+                            <div className="border-l-4 border-[#5866f2] bg-white p-4">
+                              <h3 className="font-bold">Качество данных</h3>
+                              <StringList items={interpretation.data_quality?.data_gaps ?? []} emptyText="Сервер не отметил дополнительные пробелы." />
+                              {interpretation.disclaimer && <p className="mt-3 text-xs leading-relaxed text-[#666]">{interpretation.disclaimer}</p>}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </motion.section>
