@@ -324,7 +324,7 @@ def post_personal_interpretation(
             )
         except PersonalInterpretationError as exc:
             logger.warning("Personal interpretation failed: provider=%s category=%s status=%s quality_check=%s", provider, exc.category, exc.upstream_status, exc.quality_check or "none")
-            raise HTTPException(status_code=502, detail=_safe_provider_detail(exc.category)) from exc
+            raise HTTPException(status_code=502, detail=f"Проверка не пройдена ({exc.category}): {_safe_provider_detail(exc.category)}") from exc
         return {
             "status": "ready",
             "provider": provider,

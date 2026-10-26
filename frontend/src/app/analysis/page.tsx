@@ -482,6 +482,8 @@ function AnalysisContent() {
     setDays(nextDays);
     setInterpretation(null);
     setInterpretationError("");
+    setPayloadPreview(null);
+    setShowPayloadPreview(false);
   };
 
   const coverage = trends?.coverage;
