@@ -454,6 +454,9 @@ class PersonalAnalysisApiScenarioTests(unittest.TestCase):
                 password_hash="test-hash",
                 display_name="Scenario Owner",
                 timezone_name="UTC",
+                ai_analysis_consent=True,
+                ai_analysis_consent_at=datetime(2026, 10, 1),
+                ai_provider="server",
             )
             self.other = User(
                 username="scenario-other",
@@ -567,7 +570,7 @@ class PersonalAnalysisApiScenarioTests(unittest.TestCase):
         get_settings.return_value = self.settings(key=None)
         response = self.client.post("/api/personal-analysis/interpretation")
         self.assertEqual(response.status_code, 503)
-        self.assertIn("GROQ_API_KEY", response.json()["detail"])
+        self.assertIn("не настроен", response.json()["detail"])
         generate.assert_not_called()
 
     @patch("app.routers.personal_analysis.get_settings")
@@ -598,7 +601,7 @@ class PersonalAnalysisApiScenarioTests(unittest.TestCase):
         )
         response = self.client.post("/api/personal-analysis/interpretation")
         self.assertEqual(response.status_code, 502)
-        self.assertIn("подключиться к Groq", response.json()["detail"])
+        self.assertIn("подключиться к AI-сервису", response.json()["detail"]["message"])
         self.assertNotIn("credential", response.text)
         self.assertNotIn("raw upstream body", response.text)
 
