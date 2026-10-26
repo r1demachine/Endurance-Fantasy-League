@@ -71,6 +71,18 @@ try:
                 conn.execute(text("ALTER TABLE users ADD COLUMN privacy_consent_version VARCHAR(64)"))
             if "privacy_consent_at" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN privacy_consent_at TIMESTAMP"))
+            if "ai_analysis_consent" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN ai_analysis_consent BOOLEAN NOT NULL DEFAULT FALSE"))
+            if "ai_analysis_consent_at" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN ai_analysis_consent_at TIMESTAMP"))
+            if "ai_provider" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN ai_provider VARCHAR(32) NOT NULL DEFAULT 'server'"))
+            if "ai_base_url" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN ai_base_url VARCHAR(2048)"))
+            if "ai_model" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN ai_model VARCHAR(128)"))
+            if "ai_api_key_encrypted" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN ai_api_key_encrypted VARCHAR(1024)"))
             if "telegram_chat_id" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN telegram_chat_id VARCHAR(32)"))
             if "telegram_notify" not in cols:
