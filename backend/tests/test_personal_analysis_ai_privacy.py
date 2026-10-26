@@ -221,6 +221,46 @@ class PersonalAnalysisAIPrivacyAPITests(unittest.TestCase):
         self.assertIsNone(stored.ai_base_url)
         self.assertIsNone(stored.ai_model)
 
+    def test_changing_provider_or_endpoint_requires_a_new_key_and_server_mode_clears_it(self):
+        secret = "sk-original-key-1357"
+        first = self.client.put(
+            "/api/personal-analysis/provider",
+            json={
+                "provider": "openai_compatible",
+                "base_url": "https://api-one.example/v1",
+                "model": "test-model",
+                "api_key": secret,
+            },
+        )
+        self.assertEqual(first.status_code, 200)
+        changed_endpoint = self.client.put(
+            "/api/personal-analysis/provider",
+            json={
+                "provider": "openai_compatible",
+                "base_url": "https://api-two.example/v1",
+                "model": "test-model",
+            },
+        )
+        self.assertEqual(changed_endpoint.status_code, 422)
+        self.assertNotIn(secret, changed_endpoint.text)
+        unchanged = self.read_user()
+        self.assertEqual(unchanged.ai_base_url, "https://api-one.example/v1")
+        self.assertEqual(decrypt_secret(unchanged.ai_api_key_encrypted), secret)
+
+        changed_provider = self.client.put(
+            "/api/personal-analysis/provider",
+            json={"provider": "anthropic", "model": "test-model"},
+        )
+        self.assertEqual(changed_provider.status_code, 422)
+        self.assertNotIn(secret, changed_provider.text)
+
+        server = self.client.put("/api/personal-analysis/provider", json={"provider": "server"})
+        self.assertEqual(server.status_code, 200)
+        self.assertFalse(server.json()["has_key"])
+        persisted = self.read_user()
+        self.assertIsNone(persisted.ai_api_key_encrypted)
+        self.assertEqual(persisted.ai_provider, "server")
+
     def test_provider_get_never_returns_api_key_only_presence_and_last_four(self):
         secret = "sk-never-return-me-4821"
         with TestSession() as db:
