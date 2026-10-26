@@ -432,6 +432,8 @@ function AnalysisContent() {
     setInterpretation(null);
     setInterpretationError("");
     try {
+      const providerSaved = await saveProvider();
+      if (!providerSaved) return;
       const response = await authApi.post("/api/personal-analysis/interpretation", null, { params: { days } });
       const payload = response.data as unknown;
       if (!isRecord(payload) || typeof payload.status !== "string") {
@@ -474,7 +476,7 @@ function AnalysisContent() {
     } finally {
       setInterpretationLoading(false);
     }
-  }, [days, interpretationLoading, trends]);
+  }, [days, interpretationLoading, trends, saveProvider]);
 
   const handleDaysChange = (value: string) => {
     const nextDays = Number(value);
