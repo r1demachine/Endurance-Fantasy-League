@@ -10,6 +10,7 @@ import math
 import re
 import socket
 import ssl
+import time
 from typing import Annotated, Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -762,6 +763,7 @@ def _safe_provider_post_json(
     """POST bounded JSON to a pre-validated, IP-pinned HTTPS endpoint, never following redirects."""
     timeout = min(max(float(timeout_seconds or 20), 1.0), MAX_PROVIDER_TIMEOUT_SECONDS)
     transport = _PinnedHTTPTransport(host, addresses)
+    started_at = time.monotonic()
     try:
         with httpx.Client(
             transport=transport,
@@ -791,6 +793,8 @@ def _safe_provider_post_json(
                 chunks: list[bytes] = []
                 total = 0
                 for chunk in response.iter_bytes():
+                    if time.monotonic() - started_at > timeout:
+                        raise PersonalInterpretationError("Provider request timed out", category="timeout")
                     total += len(chunk)
                     if total > MAX_PROVIDER_RESPONSE_BYTES:
                         raise PersonalInterpretationError(
@@ -878,7 +882,11 @@ def _openai_compatible_content(
     normalized, host, addresses = _resolve_public_endpoint(base_url)
     endpoint = normalized.rstrip("/") + "/chat/completions"
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT if not test_only else
+                'This is a connectivity check with no user data. Return only the JSON object {"ok":true}.',
+        },
         {
             "role": "user",
             "content": (
@@ -891,14 +899,16 @@ def _openai_compatible_content(
     request_body: dict[str, Any] = {
         "model": model,
         "messages": messages,
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "personal_interpretation",
-                "strict": True,
-                "schema": PERSONAL_INTERPRETATION_JSON_SCHEMA,
-            },
-        },
+        "response_format": (
+            {"type": "json_object"} if test_only else {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "personal_interpretation",
+                    "strict": True,
+                    "schema": PERSONAL_INTERPRETATION_JSON_SCHEMA,
+                },
+            }
+        ),
         "max_tokens": 900 if not test_only else 64,
         "temperature": 0.7,
     }
@@ -979,7 +989,8 @@ def _anthropic_content(
         payload={
             "model": model,
             "max_tokens": 64 if test_only else 900,
-            "system": SYSTEM_PROMPT,
+            "system": SYSTEM_PROMPT if not test_only else
+                'This is a connectivity check with no user data. Return only the JSON object {"ok":true}.',
             "messages": [{"role": "user", "content": message}],
         },
         timeout_seconds=timeout_seconds,
