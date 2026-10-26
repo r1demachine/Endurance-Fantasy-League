@@ -1,5 +1,6 @@
 """Consent, provider-key privacy and SSRF regression tests for personal AI."""
 import os
+import unittest
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -66,8 +67,8 @@ def sample_trends():
     }
 
 
-class TestPersonalAIConsent:
-    def setup_method(self):
+class TestPersonalAIConsent(unittest.TestCase):
+    def setUp(self):
         Base.metadata.drop_all(bind=TEST_ENGINE)
         Base.metadata.create_all(bind=TEST_ENGINE)
         self.db = TestSession()
@@ -97,7 +98,7 @@ class TestPersonalAIConsent:
         self.app.dependency_overrides[get_current_user] = override_user
         self.client = TestClient(self.app)
 
-    def teardown_method(self):
+    def tearDown(self):
         self.client.close()
         self.app.dependency_overrides.clear()
         Base.metadata.drop_all(bind=TEST_ENGINE)
@@ -188,86 +189,89 @@ class TestPersonalAIConsent:
             assert user.ai_model is None
 
 
-def test_model_input_whitelists_only_aggregate_fields():
-    payload = _model_input(sample_trends())
-    serialised = __import__("json").dumps(payload, ensure_ascii=False)
-    for forbidden in (
-        "user_id", "username", "email", "display_name", "private-username",
-        "private@example.invalid", "Private Display Name", "secret-api-key-value",
-        "activity_name", "activity_id", "activity_names", "notes", "Секретная тренировка",
-        "секретная заметка", "2026-10-01", "2026-10-10",
-    ):
-        assert forbidden not in serialised
-    assert payload["period"] == {"days": 14}
-    assert payload["comparison_windows"] == {"current": {"days": 7}, "previous": {"days": 7}}
 
-
-def test_provider_url_validation_rejects_unsafe_schemes_hosts_and_ports():
-    bad_urls = [
-        "http://api.openai.com/v1",
-        "https://localhost/v1",
-        "https://service.localhost/v1",
-        "https://127.0.0.1/v1",
-        "https://10.1.2.3/v1",
-        "https://169.254.169.254/latest/meta-data",
-        "https://[::1]/v1",
-        "https://[::ffff:127.0.0.1]/v1",
-        "https://user:password@api.openai.com/v1",
-        "https://api.openai.com:8443/v1",
-    ]
-    for url in bad_urls:
+class TestPersonalAISSRF(unittest.TestCase):
+    def test_model_input_whitelists_only_aggregate_fields(self):
+        payload = _model_input(sample_trends())
+        serialised = __import__("json").dumps(payload, ensure_ascii=False)
+        for forbidden in (
+            "user_id", "username", "email", "display_name", "private-username",
+            "private@example.invalid", "Private Display Name", "secret-api-key-value",
+            "activity_name", "activity_id", "activity_names", "notes", "Секретная тренировка",
+            "секретная заметка", "2026-10-01", "2026-10-10",
+        ):
+            assert forbidden not in serialised
+        assert payload["period"] == {"days": 14}
+        assert payload["comparison_windows"] == {"current": {"days": 7}, "previous": {"days": 7}}
+    
+    
+    def test_provider_url_validation_rejects_unsafe_schemes_hosts_and_ports(self):
+        bad_urls = [
+            "http://api.openai.com/v1",
+            "https://localhost/v1",
+            "https://service.localhost/v1",
+            "https://127.0.0.1/v1",
+            "https://10.1.2.3/v1",
+            "https://169.254.169.254/latest/meta-data",
+            "https://[::1]/v1",
+            "https://[::ffff:127.0.0.1]/v1",
+            "https://user:password@api.openai.com/v1",
+            "https://api.openai.com:8443/v1",
+        ]
+        for url in bad_urls:
+            try:
+                validate_provider_base_url(url)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f"unsafe URL accepted: {url}")
+    
+    
+    @patch("app.services.personal_ai_provider.socket.getaddrinfo")
+    def test_domain_resolving_to_private_ip_is_rejected_before_client_creation(self, getaddrinfo):
+        getaddrinfo.return_value = [(None, None, None, None, ("10.0.0.5", 443))]
+        with patch("app.services.personal_ai_provider.httpx.Client") as client:
+            try:
+                _request_json("https://metadata.example/v1/chat/completions", headers={}, payload={}, timeout_seconds=2)
+            except Exception as exc:
+                assert getattr(exc, "category", None) == "unsafe_destination"
+            else:
+                raise AssertionError("private DNS destination accepted")
+            client.assert_not_called()
+    
+    
+    @patch("app.services.personal_ai_provider.socket.create_connection")
+    @patch("app.services.personal_ai_provider.resolve_public_addresses")
+    def test_pinned_transport_rechecks_dns_at_connect_time(self, resolve, create_connection):
+        resolve.side_effect = [("93.184.216.34",), ("127.0.0.1",)]
+        backend = _PinnedNetworkBackend("example.com", ("93.184.216.34",))
         try:
-            validate_provider_base_url(url)
-        except ValueError:
+            backend.connect_tcp("example.com", 443, timeout=1)
+        except httpcore.ConnectError:
             pass
         else:
-            raise AssertionError(f"unsafe URL accepted: {url}")
-
-
-@patch("app.services.personal_ai_provider.socket.getaddrinfo")
-def test_domain_resolving_to_private_ip_is_rejected_before_client_creation(getaddrinfo):
-    getaddrinfo.return_value = [(None, None, None, None, ("10.0.0.5", 443))]
-    with patch("app.services.personal_ai_provider.httpx.Client") as client:
-        try:
-            _request_json("https://metadata.example/v1/chat/completions", headers={}, payload={}, timeout_seconds=2)
-        except Exception as exc:
-            assert getattr(exc, "category", None) == "unsafe_destination"
-        else:
-            raise AssertionError("private DNS destination accepted")
-        client.assert_not_called()
-
-
-@patch("app.services.personal_ai_provider.socket.create_connection")
-@patch("app.services.personal_ai_provider.resolve_public_addresses")
-def test_pinned_transport_rechecks_dns_at_connect_time(resolve, create_connection):
-    resolve.side_effect = [("93.184.216.34",), ("127.0.0.1",)]
-    backend = _PinnedNetworkBackend("example.com", ("93.184.216.34",))
-    try:
-        backend.connect_tcp("example.com", 443, timeout=1)
-    except httpcore.ConnectError:
-        pass
-    else:
-        raise AssertionError("DNS rebinding was not rejected")
-    create_connection.assert_not_called()
-
-
-def test_redirect_response_is_rejected_without_following_internal_location():
-    response = Mock()
-    response.status_code = 302
-    response.headers = {"content-type": "application/json", "location": "http://127.0.0.1/admin"}
-    response.__enter__ = Mock(return_value=response)
-    response.__exit__ = Mock(return_value=False)
-    client = Mock()
-    client.__enter__ = Mock(return_value=client)
-    client.__exit__ = Mock(return_value=False)
-    client.stream.return_value = response
-    with patch("app.services.personal_ai_provider.resolve_public_addresses", return_value=("93.184.216.34",)):
-        with patch("app.services.personal_ai_provider.httpx.Client", return_value=client) as client_factory:
-            try:
-                _request_json("https://example.com/v1/chat/completions", headers={}, payload={}, timeout_seconds=2)
-            except Exception as exc:
-                assert getattr(exc, "category", None) == "redirect_blocked"
-            else:
-                raise AssertionError("redirect response was accepted")
-    assert client_factory.call_args.kwargs["follow_redirects"] is False
-    client.stream.assert_called_once()
+            raise AssertionError("DNS rebinding was not rejected")
+        create_connection.assert_not_called()
+    
+    
+    def test_redirect_response_is_rejected_without_following_internal_location(self):
+        response = Mock()
+        response.status_code = 302
+        response.headers = {"content-type": "application/json", "location": "http://127.0.0.1/admin"}
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        client = Mock()
+        client.__enter__ = Mock(return_value=client)
+        client.__exit__ = Mock(return_value=False)
+        client.stream.return_value = response
+        with patch("app.services.personal_ai_provider.resolve_public_addresses", return_value=("93.184.216.34",)):
+            with patch("app.services.personal_ai_provider.httpx.Client", return_value=client) as client_factory:
+                try:
+                    _request_json("https://example.com/v1/chat/completions", headers={}, payload={}, timeout_seconds=2)
+                except Exception as exc:
+                    assert getattr(exc, "category", None) == "redirect_blocked"
+                else:
+                    raise AssertionError("redirect response was accepted")
+        assert client_factory.call_args.kwargs["follow_redirects"] is False
+        client.stream.assert_called_once()
+    
