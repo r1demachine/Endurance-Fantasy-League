@@ -243,7 +243,7 @@ class TestPersonalAISSRF(unittest.TestCase):
     @patch("app.services.personal_ai_provider.socket.create_connection")
     @patch("app.services.personal_ai_provider.resolve_public_addresses")
     def test_pinned_transport_rechecks_dns_at_connect_time(self, resolve, create_connection):
-        resolve.side_effect = [("93.184.216.34",), ("127.0.0.1",)]
+        resolve.return_value = ("127.0.0.1",)
         backend = _PinnedNetworkBackend("example.com", ("93.184.216.34",))
         try:
             backend.connect_tcp("example.com", 443, timeout=1)
